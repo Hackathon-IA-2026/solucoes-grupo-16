@@ -1,10 +1,10 @@
 import React from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-// import { usePathname } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 
 const mainLinks = [
-  { href: "/dados-climaticos", label: "Clima & Vento", icon: "air" },
+  { href: "/", label: "Clima & Vento", icon: "air" },
   { href: "/usinas-estimativas", label: "Parque & Usinas", icon: "wind_power" },
   { href: "/mapeamento-barras", label: "Mapeamento Barras", icon: "hub" },
   { href: "/exportacao-pwf", label: "Exportação PWF", icon: "file_save" },
@@ -16,15 +16,13 @@ const secondaryLinks = [
 ];
 
 export function Sidebar() {
-  // const pathname = usePathname();
-  // using a hardcoded pathname for now until routing is fully set up
-  const pathname = "/dados-climaticos";
+  const pathname = usePathname();
 
   return (
     <aside className="fixed left-0 top-0 h-full w-64 bg-surface-container-low z-50 flex flex-col justify-between shadow-[0_1px_8px_rgba(0,0,0,0.04)]">
       <div className="flex flex-col">
         <div className="h-16 px-space-lg flex flex-col justify-center gap-1 bg-surface-container-lowest">
-          <Image src="/logo.svg" alt="ClimaGrid Logo" width={190} height={35} />
+          <Image src="/logo.svg" alt="ClimaGrid Logo" width={190} height={35} priority style={{ width: 'auto', height: 'auto' }} />
         </div>
 
         <div className="px-space-md py-space-sm">
@@ -35,7 +33,7 @@ export function Sidebar() {
 
         <nav className="flex flex-col gap-space-xs px-space-md">
           {mainLinks.map((link) => {
-            const isActive = pathname === link.href || pathname.startsWith(link.href);
+            const isActive = link.href === "/" ? pathname === "/" : pathname.startsWith(link.href);
             return (
               <Link
                 key={link.href}
@@ -54,7 +52,7 @@ export function Sidebar() {
           <div className="my-space-sm h-px bg-surface-variant mx-space-md"></div>
 
           {secondaryLinks.map((link) => {
-            const isActive = pathname === link.href || pathname.startsWith(link.href);
+            const isActive = link.href === "/" ? pathname === "/" : pathname.startsWith(link.href);
             return (
               <Link
                 key={link.href}

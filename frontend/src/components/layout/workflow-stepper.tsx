@@ -1,26 +1,25 @@
 import React from 'react';
 import Link from 'next/link';
-// import { usePathname } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 
 const workflowSteps = [
-  { href: "/dados-climaticos", label: "Entrada Climática", num: 1 },
+  { href: "/", label: "Entrada Climática", num: 1 },
   { href: "/usinas-estimativas", label: "Usinas & MW", num: 2 },
   { href: "/mapeamento-barras", label: "Mapeamento Barras", num: 3 },
   { href: "/exportacao-pwf", label: "Exportação PWF & Risco", num: 4 },
 ];
 
 export function WorkflowStepper() {
-  // const pathname = usePathname();
-  const pathname = "/dados-climaticos"; // hardcoded for now
+  const pathname = usePathname();
+  const currentStepIndex = workflowSteps.findIndex(step => 
+    step.href === "/" ? pathname === "/" : pathname.startsWith(step.href)
+  );
 
   return (
     <div className="h-12 px-space-xl bg-surface-container-low flex items-center">
       <nav className="flex items-center w-full justify-between gap-space-sm">
         {workflowSteps.map((step, index) => {
-          const isActive = pathname === step.href || pathname.startsWith(step.href);
-          // Just a simple logic: if it's the first step and we're on it, it's active. 
-          // If we had a real flow, we'd check if `currentStepIndex >= index`.
-          // For now, let's just highlight the active one, and maybe the ones before it are 'done' (which isn't implemented fully here).
+          const isActive = currentStepIndex !== -1 && index <= currentStepIndex;
           
           return (
             <React.Fragment key={step.href}>
