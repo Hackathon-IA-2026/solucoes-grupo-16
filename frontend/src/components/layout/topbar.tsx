@@ -1,7 +1,7 @@
 import React from 'react';
-import { StageNav } from './StageNav';
+import { WorkflowStepper } from './workflow-stepper';
 
-export function Header() {
+export function Topbar() {
   return (
     <header className="fixed top-0 left-64 right-0 h-28 bg-surface/90 backdrop-blur-xl z-40 flex flex-col justify-between shadow-[0_1px_8px_rgba(0,0,0,0.04)]">
       <div className="h-16 px-space-xl flex items-center justify-between">
@@ -30,7 +30,7 @@ export function Header() {
           </div>
         </div>
       </div>
-      <StageNav />
+      <WorkflowStepper />
     </header>
   );
 }
