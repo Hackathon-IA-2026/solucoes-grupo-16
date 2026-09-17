@@ -1,5 +1,6 @@
 import React from 'react';
 import { WorkflowStepper } from './workflow-stepper';
+import { SyncButton } from '@/components/ui/sync-button';
 
 export function Topbar() {
   return (
@@ -15,10 +16,7 @@ export function Topbar() {
             <span className="w-2 h-2 rounded-full bg-tertiary animate-pulse"></span>
             <span className="font-data-mono-sm text-data-mono-sm text-on-surface">IA Modelo v4.2 • ONS Base Conectada</span>
           </div>
-          <div className="hidden md:flex items-center gap-space-xs text-on-surface-variant">
-            <span className="material-symbols-outlined text-[16px] text-tertiary">sync</span>
-            <span className="font-data-mono-sm text-data-mono-sm">Sincronizado há 2m</span>
-          </div>
+          <SyncButton />
         </div>
         <div className="flex items-center gap-space-lg">
           <div className="hidden lg:flex flex-col items-end text-right">
