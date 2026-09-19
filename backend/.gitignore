@@ -50,6 +50,7 @@ lerna-debug.log*
 .tmp
 
 # Runtime data
+/data/pwf
 pids
 *.pid
 *.seed

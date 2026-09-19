@@ -5,6 +5,7 @@ import type {
   ProcessScenarioResult,
   PwfExportRequest,
   PwfExportResult,
+  PwfGenerationTarget,
   ReferencePwf,
 } from "@/types/climagrid";
 
@@ -36,7 +37,14 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    const message = await response.text();
+    const body = await response.text();
+    let message = body;
+    try {
+      const parsed = JSON.parse(body) as { message?: string | string[] };
+      message = Array.isArray(parsed.message) ? parsed.message.join(" ") : parsed.message ?? body;
+    } catch {
+      // A API pode responder texto simples em falhas de infraestrutura.
+    }
     throw new Error(message || `A API respondeu com status ${response.status}.`);
   }
 
@@ -166,6 +174,10 @@ async function uploadReferencePwf(file: File): Promise<ReferencePwf> {
       name: file.name,
       sizeBytes: file.size,
       uploadedAt: new Date().toISOString(),
+      status: "valid",
+      anaredeVersion: "não analisada no modo demonstração",
+      compatibility: "unverified",
+      warnings: ["O modo demonstração não envia nem interpreta os bytes do PWF."],
     };
   }
 
@@ -177,8 +189,16 @@ async function uploadReferencePwf(file: File): Promise<ReferencePwf> {
   });
 }
 
+async function getPwfGenerationTargets(referencePwfId: string): Promise<PwfGenerationTarget[]> {
+  const result = await requestJson<{ items: PwfGenerationTarget[] }>(
+    `/pwf/reference-cases/${referencePwfId}/generation-targets`,
+  );
+  return result.items;
+}
+
 export const climagridApi = {
   processScenario,
   uploadReferencePwf,
+  getPwfGenerationTargets,
   exportPwf,
 };

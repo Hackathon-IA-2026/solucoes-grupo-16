@@ -49,6 +49,45 @@ export interface ReferencePwf {
   name: string;
   sizeBytes: number;
   uploadedAt: string;
+  status?: "valid";
+  sha256?: string;
+  anaredeVersion?: string;
+  compatibility?: "supported" | "unverified";
+  encoding?: "latin1";
+  lineEnding?: "CRLF" | "LF" | "MIXED" | "NONE";
+  title?: string;
+  studyYear?: number;
+  busCount?: number;
+  generatorBusCount?: number;
+  generatorGroupCount?: number;
+  blocks?: string[];
+  warnings?: string[];
+}
+
+export interface PwfGeneratorGroup {
+  busNumber: number;
+  groupNumber: number;
+  automaticMode: boolean;
+  status: "on" | "off";
+  units: number;
+  unitsOnline: number;
+  activeGenerationPerUnitMw: number;
+  mechanicalLimitPerUnitMw?: number;
+  activeMinimumPerUnitMw?: number;
+}
+
+export interface PwfGenerationTarget {
+  kind: "bus";
+  busNumber: number;
+  busName: string;
+  busType: 0 | 1 | 2 | 3;
+  area?: number;
+  baseVoltageKv?: number;
+  activeGenerationMw: number;
+  activeGenerationMinimumMw?: number;
+  activeGenerationMaximumMw?: number;
+  editable: boolean;
+  generatorGroups: PwfGeneratorGroup[];
 }
 
 export interface StudyDraft {

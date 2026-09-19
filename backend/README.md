@@ -1,3 +1,52 @@
+# ClimaGrid — backend
+
+API NestJS do ClimaGrid. O primeiro módulo funcional recebe casos de referência
+PWF, preserva o arquivo original, interpreta os blocos elétricos necessários e
+expõe os alvos de geração encontrados.
+
+## API PWF
+
+```http
+POST /pwf/reference-cases
+Content-Type: multipart/form-data
+Campo: file
+```
+
+O upload aceita arquivos de até 25 MB. O arquivo original é salvo de forma
+imutável, acompanhado de metadados, SHA-256 e um índice interpretado. Por
+padrão, os dados ficam em `data/pwf`; a variável `PWF_STORAGE_ROOT` permite
+trocar o diretório.
+
+```http
+GET /pwf/reference-cases/:id
+GET /pwf/reference-cases/:id/generation-targets
+```
+
+O parser suporta estruturalmente `TITU`, `DBAR`, `DGBT`, `DGER` e `DGEI`. A
+versão homologada nesta etapa é ANAREDE 12.03.04. Outras versões podem ser
+interpretadas, mas são devolvidas como `unverified`.
+
+## Execução local
+
+```bash
+npm install
+npm run start:dev
+```
+
+A API inicia por padrão em `http://localhost:3333` e aceita o frontend em
+`http://localhost:3000`.
+
+## Verificação
+
+```bash
+npm run lint
+npm run build
+npm test
+npm run test:e2e
+```
+
+---
+
 <p align="center">
   <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
 </p>

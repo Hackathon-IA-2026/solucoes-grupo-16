@@ -101,9 +101,26 @@ export default function BusMappingPage() {
             <label className="field-label" htmlFor="reference-pwf">Caso base ANAREDE (.pwf)</label>
             <input ref={pwfInputRef} id="reference-pwf" type="file" accept=".pwf" className="sr-only" onChange={(event) => void handleReferencePwf(event.target.files?.[0] ?? null)} />
             {state.study.referencePwf ? (
-              <div className="flex min-h-11 items-center justify-between rounded-lg border border-emerald-300/25 bg-emerald-300/5 px-3 py-2">
-                <div className="min-w-0"><p className="truncate text-sm font-medium text-on-surface">{state.study.referencePwf.name}</p><p className="text-[10px] text-on-surface-variant">{(state.study.referencePwf.sizeBytes / 1024).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} KB · recebido {new Date(state.study.referencePwf.uploadedAt).toLocaleString("pt-BR")}</p></div>
-                <button type="button" className="rounded-lg p-2 text-on-surface-variant hover:bg-surface-container hover:text-error" onClick={() => { setReferencePwf(null); if (pwfInputRef.current) pwfInputRef.current.value = ""; }} aria-label="Remover caso base"><Icon name="trash" /></button>
+              <div className="rounded-lg border border-emerald-300/25 bg-emerald-300/5 px-3 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-on-surface">{state.study.referencePwf.name}</p>
+                    <p className="mt-0.5 text-[10px] text-on-surface-variant">
+                      {(state.study.referencePwf.sizeBytes / 1024).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} KB
+                      {state.study.referencePwf.anaredeVersion ? ` · ANAREDE ${state.study.referencePwf.anaredeVersion}` : ""}
+                      {state.study.referencePwf.busCount !== undefined ? ` · ${state.study.referencePwf.busCount.toLocaleString("pt-BR")} barras` : ""}
+                    </p>
+                  </div>
+                  <button type="button" className="rounded-lg p-2 text-on-surface-variant hover:bg-surface-container hover:text-error" onClick={() => { setReferencePwf(null); if (pwfInputRef.current) pwfInputRef.current.value = ""; }} aria-label="Remover caso base"><Icon name="trash" /></button>
+                </div>
+                {state.study.referencePwf.title ? <p className="mt-2 text-xs text-on-surface">{state.study.referencePwf.title}</p> : null}
+                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-on-surface-variant">
+                  {state.study.referencePwf.studyYear ? <span>Ano do estudo: <strong className="text-on-surface">{state.study.referencePwf.studyYear}</strong></span> : null}
+                  {state.study.referencePwf.generatorBusCount !== undefined ? <span>Barras geradoras: <strong className="text-on-surface">{state.study.referencePwf.generatorBusCount.toLocaleString("pt-BR")}</strong></span> : null}
+                  {state.study.referencePwf.generatorGroupCount !== undefined ? <span>Grupos DGEI: <strong className="text-on-surface">{state.study.referencePwf.generatorGroupCount.toLocaleString("pt-BR")}</strong></span> : null}
+                  {state.study.referencePwf.lineEnding ? <span>{state.study.referencePwf.encoding ?? "codificação desconhecida"} · {state.study.referencePwf.lineEnding}</span> : null}
+                </div>
+                {state.study.referencePwf.warnings?.map((warning) => <p key={warning} className="mt-2 text-[10px] text-amber-200">{warning}</p>)}
               </div>
             ) : (
               <label htmlFor="reference-pwf" className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-secondary/50 px-3 py-2 text-sm font-medium text-secondary hover:border-secondary hover:bg-secondary/5"><Icon name="upload" className="h-4 w-4" />{isUploading ? "Enviando…" : "Selecionar caso base"}</label>
