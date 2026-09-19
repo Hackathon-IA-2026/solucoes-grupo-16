@@ -52,16 +52,16 @@ export default function GenerationEstimatesPage() {
   }
 
   if (!isHydrated) {
-    return <AppShell><div className="h-80 animate-pulse rounded-2xl bg-surface-container-low" /></AppShell>;
+    return <AppShell><div className="h-80 animate-pulse rounded-2xl bg-sidebar-bg" /></AppShell>;
   }
 
   if (!state.climateScenario || state.estimates.length === 0) {
     return (
       <AppShell>
         <div className="mx-auto flex min-h-[55vh] max-w-xl flex-col items-center justify-center text-center">
-          <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary/10 text-secondary"><Icon name="wind" className="h-7 w-7" /></span>
+          <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent-blue/10 text-accent-blue"><Icon name="wind" className="h-7 w-7" /></span>
           <h1 className="mt-5 text-2xl font-semibold">Nenhum cenário processado</h1>
-          <p className="mt-2 text-sm leading-6 text-on-surface-variant">Defina os dados climáticos da etapa 1 para solicitar as estimativas de geração por usina.</p>
+          <p className="mt-2 text-sm leading-6 text-text-secondary">Defina os dados climáticos da etapa 1 para solicitar as estimativas de geração por usina.</p>
           <Link href="/" className="button-primary mt-6"><Icon name="arrow-left" /> Ir para entrada climática</Link>
         </div>
       </AppShell>
@@ -75,7 +75,7 @@ export default function GenerationEstimatesPage() {
           eyebrow="Etapa 2 de 4 · Geração estimada"
           title="Selecione as usinas do estudo"
           description="Revise a geração prevista e o intervalo de confiança retornados pelo modelo. Somente as usinas selecionadas seguirão para o mapeamento elétrico."
-          aside={<div className="rounded-xl bg-surface-container-lowest px-4 py-3 text-right"><p className="text-[10px] font-semibold uppercase tracking-wider text-outline">Selecionadas</p><p className="mt-1 text-xl font-semibold text-secondary">{state.selectedPlantIds.length} de {state.estimates.length}</p></div>}
+          aside={<div className="rounded-2xl bg-card-bg px-4 py-3 text-right"><p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">Selecionadas</p><p className="mt-1 text-xl font-semibold text-accent-blue">{state.selectedPlantIds.length} de {state.estimates.length}</p></div>}
         />
 
         {runtimeConfig.isDemoMode ? <Notice tone="warning" title="Resultados simulados">Os valores desta tabela são uma massa de demonstração do frontend, não uma saída do modelo preditivo da equipe.</Notice> : null}
@@ -87,10 +87,10 @@ export default function GenerationEstimatesPage() {
           <Metric label="Fonte do cenário" value={state.climateScenario.source === "historical" ? "ERA5 + ONS" : "Upload"} detail={state.climateScenario.snapshotDate ? `snapshot ${state.climateScenario.snapshotDate}` : state.climateScenario.fileName ?? "arquivo do usuário"} />
         </section>
 
-        <section className="overflow-hidden rounded-2xl border border-outline-variant/50 bg-surface-container-low shadow-sm">
-          <div className="flex flex-col gap-3 border-b border-outline-variant/40 p-4 lg:flex-row lg:items-center lg:justify-between">
+        <section className="overflow-hidden rounded-2xl border border-neutral-900/50 bg-sidebar-bg shadow-card">
+          <div className="flex flex-col gap-3 border-b border-neutral-900/40 p-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="relative min-w-0 flex-1 lg:max-w-lg">
-              <Icon name="search" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-outline" />
+              <Icon name="search" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
               <input className="field-input pl-10" placeholder="Buscar por nome ou ID ONS" value={query} onChange={(event) => setQuery(event.target.value)} />
             </div>
             <div className="flex flex-col gap-3 sm:flex-row">
@@ -109,7 +109,7 @@ export default function GenerationEstimatesPage() {
 
           <div className="overflow-x-auto">
             <table className="w-full min-w-[980px] border-collapse text-left">
-              <thead className="bg-surface-container-lowest text-[10px] uppercase tracking-wider text-outline">
+              <thead className="bg-card-bg text-[10px] uppercase tracking-wider text-text-muted">
                 <tr>
                   <th className="w-12 px-4 py-3"><input type="checkbox" checked={allFilteredSelected} onChange={toggleVisible} aria-label="Selecionar usinas visíveis" /></th>
                   <th className="px-3 py-3">Usina</th>
@@ -121,22 +121,22 @@ export default function GenerationEstimatesPage() {
                   <th className="px-4 py-3">Sinal de risco</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-outline-variant/30">
+              <tbody className="divide-y divide-neutral-800/30">
                 {filteredEstimates.map((plant) => (
-                  <tr key={plant.id} className={`transition-colors hover:bg-surface-container ${selectedSet.has(plant.id) ? "bg-primary-container/5" : ""}`}>
+                  <tr key={plant.id} className={`transition-colors hover:bg-neutral-900 ${selectedSet.has(plant.id) ? "bg-accent-blue/5" : ""}`}>
                     <td className="px-4 py-4"><input type="checkbox" checked={selectedSet.has(plant.id)} onChange={() => togglePlant(plant.id)} aria-label={`Selecionar ${plant.name}`} /></td>
-                    <td className="px-3 py-4"><p className="text-sm font-medium text-on-surface">{plant.name}</p><p className="mt-0.5 font-mono text-[10px] text-outline">{plant.onsId}</p></td>
-                    <td className="px-3 py-4 text-sm text-on-surface-variant">{plant.state}</td>
-                    <td className="px-3 py-4 text-right font-mono text-sm text-on-surface-variant">{plant.installedCapacityMw.toLocaleString("pt-BR")} MW</td>
-                    <td className="px-3 py-4 text-right font-mono text-sm font-semibold text-secondary">{plant.estimatedGenerationMw.toLocaleString("pt-BR")} MW</td>
-                    <td className="px-3 py-4 text-right font-mono text-xs text-on-surface-variant">{plant.confidenceLowMw.toLocaleString("pt-BR")}–{plant.confidenceHighMw.toLocaleString("pt-BR")} MW</td>
-                    <td className="px-3 py-4 text-right font-mono text-sm text-on-surface-variant">{plant.historicalAvailabilityPercent.toLocaleString("pt-BR")}%</td>
+                    <td className="px-3 py-4"><p className="text-sm font-medium text-text-primary">{plant.name}</p><p className="mt-0.5 font-mono text-[10px] text-text-muted">{plant.onsId}</p></td>
+                    <td className="px-3 py-4 text-sm text-text-secondary">{plant.state}</td>
+                    <td className="px-3 py-4 text-right font-mono text-sm text-text-secondary">{plant.installedCapacityMw.toLocaleString("pt-BR")} MW</td>
+                    <td className="px-3 py-4 text-right font-mono text-sm font-semibold text-accent-blue">{plant.estimatedGenerationMw.toLocaleString("pt-BR")} MW</td>
+                    <td className="px-3 py-4 text-right font-mono text-xs text-text-secondary">{plant.confidenceLowMw.toLocaleString("pt-BR")}–{plant.confidenceHighMw.toLocaleString("pt-BR")} MW</td>
+                    <td className="px-3 py-4 text-right font-mono text-sm text-text-secondary">{plant.historicalAvailabilityPercent.toLocaleString("pt-BR")}%</td>
                     <td className="px-4 py-4"><RiskBadge level={plant.riskLevel} reason={plant.probableReason} /></td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            {filteredEstimates.length === 0 ? <div className="p-10 text-center text-sm text-on-surface-variant">Nenhuma usina corresponde aos filtros.</div> : null}
+            {filteredEstimates.length === 0 ? <div className="p-10 text-center text-sm text-text-secondary">Nenhuma usina corresponde aos filtros.</div> : null}
           </div>
         </section>
 
@@ -152,10 +152,10 @@ export default function GenerationEstimatesPage() {
 }
 
 function Metric({ label, value, detail }: { label: string; value: string; detail: string }) {
-  return <div className="rounded-xl border border-outline-variant/40 bg-surface-container-low p-4"><p className="text-[10px] font-semibold uppercase tracking-wider text-outline">{label}</p><p className="mt-2 text-xl font-semibold text-on-surface">{value}</p><p className="mt-1 truncate text-xs text-on-surface-variant">{detail}</p></div>;
+  return <div className="rounded-2xl border border-neutral-900/40 bg-sidebar-bg p-4"><p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">{label}</p><p className="mt-2 text-xl font-semibold text-text-primary">{value}</p><p className="mt-1 truncate text-xs text-text-secondary">{detail}</p></div>;
 }
 
 function RiskBadge({ level, reason }: { level: RiskLevel; reason: CurtailmentReason }) {
-  const classes = level === "high" ? "bg-error/10 text-error" : level === "medium" ? "bg-amber-300/10 text-amber-200" : "bg-emerald-300/10 text-emerald-200";
+  const classes = level === "high" ? "bg-overdue/10 text-overdue" : level === "medium" ? "bg-yellow-500/10 text-yellow-500" : "bg-paid/10 text-paid";
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold ${classes}`}>{reason === "NONE" ? reasonLabels.NONE : `${reason} · ${reasonLabels[reason]}`}</span>;
 }

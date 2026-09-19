@@ -79,7 +79,7 @@ export default function PwfExportPage() {
   }
 
   if (!isHydrated) {
-    return <AppShell><div className="h-80 animate-pulse rounded-2xl bg-surface-container-low" /></AppShell>;
+    return <AppShell><div className="h-80 animate-pulse rounded-2xl bg-sidebar-bg" /></AppShell>;
   }
 
   return (
@@ -89,7 +89,7 @@ export default function PwfExportPage() {
           eyebrow="Etapa 4 de 4 · Exportação e risco"
           title="Revise o cenário antes de gerar o PWF"
           description="Confira o de-para, os sinais estatísticos de curtailment e a rastreabilidade. O arquivo final altera somente a geração das barras mapeadas no caso base."
-          aside={<span className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold ${readiness.isReady ? "border-emerald-300/30 bg-emerald-300/10 text-emerald-200" : "border-amber-300/30 bg-amber-300/10 text-amber-200"}`}><span className={`h-2 w-2 rounded-full ${readiness.isReady ? "bg-emerald-300" : "bg-amber-300"}`} />{readiness.isReady ? "Pronto para exportar" : "Configuração incompleta"}</span>}
+          aside={<span className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold ${readiness.isReady ? "border-emerald-300/30 bg-paid/10 text-paid" : "border-amber-300/30 bg-yellow-500/10 text-yellow-500"}`}><span className={`h-2 w-2 rounded-full ${readiness.isReady ? "bg-emerald-300" : "bg-amber-300"}`} />{readiness.isReady ? "Pronto para exportar" : "Configuração incompleta"}</span>}
         />
 
         {runtimeConfig.isDemoMode ? <Notice tone="warning" title="Exportação sem validade técnica">No modo demonstração, o download será um arquivo-texto de conferência, identificado como inválido para o ANAREDE. O PWF real depende do writer do backend e de um caso base validado.</Notice> : null}
@@ -108,40 +108,40 @@ export default function PwfExportPage() {
         </section>
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.55fr)]">
-          <section className="overflow-hidden rounded-2xl border border-outline-variant/50 bg-surface-container-low shadow-sm">
-            <div className="border-b border-outline-variant/40 p-5"><h2 className="font-semibold text-on-surface">Usinas, barras e leitura de risco</h2><p className="mt-1 text-sm text-on-surface-variant">A classificação não substitui a análise elétrica.</p></div>
+          <section className="overflow-hidden rounded-2xl border border-neutral-900/50 bg-sidebar-bg shadow-card">
+            <div className="border-b border-neutral-900/40 p-5"><h2 className="font-semibold text-text-primary">Usinas, barras e leitura de risco</h2><p className="mt-1 text-sm text-text-secondary">A classificação não substitui a análise elétrica.</p></div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[780px] border-collapse text-left">
-                <thead className="bg-surface-container-lowest text-[10px] uppercase tracking-wider text-outline"><tr><th className="px-5 py-3">Usina</th><th className="px-3 py-3">Barra</th><th className="px-3 py-3 text-right">Geração</th><th className="px-3 py-3">Motivo provável</th><th className="px-5 py-3">Validação</th></tr></thead>
-                <tbody className="divide-y divide-outline-variant/30">
+                <thead className="bg-card-bg text-[10px] uppercase tracking-wider text-text-muted"><tr><th className="px-5 py-3">Usina</th><th className="px-3 py-3">Barra</th><th className="px-3 py-3 text-right">Geração</th><th className="px-3 py-3">Motivo provável</th><th className="px-5 py-3">Validação</th></tr></thead>
+                <tbody className="divide-y divide-neutral-800/30">
                   {selectedPlants.map((plant) => {
                     const mapping = state.study.mappings[plant.id];
                     return (
                       <tr key={plant.id}>
-                        <td className="px-5 py-4"><p className="text-sm font-medium text-on-surface">{plant.name}</p><p className="mt-0.5 font-mono text-[10px] text-outline">{plant.onsId}</p></td>
-                        <td className="px-3 py-4"><p className="font-mono text-sm text-on-surface">{mapping?.busNumber || "—"}</p><p className="text-[10px] text-outline">{mapping ? `${mapping.busName} · ${mapping.nominalVoltageKv} kV` : "não mapeada"}</p></td>
-                        <td className="px-3 py-4 text-right font-mono text-sm text-secondary">{plant.estimatedGenerationMw.toLocaleString("pt-BR")} MW</td>
+                        <td className="px-5 py-4"><p className="text-sm font-medium text-text-primary">{plant.name}</p><p className="mt-0.5 font-mono text-[10px] text-text-muted">{plant.onsId}</p></td>
+                        <td className="px-3 py-4"><p className="font-mono text-sm text-text-primary">{mapping?.busNumber || "—"}</p><p className="text-[10px] text-text-muted">{mapping ? `${mapping.busName} · ${mapping.nominalVoltageKv} kV` : "não mapeada"}</p></td>
+                        <td className="px-3 py-4 text-right font-mono text-sm text-accent-blue">{plant.estimatedGenerationMw.toLocaleString("pt-BR")} MW</td>
                         <td className="px-3 py-4"><ReasonBadge reason={plant.probableReason} /></td>
-                        <td className="px-5 py-4 text-xs text-on-surface-variant">{plant.probableReason === "CNF" ? "Pendente do ANAREDE" : plant.probableReason === "NONE" ? "Sem alerta no modelo" : "Probabilidade do modelo"}</td>
+                        <td className="px-5 py-4 text-xs text-text-secondary">{plant.probableReason === "CNF" ? "Pendente do ANAREDE" : plant.probableReason === "NONE" ? "Sem alerta no modelo" : "Probabilidade do modelo"}</td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
-              {selectedPlants.length === 0 ? <div className="p-8 text-center text-sm text-on-surface-variant">Nenhuma usina selecionada.</div> : null}
+              {selectedPlants.length === 0 ? <div className="p-8 text-center text-sm text-text-secondary">Nenhuma usina selecionada.</div> : null}
             </div>
           </section>
 
           <aside className="space-y-5">
-            <section className="rounded-2xl border border-outline-variant/50 bg-surface-container-low p-5 shadow-sm">
-              <h2 className="font-semibold text-on-surface">Categorias ONS usadas</h2>
+            <section className="rounded-2xl border border-neutral-900/50 bg-sidebar-bg p-5 shadow-card">
+              <h2 className="font-semibold text-text-primary">Categorias ONS usadas</h2>
               <div className="mt-4 space-y-4">
-                {(Object.entries(categoryDescriptions) as Array<[Exclude<CurtailmentReason, "NONE">, string]>).map(([code, description]) => <div key={code} className="flex gap-3"><span className="flex h-7 w-10 shrink-0 items-center justify-center rounded bg-surface-container-high font-mono text-[10px] font-bold text-secondary">{code}</span><p className="text-xs leading-5 text-on-surface-variant">{description}</p></div>)}
+                {(Object.entries(categoryDescriptions) as Array<[Exclude<CurtailmentReason, "NONE">, string]>).map(([code, description]) => <div key={code} className="flex gap-3"><span className="flex h-7 w-10 shrink-0 items-center justify-center rounded bg-neutral-800 font-mono text-[10px] font-bold text-accent-blue">{code}</span><p className="text-xs leading-5 text-text-secondary">{description}</p></div>)}
               </div>
             </section>
 
-            <section className="rounded-2xl border border-outline-variant/50 bg-surface-container-low p-5 shadow-sm">
-              <h2 className="font-semibold text-on-surface">Rastreabilidade preparada</h2>
+            <section className="rounded-2xl border border-neutral-900/50 bg-sidebar-bg p-5 shadow-card">
+              <h2 className="font-semibold text-text-primary">Rastreabilidade preparada</h2>
               <dl className="mt-4 space-y-3 text-xs">
                 <TraceRow label="Cenário" value={state.study.name || "—"} />
                 <TraceRow label="Dados" value={state.climateScenario?.snapshotDate ?? state.climateScenario?.fileName ?? "—"} />
@@ -155,8 +155,8 @@ export default function PwfExportPage() {
         {exportError ? <Notice tone="error" title="Falha na exportação">{exportError}</Notice> : null}
         {exportResult ? <Notice tone="success" title="Arquivo gerado"><strong>{exportResult.filename}</strong> foi baixado em {new Date(exportResult.generatedAt).toLocaleString("pt-BR")}. Modelo: {exportResult.modelVersion}; dados: {exportResult.dataVersion}.</Notice> : null}
 
-        <section className="flex flex-col gap-4 rounded-2xl border border-outline-variant/50 bg-surface-container-low p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-6">
-          <div><h2 className="font-semibold text-on-surface">{runtimeConfig.isDemoMode ? "Gerar artefato de demonstração" : "Gerar arquivo PWF"}</h2><p className="mt-1 text-sm text-on-surface-variant">{runtimeConfig.isDemoMode ? "Permite testar o download sem se passar por um PWF válido." : "A API preservará o caso base e alterará somente as barras mapeadas."}</p></div>
+        <section className="flex flex-col gap-4 rounded-2xl border border-neutral-900/50 bg-sidebar-bg p-5 shadow-card sm:flex-row sm:items-center sm:justify-between sm:p-6">
+          <div><h2 className="font-semibold text-text-primary">{runtimeConfig.isDemoMode ? "Gerar artefato de demonstração" : "Gerar arquivo PWF"}</h2><p className="mt-1 text-sm text-text-secondary">{runtimeConfig.isDemoMode ? "Permite testar o download sem se passar por um PWF válido." : "A API preservará o caso base e alterará somente as barras mapeadas."}</p></div>
           <button type="button" disabled={!readiness.isReady || isExporting} onClick={() => void handleExport()} className="button-primary shrink-0"><Icon name="download" />{isExporting ? "Gerando…" : runtimeConfig.isDemoMode ? "Baixar demonstração" : "Gerar e baixar PWF"}</button>
         </section>
 
@@ -167,14 +167,14 @@ export default function PwfExportPage() {
 }
 
 function SummaryCard({ label, value, detail }: { label: string; value: string; detail: string }) {
-  return <div className="rounded-xl border border-outline-variant/40 bg-surface-container-low p-4"><p className="text-[10px] font-semibold uppercase tracking-wider text-outline">{label}</p><p className="mt-2 truncate text-xl font-semibold text-on-surface">{value}</p><p className="mt-1 truncate text-xs text-on-surface-variant">{detail}</p></div>;
+  return <div className="rounded-2xl border border-neutral-900/40 bg-sidebar-bg p-4"><p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">{label}</p><p className="mt-2 truncate text-xl font-semibold text-text-primary">{value}</p><p className="mt-1 truncate text-xs text-text-secondary">{detail}</p></div>;
 }
 
 function ReasonBadge({ reason }: { reason: CurtailmentReason }) {
-  const classes = reason === "NONE" ? "bg-emerald-300/10 text-emerald-200" : reason === "CNF" ? "bg-amber-300/10 text-amber-200" : "bg-secondary/10 text-secondary";
+  const classes = reason === "NONE" ? "bg-paid/10 text-paid" : reason === "CNF" ? "bg-yellow-500/10 text-yellow-500" : "bg-accent-blue/10 text-accent-blue";
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold ${classes}`}>{reason === "NONE" ? "Sem sinal" : reason}</span>;
 }
 
 function TraceRow({ label, value }: { label: string; value: string }) {
-  return <div className="flex items-start justify-between gap-4 border-b border-outline-variant/30 pb-3 last:border-0 last:pb-0"><dt className="text-on-surface-variant">{label}</dt><dd className="max-w-[65%] break-words text-right font-mono text-on-surface">{value}</dd></div>;
+  return <div className="flex items-start justify-between gap-4 border-b border-neutral-900/30 pb-3 last:border-0 last:pb-0"><dt className="text-text-secondary">{label}</dt><dd className="max-w-[65%] break-words text-right font-mono text-text-primary">{value}</dd></div>;
 }

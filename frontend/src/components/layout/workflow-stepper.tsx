@@ -22,7 +22,7 @@ export function WorkflowStepper() {
   ];
 
   return (
-    <div className="overflow-x-auto bg-surface-container-low px-4 sm:px-6 lg:px-8">
+    <div className="overflow-x-auto bg-sidebar-bg px-4 sm:px-6 lg:px-8">
       <nav className="mx-auto flex min-w-[620px] max-w-5xl items-center py-2" aria-label="Progresso do estudo">
         {workflowSteps.map((step, index) => {
           const isCurrent = index === currentStepIndex;
@@ -33,8 +33,8 @@ export function WorkflowStepper() {
                 href={step.href} 
                 className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs transition-colors ${
                   isCurrent
-                    ? "bg-primary-container text-on-primary-container font-semibold"
-                    : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+                    ? "bg-accent-blue text-white font-semibold"
+                    : "text-text-secondary hover:bg-neutral-800 hover:text-text-primary"
                 }`}
                 aria-current={isCurrent ? "step" : undefined}
               >
@@ -42,15 +42,15 @@ export function WorkflowStepper() {
                   isCurrent
                     ? "bg-white/15 text-white"
                     : completed[index]
-                      ? "bg-emerald-300/15 text-emerald-200"
-                      : "bg-surface-variant text-outline"
+                      ? "bg-emerald-300/15 text-paid"
+                      : "bg-neutral-800 text-text-muted"
                 }`}>
                   {completed[index] ? "✓" : index + 1}
                 </span>
                 <span className="whitespace-nowrap">{step.shortLabel}</span>
               </Link>
               {index < workflowSteps.length - 1 && (
-                <div className={`mx-2 h-px flex-1 ${completed[index] ? "bg-emerald-300/40" : "bg-outline-variant"}`} />
+                <div className={`mx-2 h-px flex-1 ${completed[index] ? "bg-emerald-300/40" : "bg-neutral-800"}`} />
               )}
             </div>
           );
