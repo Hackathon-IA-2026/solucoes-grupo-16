@@ -22,7 +22,7 @@ export function WorkflowStepper() {
   ];
 
   return (
-    <div className="overflow-x-auto bg-sidebar-bg px-4 sm:px-6 lg:px-8">
+    <div className="overflow-x-auto bg-card-bg px-4 sm:px-6 lg:px-8">
       <nav className="mx-auto flex min-w-[620px] max-w-5xl items-center py-2" aria-label="Progresso do estudo">
         {workflowSteps.map((step, index) => {
           const isCurrent = index === currentStepIndex;
