@@ -1,50 +1,58 @@
-import React from 'react';
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+"use client";
 
-const workflowSteps = [
-  { href: "/", label: "Entrada Climática", num: 1 },
-  { href: "/usinas-estimativas", label: "Usinas & MW", num: 2 },
-  { href: "/mapeamento-barras", label: "Mapeamento Barras", num: 3 },
-  { href: "/exportacao-pwf", label: "Exportação PWF & Risco", num: 4 },
-];
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useScenario } from "@/context/scenario-context";
+import { workflowSteps } from "@/lib/workflow";
 
 export function WorkflowStepper() {
   const pathname = usePathname();
+  const { state } = useScenario();
   const currentStepIndex = workflowSteps.findIndex(step => 
     step.href === "/" ? pathname === "/" : pathname.startsWith(step.href)
   );
+  const completed = [
+    Boolean(state.climateScenario),
+    state.selectedPlantIds.length > 0,
+    state.selectedPlantIds.length > 0 && state.selectedPlantIds.every((id) => {
+      const mapping = state.study.mappings[id];
+      return Boolean(mapping?.busNumber && mapping.busName && mapping.nominalVoltageKv && mapping.area);
+    }) && Boolean(state.study.referencePwf),
+    false,
+  ];
 
   return (
-    <div className="h-12 px-space-xl bg-surface-container-low flex items-center">
-      <nav className="flex items-center w-full justify-between gap-space-sm">
+    <div className="overflow-x-auto bg-surface-container-low px-4 sm:px-6 lg:px-8">
+      <nav className="mx-auto flex min-w-[620px] max-w-5xl items-center py-2" aria-label="Progresso do estudo">
         {workflowSteps.map((step, index) => {
-          const isActive = currentStepIndex !== -1 && index <= currentStepIndex;
+          const isCurrent = index === currentStepIndex;
           
           return (
-            <React.Fragment key={step.href}>
+            <div key={step.href} className="flex flex-1 items-center last:flex-none">
               <Link 
                 href={step.href} 
-                className={`flex items-center gap-space-sm px-space-md py-space-xs rounded-lg transition-all ${
-                  isActive 
-                    ? 'bg-primary-container text-on-primary-container font-medium' 
-                    : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
+                className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs transition-colors ${
+                  isCurrent
+                    ? "bg-primary-container text-on-primary-container font-semibold"
+                    : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
                 }`}
+                aria-current={isCurrent ? "step" : undefined}
               >
-                <span className={`w-5 h-5 rounded-full font-data-mono-sm text-data-mono-sm flex items-center justify-center ${
-                  isActive 
-                    ? 'bg-primary text-on-primary font-bold' 
-                    : 'bg-surface-variant text-on-surface'
+                <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ${
+                  isCurrent
+                    ? "bg-white/15 text-white"
+                    : completed[index]
+                      ? "bg-emerald-300/15 text-emerald-200"
+                      : "bg-surface-variant text-outline"
                 }`}>
-                  {step.num}
+                  {completed[index] ? "✓" : index + 1}
                 </span>
-                <span className="font-body-sm text-body-sm">{step.label}</span>
-                {isActive && <span className="material-symbols-outlined text-[16px] text-tertiary">check_circle</span>}
+                <span className="whitespace-nowrap">{step.shortLabel}</span>
               </Link>
               {index < workflowSteps.length - 1 && (
-                <div className="flex-1 h-[1px] bg-surface-variant mx-space-xs"></div>
+                <div className={`mx-2 h-px flex-1 ${completed[index] ? "bg-emerald-300/40" : "bg-outline-variant"}`} />
               )}
-            </React.Fragment>
+            </div>
           );
         })}
       </nav>

@@ -5,15 +5,15 @@ import { AppFooter } from './app-footer';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
-    <>
+    <div className="min-h-screen bg-surface text-on-surface">
       <Sidebar />
-      <div className="pl-64 flex flex-col min-h-screen">
+      <div className="flex min-h-screen flex-col lg:pl-64">
         <Topbar />
-        <main className="flex-1 pt-28 px-space-xl pb-space-xl w-full bg-surface flex flex-col">
-          {children}
+        <main className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col px-4 py-5 sm:px-6 sm:py-7 lg:px-8">
+          <div className="w-full">{children}</div>
         </main>
         <AppFooter />
       </div>
-    </>
+    </div>
   );
 }

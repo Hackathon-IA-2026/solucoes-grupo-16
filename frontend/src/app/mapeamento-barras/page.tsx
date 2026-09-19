@@ -1,124 +1,160 @@
-'use client';
+"use client";
 
-import React, { useState } from 'react';
-import { AppShell } from '@/components/layout/app-shell';
-import { MaterialSymbol } from '@/components/ui/material-symbol';
-import { MappingPageRibbon } from '@/components/features/bus-mapping/mapping-page-ribbon';
-import { ScenarioManager } from '@/components/features/bus-mapping/scenario-manager';
-import { MappingReadinessCard } from '@/components/features/bus-mapping/mapping-readiness-card';
-import { BusMappingTable } from '@/components/features/bus-mapping/bus-mapping-table';
-import { ElectricalSummaryGrid } from '@/components/features/bus-mapping/electrical-summary-grid';
-import { Drawer } from '@/components/ui/drawer';
+import { useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { AppShell } from "@/components/layout/app-shell";
+import { Icon } from "@/components/ui/icon";
+import { Notice } from "@/components/ui/notice";
+import { PageHeader } from "@/components/ui/page-header";
+import { useScenario } from "@/context/scenario-context";
+import { climagridApi, runtimeConfig } from "@/lib/api";
+import type { PlantBusMapping } from "@/types/climagrid";
 
-export default function MapeamentoBarrasPage() {
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [isAutoMatching, setIsAutoMatching] = useState(false);
-  const [isMatchComplete, setIsMatchComplete] = useState(false);
-  const [isCopied, setIsCopied] = useState(false);
+const requiredMappingFields: Array<keyof Omit<PlantBusMapping, "plantId">> = ["busNumber", "busName", "nominalVoltageKv", "area"];
 
-  const handleAutoMatch = () => {
-    setIsAutoMatching(true);
-    setTimeout(() => {
-      setIsAutoMatching(false);
-      setIsMatchComplete(true);
-      setTimeout(() => setIsMatchComplete(false), 3000);
-    }, 1200);
-  };
+export default function BusMappingPage() {
+  const router = useRouter();
+  const pwfInputRef = useRef<HTMLInputElement>(null);
+  const { state, isHydrated, setReferencePwf, setStudyName, updateMapping } = useScenario();
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
-  const handleCopy = () => {
-    setIsCopied(true);
-    setTimeout(() => setIsCopied(false), 2000);
-  };
+  const selectedPlants = useMemo(
+    () => state.estimates.filter((plant) => state.selectedPlantIds.includes(plant.id)),
+    [state.estimates, state.selectedPlantIds],
+  );
+
+  const duplicateBuses = useMemo(() => {
+    const counts = new Map<string, number>();
+    selectedPlants.forEach((plant) => {
+      const busNumber = state.study.mappings[plant.id]?.busNumber.trim();
+      if (busNumber) counts.set(busNumber, (counts.get(busNumber) ?? 0) + 1);
+    });
+    return new Set(Array.from(counts.entries()).filter(([, count]) => count > 1).map(([number]) => number));
+  }, [selectedPlants, state.study.mappings]);
+
+  const mappedCount = selectedPlants.filter((plant) => {
+    const mapping = state.study.mappings[plant.id];
+    return mapping && requiredMappingFields.every((field) => mapping[field].trim().length > 0) && !duplicateBuses.has(mapping.busNumber.trim());
+  }).length;
+  const isReady = selectedPlants.length > 0 && mappedCount === selectedPlants.length && Boolean(state.study.name.trim()) && Boolean(state.study.referencePwf);
+
+  async function handleReferencePwf(file: File | null) {
+    setUploadError(null);
+    if (!file) {
+      setReferencePwf(null);
+      return;
+    }
+    if (!file.name.toLowerCase().endsWith(".pwf")) {
+      setUploadError("Selecione um arquivo com extensão .pwf.");
+      if (pwfInputRef.current) pwfInputRef.current.value = "";
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      setReferencePwf(await climagridApi.uploadReferencePwf(file));
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : "Não foi possível enviar o caso base.");
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
+  if (!isHydrated) {
+    return <AppShell><div className="h-80 animate-pulse rounded-2xl bg-surface-container-low" /></AppShell>;
+  }
+
+  if (selectedPlants.length === 0) {
+    return (
+      <AppShell>
+        <div className="mx-auto flex min-h-[55vh] max-w-xl flex-col items-center justify-center text-center">
+          <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary/10 text-secondary"><Icon name="network" className="h-7 w-7" /></span>
+          <h1 className="mt-5 text-2xl font-semibold">Nenhuma usina selecionada</h1>
+          <p className="mt-2 text-sm leading-6 text-on-surface-variant">Selecione ao menos uma usina na etapa anterior antes de criar o de-para elétrico.</p>
+          <Link href="/usinas-estimativas" className="button-primary mt-6"><Icon name="arrow-left" /> Voltar às usinas</Link>
+        </div>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>
-      <div className="flex flex-col w-full">
-        {/* Dynamic Notification Bar / Context Ribbon */}
-        <MappingPageRibbon 
-          onOpenPreview={() => setIsDrawerOpen(true)}
-          onAutoMatch={handleAutoMatch}
-          isAutoMatching={isAutoMatching}
-          isMatchComplete={isMatchComplete}
+      <div className="space-y-6">
+        <PageHeader
+          eyebrow="Etapa 3 de 4 · Mapeamento usina → barra"
+          title="Associe manualmente as barras do estudo"
+          description="Informe a barra correspondente a cada usina e carregue o caso base PWF. O MVP não infere esse vínculo automaticamente."
+          aside={<div className="min-w-44 rounded-xl bg-surface-container-lowest px-4 py-3"><div className="flex items-center justify-between text-xs"><span className="text-on-surface-variant">Completude</span><strong className="text-secondary">{mappedCount}/{selectedPlants.length}</strong></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-variant"><div className="h-full bg-secondary transition-all" style={{ width: `${(mappedCount / selectedPlants.length) * 100}%` }} /></div></div>}
         />
 
-        {/* Scenario Toolbar & Progress Rail */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-space-lg mb-space-lg">
-          <ScenarioManager />
-          <MappingReadinessCard />
+        <Notice title="Regra do MVP">Cada barra pode receber apenas uma usina por cenário. A exportação será liberada quando todas as usinas tiverem número, nome, tensão e área, além de um caso base PWF.</Notice>
+
+        <section className="grid gap-5 rounded-2xl border border-outline-variant/50 bg-surface-container-low p-5 shadow-sm lg:grid-cols-2 lg:p-6">
+          <div>
+            <label className="field-label" htmlFor="study-name">Nome do cenário de estudo</label>
+            <input id="study-name" className="field-input" placeholder="Ex.: Ventos fortes — agosto/2026" value={state.study.name} onChange={(event) => setStudyName(event.target.value)} />
+            <p className="mt-2 text-xs text-on-surface-variant">O nome será enviado no log de rastreabilidade da exportação.</p>
+          </div>
+          <div>
+            <label className="field-label" htmlFor="reference-pwf">Caso base ANAREDE (.pwf)</label>
+            <input ref={pwfInputRef} id="reference-pwf" type="file" accept=".pwf" className="sr-only" onChange={(event) => void handleReferencePwf(event.target.files?.[0] ?? null)} />
+            {state.study.referencePwf ? (
+              <div className="flex min-h-11 items-center justify-between rounded-lg border border-emerald-300/25 bg-emerald-300/5 px-3 py-2">
+                <div className="min-w-0"><p className="truncate text-sm font-medium text-on-surface">{state.study.referencePwf.name}</p><p className="text-[10px] text-on-surface-variant">{(state.study.referencePwf.sizeBytes / 1024).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} KB · recebido {new Date(state.study.referencePwf.uploadedAt).toLocaleString("pt-BR")}</p></div>
+                <button type="button" className="rounded-lg p-2 text-on-surface-variant hover:bg-surface-container hover:text-error" onClick={() => { setReferencePwf(null); if (pwfInputRef.current) pwfInputRef.current.value = ""; }} aria-label="Remover caso base"><Icon name="trash" /></button>
+              </div>
+            ) : (
+              <label htmlFor="reference-pwf" className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-secondary/50 px-3 py-2 text-sm font-medium text-secondary hover:border-secondary hover:bg-secondary/5"><Icon name="upload" className="h-4 w-4" />{isUploading ? "Enviando…" : "Selecionar caso base"}</label>
+            )}
+            {uploadError ? <p className="mt-2 text-xs text-error">{uploadError}</p> : null}
+            {runtimeConfig.isDemoMode && state.study.referencePwf ? <p className="mt-2 text-xs text-amber-200">No modo demonstração, apenas os metadados do arquivo ficam armazenados.</p> : null}
+          </div>
+        </section>
+
+        {duplicateBuses.size > 0 ? <Notice tone="error" title="Barra duplicada">A RN09 não permite mais de uma usina na mesma barra no MVP. Corrija: {Array.from(duplicateBuses).join(", ")}.</Notice> : null}
+
+        <section className="overflow-hidden rounded-2xl border border-outline-variant/50 bg-surface-container-low shadow-sm">
+          <div className="border-b border-outline-variant/40 p-5">
+            <h2 className="font-semibold text-on-surface">De-para elétrico</h2>
+            <p className="mt-1 text-sm text-on-surface-variant">Os campos abaixo serão convertidos pelo backend nos registros de geração do caso base.</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1080px] border-collapse text-left">
+              <thead className="bg-surface-container-lowest text-[10px] uppercase tracking-wider text-outline">
+                <tr><th className="px-5 py-3">Usina selecionada</th><th className="px-3 py-3">Geração</th><th className="px-3 py-3">Nº da barra</th><th className="px-3 py-3">Nome / apelido</th><th className="px-3 py-3">Tensão nominal</th><th className="px-3 py-3">Área</th><th className="px-5 py-3">Status</th></tr>
+              </thead>
+              <tbody className="divide-y divide-outline-variant/30">
+                {selectedPlants.map((plant) => {
+                  const mapping = state.study.mappings[plant.id] ?? { plantId: plant.id, busNumber: "", busName: "", nominalVoltageKv: "", area: "" };
+                  const hasAllFields = requiredMappingFields.every((field) => mapping[field].trim().length > 0);
+                  const isDuplicate = duplicateBuses.has(mapping.busNumber.trim());
+                  return (
+                    <tr key={plant.id} className="align-top">
+                      <td className="px-5 py-4"><p className="text-sm font-medium text-on-surface">{plant.name}</p><p className="mt-0.5 font-mono text-[10px] text-outline">{plant.onsId} · {plant.state}</p></td>
+                      <td className="px-3 py-4 font-mono text-sm text-secondary">{plant.estimatedGenerationMw.toLocaleString("pt-BR")} MW</td>
+                      <td className="px-3 py-3"><input className={`table-input ${isDuplicate ? "border-error" : ""}`} inputMode="numeric" placeholder="Ex.: 3412" value={mapping.busNumber} onChange={(event) => updateMapping(plant.id, { busNumber: event.target.value.replace(/\D/g, "") })} aria-label={`Número da barra de ${plant.name}`} />{isDuplicate ? <p className="mt-1 text-[10px] text-error">Já utilizada</p> : null}</td>
+                      <td className="px-3 py-3"><input className="table-input" placeholder="Ex.: CAETITÉ" value={mapping.busName} onChange={(event) => updateMapping(plant.id, { busName: event.target.value })} aria-label={`Nome da barra de ${plant.name}`} /></td>
+                      <td className="px-3 py-3"><select className="table-input" value={mapping.nominalVoltageKv} onChange={(event) => updateMapping(plant.id, { nominalVoltageKv: event.target.value })} aria-label={`Tensão da barra de ${plant.name}`}><option value="">Selecione</option>{[69, 138, 230, 500].map((voltage) => <option key={voltage} value={String(voltage)}>{voltage} kV</option>)}</select></td>
+                      <td className="px-3 py-3"><input className="table-input" placeholder="Ex.: 32" value={mapping.area} onChange={(event) => updateMapping(plant.id, { area: event.target.value })} aria-label={`Área da barra de ${plant.name}`} /></td>
+                      <td className="px-5 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold ${hasAllFields && !isDuplicate ? "bg-emerald-300/10 text-emerald-200" : "bg-amber-300/10 text-amber-200"}`}>{hasAllFields && !isDuplicate ? "Completo" : "Pendente"}</span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <Link href="/usinas-estimativas" className="button-secondary"><Icon name="arrow-left" /> Alterar seleção</Link>
+          <div className="text-right">
+            {!isReady ? <p className="mb-2 text-xs text-on-surface-variant">Preencha o cenário, o caso base e todos os mapeamentos.</p> : null}
+            <button type="button" disabled={!isReady} onClick={() => router.push("/exportacao-pwf")} className="button-primary">Revisar risco e exportação<Icon name="arrow-right" /></button>
+          </div>
         </div>
-
-        {/* Primary Work Area: The "De-Para" Bus Association Table */}
-        <BusMappingTable />
-
-        {/* Bento Telemetry Strip & Electrical Statistics Footer */}
-        <ElectricalSummaryGrid />
       </div>
-
-      {/* Shadcn Style Slide-Over Drawer / Sheet for PWF Output Preview */}
-      <Drawer
-        isOpen={isDrawerOpen}
-        onClose={() => setIsDrawerOpen(false)}
-        title="Sintaxe PWF: DBAR / DGER"
-        subtitle="Deck formatado em colunas ANAREDE/CEPEL"
-        icon="code"
-        footer={
-          <>
-            <div className="flex items-center gap-space-xs text-on-surface-variant font-label-sm text-label-sm">
-              <span className="w-2 h-2 rounded-full bg-tertiary"></span>
-              <span>Checksum: 0x88F2B</span>
-            </div>
-            <div className="flex items-center gap-space-sm">
-              <button 
-                className="px-space-md py-space-xs rounded bg-surface-container hover:bg-surface-container-high text-on-surface font-label-md text-label-md flex items-center gap-space-xs transition-colors"
-                onClick={handleCopy}
-              >
-                {isCopied ? (
-                  <>
-                    <MaterialSymbol icon="check" className="text-[16px] text-tertiary" />
-                    <span>Copiado!</span>
-                  </>
-                ) : (
-                  <>
-                    <MaterialSymbol icon="content_copy" className="text-[16px]" />
-                    <span>Copiar Cartões</span>
-                  </>
-                )}
-              </button>
-              <button className="px-space-md py-space-xs rounded bg-primary-container hover:bg-inverse-primary text-on-primary-container font-label-md text-label-md transition-colors">
-                Baixar .PWF
-              </button>
-            </div>
-          </>
-        }
-      >
-        <div className="p-space-sm rounded bg-surface-container-high/40 text-on-surface-variant mb-space-md">
-          <p className="font-label-sm text-label-sm uppercase">Colunas Oficiais: NUM(1-5), OPER(6), EST(7), TIP(8), GRU(9-10), NOME(11-22), V(25-28), ANG(29-32), PG(33-37), QG(38-42)</p>
-        </div>
-        <pre className="text-tertiary select-all">{`TITU
-ESTUDO ONS 2026/08 - CENARIO NOTURNO MAXIMO VENTO - EXP NE-SE
-DBAR
-(NUM)O E T GR (   NOME   )  V(KV)  ANG   PG(MW)  QG(MVAR) QM(MVAR)
- 3412 D   0 32 MOSSORO IV   500.0  -2.1  180.00   12.40   50.00
- 4520 D   0 44 MORRO CHAPEU 230.0  -4.5  120.50    5.10   35.00
- 8910 D   0 44 JUAZEIRO III 500.0  -1.8  210.00   18.20   60.00
- 6721 D   0 51 SAO JOAO PI  500.0  -3.2  475.00   32.00  120.00
- 7823 D   0 32 CAMPINA GD   500.0  -0.9  135.00    9.50   40.00
-99999
-DGER
-(NUM) (GL) (PMAX) (PMIN) (QMAX) (QMIN)
- 3412    1 180.00   0.00  50.00 -30.00
- 4520    1 120.50   0.00  35.00 -20.00
- 8910    1 210.00   0.00  60.00 -40.00
- 6721    1 475.00   0.00 120.00 -70.00
- 7823    1 135.00   0.00  40.00 -25.00
-99999
-DINC
-(DE ) (PARA) (NC) (XKM ) (RESIST) (REAC) (SUSCEP)
- 3412  8910   1   142.5   0.0120  0.0890   0.1420
- 4520  8910   1    98.2   0.0210  0.1140   0.0890
-99999
-FIM`}</pre>
-      </Drawer>
     </AppShell>
   );
 }

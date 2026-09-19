@@ -1,88 +1,59 @@
-import React from 'react';
-import Image from 'next/image';
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+"use client";
 
-const mainLinks = [
-  { href: "/", label: "Clima & Vento", icon: "air" },
-  { href: "/usinas-estimativas", label: "Parque & Usinas", icon: "wind_power" },
-  { href: "/mapeamento-barras", label: "Mapeamento Barras", icon: "hub" },
-  { href: "/exportacao-pwf", label: "Exportação PWF", icon: "file_save" },
-];
-
-const secondaryLinks = [
-  { href: "/telemetria", label: "Telemetria SIN", icon: "monitoring" },
-  { href: "/historico", label: "Histórico & ONS", icon: "history" },
-];
+import Image from "next/image";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { Icon } from "@/components/ui/icon";
+import { runtimeConfig } from "@/lib/api";
+import { workflowSteps } from "@/lib/workflow";
 
 export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="fixed left-0 top-0 h-full w-64 bg-surface-container-low z-50 flex flex-col justify-between shadow-[0_1px_8px_rgba(0,0,0,0.04)]">
-      <div className="flex flex-col">
-        <div className="h-16 px-space-lg flex flex-col justify-center gap-1 bg-surface-container-lowest">
-          <Image src="/logo.svg" alt="ClimaGrid Logo" width={190} height={35} priority style={{ width: 'auto', height: 'auto' }} />
+    <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col justify-between border-r border-outline-variant/50 bg-surface-container-low lg:flex">
+      <div>
+        <div className="flex h-20 items-center border-b border-outline-variant/40 bg-surface-container-lowest px-5">
+          <Image src="/logo.svg" alt="ClimaGrid" width={184} height={46} priority />
         </div>
-
-        <div className="px-space-md py-space-sm">
-          <div className="px-space-sm py-space-xs font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">
-            Workspace
-          </div>
-        </div>
-
-        <nav className="flex flex-col gap-space-xs px-space-md">
-          {mainLinks.map((link) => {
-            const isActive = link.href === "/" ? pathname === "/" : pathname.startsWith(link.href);
+        <div className="px-4 py-5">
+          <p className="px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-outline">Fluxo do estudo</p>
+          <nav className="mt-3 space-y-1" aria-label="Etapas do estudo">
+          {workflowSteps.map((step, index) => {
+            const isActive = step.href === "/" ? pathname === "/" : pathname.startsWith(step.href);
             return (
               <Link
-                key={link.href}
-                href={link.href}
-                className={`flex items-center gap-space-md px-space-md py-space-sm transition-all rounded-lg ${isActive
-                  ? 'bg-primary-container text-on-primary-container font-medium'
-                  : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
-                  }`}
+                key={step.href}
+                href={step.href}
+                className={`flex items-center gap-3 rounded-xl px-3 py-3 transition-colors ${
+                  isActive
+                    ? "bg-primary-container text-on-primary-container"
+                    : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+                }`}
               >
-                <span className="material-symbols-outlined text-[18px]">{link.icon}</span>
-                <span className="font-body-md text-body-md">{link.label}</span>
+                <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${isActive ? "bg-white/10" : "bg-surface-container"}`}>
+                  <Icon name={step.icon} className="h-4 w-4" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium">{index + 1}. {step.label}</span>
+                  <span className={`block truncate text-[11px] ${isActive ? "text-on-primary-container/75" : "text-outline"}`}>{step.description}</span>
+                </span>
               </Link>
-            )
+            );
           })}
-
-          <div className="my-space-sm h-px bg-surface-variant mx-space-md"></div>
-
-          {secondaryLinks.map((link) => {
-            const isActive = link.href === "/" ? pathname === "/" : pathname.startsWith(link.href);
-            return (
-              <Link
-                key={link.href}
-                href={link.href}
-                className={`flex items-center gap-space-md px-space-md py-space-sm transition-all rounded-lg ${isActive
-                  ? 'bg-primary-container text-on-primary-container font-medium'
-                  : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
-                  }`}
-              >
-                <span className="material-symbols-outlined text-[18px]">{link.icon}</span>
-                <span className="font-body-md text-body-md">{link.label}</span>
-              </Link>
-            )
-          })}
-        </nav>
+          </nav>
+        </div>
       </div>
-
-      <div className="p-space-md bg-surface-container-lowest m-space-md rounded-lg flex flex-col gap-space-xs">
-        <div className="flex items-center justify-between">
-          <span className="font-label-sm text-label-sm text-on-surface-variant uppercase">
-            Kernel ANAREDE
-          </span>
-          <span className="w-2 h-2 rounded-full bg-secondary"></span>
+      <div className="m-4 rounded-xl border border-outline-variant/50 bg-surface-container-lowest p-4">
+        <div className="flex items-center gap-2 text-xs font-semibold text-on-surface">
+          <span className={`h-2 w-2 rounded-full ${runtimeConfig.isDemoMode ? "bg-amber-300" : "bg-emerald-300"}`} />
+          {runtimeConfig.isDemoMode ? "Demonstração local" : "API configurada"}
         </div>
-        <span className="font-data-mono-sm text-data-mono-sm text-secondary">
-          v05.24 COMPATÍVEL
-        </span>
-        <span className="font-label-sm text-label-sm text-outline">
-          Deck ONS 2024/04 - Rev 2
-        </span>
+        <p className="mt-2 text-[11px] leading-4 text-outline">
+          {runtimeConfig.isDemoMode
+            ? "Os valores exibidos são fictícios e servem apenas para validar o fluxo do frontend."
+            : "Dados e arquivos serão solicitados ao backend configurado."}
+        </p>
       </div>
     </aside>
   );

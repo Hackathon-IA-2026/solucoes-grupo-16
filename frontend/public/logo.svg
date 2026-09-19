@@ -4,7 +4,7 @@
   <circle cx="18" cy="20" r="2.5" fill="#38BDF8"/>
   <path d="M8 26L28 26" stroke="#0284C7" stroke-width="1.5" stroke-dasharray="2 2"/>
   <path d="M18 12L18 28" stroke="#0284C7" stroke-width="1.5" stroke-dasharray="2 2"/>
-  <text x="42" y="25" fill="#0F172A" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="18" letter-spacing="-0.02em">Clima<tspan fill="#0284C7">Grid</tspan></text>
+  <text x="42" y="25" fill="#E2E8F0" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="18" letter-spacing="-0.02em">Clima<tspan fill="#38BDF8">Grid</tspan></text>
   <rect x="122" y="11" width="34" height="16" rx="4" fill="#E0F2FE"/>
   <text x="126" y="22" fill="#0369A1" font-family="Inter, system-ui, sans-serif" font-weight="600" font-size="9">ONS-IA</text>
 </svg>

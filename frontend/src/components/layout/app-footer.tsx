@@ -2,17 +2,9 @@ import React from 'react';
 
 export function AppFooter() {
   return (
-    <footer className="w-full bg-surface-container-lowest px-space-xl py-space-md flex flex-col md:flex-row items-center justify-between gap-space-sm mt-auto">
-      <div className="flex items-center gap-space-lg text-on-surface-variant">
-        <span className="font-label-sm text-label-sm uppercase tracking-wider">Conformidade Regulatória: ONS / CCEE Módulo 26</span>
-        <span className="font-label-sm text-label-sm text-outline">•</span>
-        <span className="font-label-sm text-label-sm uppercase tracking-wider">Formatos PWF / ANAREDE Oficial</span>
-      </div>
-      <div className="flex items-center gap-space-sm">
-        <span className="font-data-mono-sm text-data-mono-sm text-on-surface-variant">ClimaGrid Engine Core v3.8.4</span>
-        <span className="font-label-sm text-label-sm text-outline">|</span>
-        <span className="font-data-mono-sm text-data-mono-sm text-secondary">2025 SIN Analytics Corp</span>
-      </div>
+    <footer className="mt-auto flex w-full flex-col gap-1 border-t border-outline-variant/40 bg-surface-container-lowest px-5 py-4 text-xs text-on-surface-variant sm:flex-row sm:items-center sm:justify-between lg:px-8">
+      <span>ClimaGrid · MVP Hackathon IA COPPE 2026 · Equipe 16</span>
+      <span>O cálculo de fluxo de potência permanece no ANAREDE.</span>
     </footer>
   );
 }

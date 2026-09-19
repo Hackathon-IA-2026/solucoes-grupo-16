@@ -1,31 +1,21 @@
-import React from 'react';
-import { WorkflowStepper } from './workflow-stepper';
-import { SyncButton } from '@/components/ui/sync-button';
+"use client";
+
+import Image from "next/image";
+import { runtimeConfig } from "@/lib/api";
+import { WorkflowStepper } from "./workflow-stepper";
 
 export function Topbar() {
   return (
-    <header className="fixed top-0 left-64 right-0 h-28 bg-surface/90 backdrop-blur-xl z-40 flex flex-col justify-between shadow-[0_1px_8px_rgba(0,0,0,0.04)]">
-      <div className="h-16 px-space-xl flex items-center justify-between">
-        <div className="flex items-center gap-space-lg">
-          <div className="flex items-center gap-space-sm bg-surface-container-high px-space-md py-space-xs rounded-lg">
-            <span className="material-symbols-outlined text-secondary text-[18px]">share_location</span>
-            <span className="font-body-sm text-body-sm text-on-surface font-medium">SIN - Subsistema Nordeste ativo</span>
-            <span className="material-symbols-outlined text-on-surface-variant text-[16px]">expand_more</span>
-          </div>
-          <div className="hidden xl:flex items-center gap-space-xs bg-surface-container-low px-space-md py-space-xs rounded-lg">
-            <span className="w-2 h-2 rounded-full bg-tertiary animate-pulse"></span>
-            <span className="font-data-mono-sm text-data-mono-sm text-on-surface">IA Modelo v4.2 • ONS Base Conectada</span>
-          </div>
-          <SyncButton />
+    <header className="sticky top-0 z-30 border-b border-outline-variant/50 bg-surface/95 backdrop-blur-xl">
+      <div className="flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
+        <Image className="lg:hidden" src="/logo.svg" alt="ClimaGrid" width={150} height={38} priority />
+        <div className="hidden items-center gap-2 text-sm text-on-surface-variant lg:flex">
+          <span className="font-medium text-on-surface">Subsistema Nordeste</span>
+          <span aria-hidden="true">·</span>
+          <span>MVP eólico</span>
         </div>
-        <div className="flex items-center gap-space-lg">
-          <div className="hidden lg:flex flex-col items-end text-right">
-            <span className="font-body-sm text-body-sm text-on-surface font-medium">Eng. Carlos Meireles</span>
-            <span className="font-label-sm text-label-sm text-on-surface-variant">Planejamento Energético</span>
-          </div>
-          <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
-            <span className="material-symbols-outlined text-on-primary text-[18px]">person</span>
-          </div>
+        <div className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${runtimeConfig.isDemoMode ? "border-amber-300/30 bg-amber-300/10 text-amber-200" : "border-emerald-300/30 bg-emerald-300/10 text-emerald-200"}`}>
+          {runtimeConfig.isDemoMode ? "Modo demonstração" : "Backend conectado"}
         </div>
       </div>
       <WorkflowStepper />
