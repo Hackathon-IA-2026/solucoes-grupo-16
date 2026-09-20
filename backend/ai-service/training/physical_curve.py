@@ -6,6 +6,13 @@ import numpy as np
 from training.config import PhysicalCurveConfig
 
 
+def _validate(wind: np.ndarray, capacity: np.ndarray, availability: np.ndarray) -> None:
+    if (not all(np.isfinite(v).all() for v in (wind, capacity, availability))
+            or (wind < 0).any() or (wind > 50).any() or (capacity <= 0).any()
+            or (availability < 0).any() or (availability > 1).any()):
+        raise ValueError("Vento, capacidade e disponibilidade devem ser finitos e fisicamente válidos.")
+
+
 def physical_power_mw(
     wind_speed_ms: object,
     capacity_mw: object,
@@ -16,6 +23,7 @@ def physical_power_mw(
     wind = np.asarray(wind_speed_ms, dtype=float)
     capacity = np.asarray(capacity_mw, dtype=float)
     availability_arr = np.asarray(availability, dtype=float)
+    _validate(wind, capacity, availability_arr)
     available = np.clip(capacity * availability_arr, 0.0, None)
     result = np.zeros(np.broadcast(wind, available).shape, dtype=float)
     wind, available = np.broadcast_arrays(wind, available)
@@ -43,11 +51,13 @@ def apply_physical_bounds(
     wind = np.asarray(wind_speed_ms, dtype=float)
     cap = np.asarray(capacity_mw, dtype=float)
     avail = np.asarray(availability, dtype=float)
+    _validate(wind, cap, avail)
+    if not np.isfinite(baseline).all() or not np.isfinite(correction).all():
+        raise ValueError("Baseline e correção devem ser finitos.")
     baseline, correction, wind, cap, avail = np.broadcast_arrays(
         baseline, correction, wind, cap, avail
     )
     available = np.clip(cap * avail, 0.0, None)
     output = np.clip(baseline + correction, 0.0, available)
     off = (wind < config.cut_in_ms) | (wind >= config.cut_out_ms)
-    output[off] = 0.0
-    return output
+    return np.where(off, 0.0, output)

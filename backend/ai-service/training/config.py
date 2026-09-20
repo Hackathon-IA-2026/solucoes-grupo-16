@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+import json
+import math
 import os
 from pathlib import Path
 from typing import Any
@@ -25,6 +27,11 @@ class ColumnConfig:
     era5_distance_km: str = "era5_distance_km"
     geracao_referencia_mw: str = "geracao_referencia_mw"
     geracao_verificada_mw: str = "geracao_verificada_mw"
+
+    def __post_init__(self) -> None:
+        names = list(asdict(self).values())
+        if any(not isinstance(name, str) or not name.strip() for name in names) or len(set(names)) != len(names):
+            raise ValueError("Mapeamento de colunas deve conter nomes únicos e não vazios.")
 
     def required_base(self) -> list[str]:
         return [
@@ -52,6 +59,11 @@ class PhysicalCurveConfig:
     rated_ms: float = 12.0
     cut_out_ms: float = 25.0
 
+    def __post_init__(self) -> None:
+        values = (self.cut_in_ms, self.rated_ms, self.cut_out_ms)
+        if not all(math.isfinite(v) for v in values) or not 0 <= values[0] < values[1] < values[2] <= 50:
+            raise ValueError("Exija 0 <= cut-in < rated < cut-out <= 50 m/s.")
+
 
 @dataclass(frozen=True)
 class TrainingConfig:
@@ -60,8 +72,18 @@ class TrainingConfig:
     scope: str = "global"
     random_state: int = 42
     min_interval_samples: int = 20
+    n_jobs: int = 1
+    source_timezone: str | None = None
+    usina_id: str | None = None
+    start_utc: str | None = None
+    experiment_days: int = 30
     columns: ColumnConfig = field(default_factory=ColumnConfig)
     physical_curve: PhysicalCurveConfig = field(default_factory=PhysicalCurveConfig)
+
+    def __post_init__(self) -> None:
+        self.columns.target_name(self.target)
+        if self.scope != "global" or self.experiment_days < 1 or self.min_interval_samples < 1 or self.n_jobs == 0:
+            raise ValueError("Configuração inválida para o experimento global mínimo.")
 
     def target_column(self) -> str:
         column = self.columns.target_name(self.target)
@@ -70,10 +92,25 @@ class TrainingConfig:
                 "Treino real bloqueado: defina --target como geracao_referencia_mw "
                 "ou geracao_verificada_mw após validar sua semântica com o especialista ONS."
             )
-        return column
+        # All downstream code receives canonicalized columns.
+        return self.target
 
     def serializable(self) -> dict[str, Any]:
         return asdict(self)
+
+    @classmethod
+    def from_dict(cls, values: dict[str, Any]) -> "TrainingConfig":
+        values = dict(values)
+        values["columns"] = ColumnConfig(**values.get("columns", {}))
+        values["physical_curve"] = PhysicalCurveConfig(**values.get("physical_curve", {}))
+        return cls(**values)
+
+
+def load_config(path: Path | None = None, target: str | None = None) -> TrainingConfig:
+    values = json.loads(path.read_text(encoding="utf-8")) if path else {}
+    if target is not None:
+        values["target"] = target
+    return TrainingConfig.from_dict(values)
 
 
 def service_root() -> Path:

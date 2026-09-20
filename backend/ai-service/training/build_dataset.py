@@ -1,4 +1,4 @@
-"""Canonical adapter and quality report for incoming ONS/ERA5 joined data."""
+"""Explicit joined-snapshot adapter, UTC hourly preparation and quality reporting."""
 from __future__ import annotations
 
 import argparse
@@ -10,120 +10,175 @@ from typing import Protocol
 import numpy as np
 import pandas as pd
 
-from training.config import ColumnConfig, TrainingConfig
+from training.config import ALLOWED_TARGETS, ColumnConfig, TrainingConfig, load_config
+
+KEY = ["usina_id", "timestamp_utc"]
+NUMERIC = ["capacidade_instalada_mw", "disponibilidade", "u100", "v100", "temperature_2m", "surface_pressure"]
 
 
 class DatasetAdapter(Protocol):
+    """Future ONS/ERA5/catalog adapters return an explicitly mapped snapshot."""
     def load(self, path: Path) -> pd.DataFrame: ...
 
 
 class TabularDatasetAdapter:
-    """Adapter for an already joined CSV/Parquet snapshot; no ONS field guessing."""
-
     def load(self, path: Path) -> pd.DataFrame:
         if path.suffix.lower() == ".parquet":
             return pd.read_parquet(path)
         if path.suffix.lower() == ".csv":
-            return pd.read_csv(path)
-        raise ValueError("Use um arquivo CSV ou Parquet já unido no formato configurado.")
+            # Preserve IDs such as 001; numeric conversion belongs to validation.
+            return pd.read_csv(path, dtype=str)
+        raise ValueError("Use CSV ou Parquet já unido no formato configurado.")
+
+
+class DatasetValidationError(ValueError):
+    def __init__(self, message: str, report: dict):
+        super().__init__(message)
+        self.report = report
 
 
 def canonicalize_columns(frame: pd.DataFrame, columns: ColumnConfig) -> pd.DataFrame:
     mapping = {value: key for key, value in asdict(columns).items() if value in frame.columns}
-    return frame.rename(columns=mapping).copy()
+    result = frame.rename(columns=mapping).copy()
+    if result.columns.duplicated().any():
+        raise ValueError("Colunas duplicadas ou mapeamento ambíguo no snapshot.")
+    return result
+
+
+def utc_timestamps(values: pd.Series, source_timezone: str | None) -> pd.Series:
+    def parse(value: object) -> pd.Timestamp:
+        try:
+            if pd.isna(value) or isinstance(value, (int, float)):
+                return pd.NaT
+            timestamp = pd.Timestamp(value)
+            if timestamp.tzinfo is None:
+                if source_timezone is None:
+                    return pd.NaT
+                timestamp = timestamp.tz_localize(source_timezone, ambiguous="NaT", nonexistent="NaT")
+            return timestamp.tz_convert("UTC")
+        except (ValueError, TypeError, OverflowError):
+            return pd.NaT
+    return pd.to_datetime(values.map(parse), utc=True)
+
+
+def _period(timestamps: pd.Series) -> dict:
+    timestamps = timestamps.dropna()
+    return {"start": timestamps.min().isoformat() if len(timestamps) else None,
+            "end": timestamps.max().isoformat() if len(timestamps) else None}
+
+
+def _inspect(frame: pd.DataFrame, config: TrainingConfig) -> tuple[pd.DataFrame, dict, dict]:
+    df = canonicalize_columns(frame, config.columns)
+    numeric = NUMERIC + ([config.target] if config.target else [])
+    required = KEY + numeric
+    missing = [column for column in required if column not in df]
+    report = {
+        "rows_input": len(df), "columns_found": list(frame.columns),
+        "canonical_columns": list(df.columns), "column_mapping": asdict(config.columns),
+        "expected_columns": required, "missing_required_columns": missing,
+        "target": config.target, "target_semantics_validated": False,
+        "source_timezone": config.source_timezone, "logical_key": KEY,
+        "null_rate": {c: float(df[c].isna().mean()) if len(df) else 0.0 for c in df},
+        "exclusions": {}, "warnings": [],
+    }
+    if missing:
+        report["status"] = "invalid"
+        return df, report, {}
+    df["timestamp_utc"] = utc_timestamps(df.timestamp_utc, config.source_timezone)
+    df["usina_id"] = df.usina_id.astype("string").str.strip().replace("", pd.NA)
+    if "era5_distance_km" in df:
+        numeric = numeric + ["era5_distance_km"]
+    for column in numeric:
+        df[column] = pd.to_numeric(df[column], errors="coerce")
+    reasons = {"missing_usina_id": df.usina_id.isna(), "invalid_or_naive_timestamp": df.timestamp_utc.isna()}
+    for column in numeric:
+        report["null_rate"][column] = float(df[column].isna().mean()) if len(df) else 0.0
+        if column != "era5_distance_km":
+            reasons[f"missing_or_nonfinite_{column}"] = ~np.isfinite(df[column])
+    reasons.update({
+        "capacity_not_positive": df.capacidade_instalada_mw <= 0,
+        "availability_outside_0_1": ~df.disponibilidade.between(0, 1),
+        "wind_outside_0_50_ms": ~np.hypot(df.u100, df.v100).between(0, 50),
+        "temperature_outside_150_350_K": ~df.temperature_2m.between(150, 350),
+        "pressure_outside_50000_120000_Pa": ~df.surface_pressure.between(50_000, 120_000),
+    })
+    if config.target:
+        reasons["target_outside_installed_capacity"] = ~df[config.target].between(0, df.capacidade_instalada_mw)
+        report["target_above_available_capacity"] = int((df[config.target] > df.capacidade_instalada_mw * df.disponibilidade).sum())
+        report["warnings"].append("Semântica do target e filtros ONS devem ser validados pelo especialista.")
+    if "era5_distance_km" in df:
+        reasons["invalid_era5_distance"] = df.era5_distance_km.notna() & (~np.isfinite(df.era5_distance_km) | (df.era5_distance_km < 0))
+    duplicates = df.duplicated(KEY, keep=False) & df[KEY].notna().all(axis=1)
+    reasons["duplicate_logical_key_rows"] = duplicates
+    report["duplicate_logical_keys"] = int(df.loc[duplicates].duplicated(KEY).sum())
+    report["invalid_values"] = {name: int(mask.sum()) for name, mask in reasons.items()}
+    report["period_utc"] = _period(df.timestamp_utc)
+    return df, report, reasons
 
 
 def validate_dataset(frame: pd.DataFrame, config: TrainingConfig) -> dict:
-    df = canonicalize_columns(frame, config.columns)
-    expected = [
-        "usina_id", "timestamp_utc", "capacidade_instalada_mw", "disponibilidade",
-        "u100", "v100", "temperature_2m", "surface_pressure",
-    ]
-    target = config.columns.target_name(config.target)
-    if target:
-        expected.append(target)
-    found = [column for column in expected if column in df.columns]
-    missing = [column for column in expected if column not in df.columns]
-    report: dict = {
-        "rows_input": int(len(df)),
-        "columns_found": sorted(df.columns.tolist()),
-        "expected_columns": expected,
-        "missing_required_columns": missing,
-        "null_rate": {column: float(df[column].isna().mean()) for column in found},
-        "logical_key": ["usina_id", "timestamp_utc"],
-        "exclusions": {},
-    }
-    if missing:
-        return report
-    timestamp = pd.to_datetime(df["timestamp_utc"], utc=True, errors="coerce")
-    wind = np.hypot(pd.to_numeric(df["u100"], errors="coerce"), pd.to_numeric(df["v100"], errors="coerce"))
-    capacity = pd.to_numeric(df["capacidade_instalada_mw"], errors="coerce")
-    availability = pd.to_numeric(df["disponibilidade"], errors="coerce")
-    invalid_timestamp = timestamp.isna()
-    key = pd.DataFrame({"usina_id": df["usina_id"], "timestamp_utc": timestamp})
-    report.update(
-        {
-            "duplicate_logical_keys": int(key.duplicated().sum()),
-            "period_utc": {
-                "start": None if timestamp.dropna().empty else timestamp.min().isoformat(),
-                "end": None if timestamp.dropna().empty else timestamp.max().isoformat(),
-            },
-            "invalid_values": {
-                "timestamp": int(invalid_timestamp.sum()),
-                "capacity_not_positive": int((capacity <= 0).fillna(True).sum()),
-                "availability_outside_0_1": int(((availability < 0) | (availability > 1)).fillna(False).sum()),
-                "wind_outside_0_50_ms": int(((wind < 0) | (wind > 50)).fillna(False).sum()),
-                "temperature_not_kelvin_positive": int((pd.to_numeric(df["temperature_2m"], errors="coerce") <= 0).fillna(False).sum()),
-                "pressure_not_positive": int((pd.to_numeric(df["surface_pressure"], errors="coerce") <= 0).fillna(False).sum()),
-            },
-        }
-    )
-    if target:
-        target_values = pd.to_numeric(df[target], errors="coerce")
-        report["invalid_values"]["target_negative"] = int((target_values < 0).fillna(False).sum())
-        report["invalid_values"]["target_above_installed_capacity"] = int(
-            (target_values > capacity).fillna(False).sum()
-        )
-        report["null_rate"][target] = float(target_values.isna().mean())
-    return report
+    return _inspect(frame, config)[1]
 
 
 def prepare_hourly_dataset(frame: pd.DataFrame, config: TrainingConfig) -> tuple[pd.DataFrame, dict]:
-    """Convert to UTC, reject invalid rows, and consolidate to one hourly key."""
-    report = validate_dataset(frame, config)
+    df, report, reasons = _inspect(frame, config)
     if report["missing_required_columns"]:
-        raise ValueError(f"Campos ausentes: {report['missing_required_columns']}")
-    df = canonicalize_columns(frame, config.columns)
-    df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"], utc=True, errors="coerce")
-    numeric = ["capacidade_instalada_mw", "disponibilidade", "u100", "v100", "temperature_2m", "surface_pressure"]
-    if "era5_distance_km" in df:
-        numeric.append("era5_distance_km")
-    target = config.columns.target_name(config.target)
-    if target:
-        numeric.append(target)
-    for column in numeric:
-        df[column] = pd.to_numeric(df[column], errors="coerce")
-    wind = np.hypot(df["u100"], df["v100"])
-    valid = (
-        df["usina_id"].notna()
-        & df["timestamp_utc"].notna()
-        & (df["capacidade_instalada_mw"] > 0)
-        & df["disponibilidade"].between(0, 1)
-        & wind.between(0, 50)
-        & (df["temperature_2m"] > 0)
-        & (df["surface_pressure"] > 0)
-    )
-    if target:
-        valid &= df[target].notna() & (df[target] >= 0) & (df[target] <= df["capacidade_instalada_mw"])
-    report["exclusions"]["invalid_or_missing_required_values"] = int((~valid).sum())
-    clean = df.loc[valid].copy()
-    clean["timestamp_utc"] = clean["timestamp_utc"].dt.floor("h")
-    aggregation = {column: "mean" for column in numeric if column in clean}
-    hourly = clean.groupby(["usina_id", "timestamp_utc"], as_index=False).agg(aggregation)
-    report["rows_after_validation"] = int(len(clean))
-    report["rows_hourly"] = int(len(hourly))
-    report["hourly_duplicate_keys"] = int(hourly.duplicated(["usina_id", "timestamp_utc"]).sum())
-    return hourly.sort_values(["timestamp_utc", "usina_id"]).reset_index(drop=True), report
+        raise DatasetValidationError(f"Campos ausentes: {report['missing_required_columns']}", report)
+    selected = pd.Series(True, index=df.index)
+    if config.usina_id is not None:
+        selected &= df.usina_id.eq(config.usina_id).fillna(False)
+    plants = df.loc[selected, "usina_id"].dropna().unique()
+    if len(plants) > 1:
+        report["status"] = "invalid"
+        raise DatasetValidationError("Fase 1 exige uma usina; configure usina_id para selecionar o experimento.", report)
+    start = df.loc[selected, "timestamp_utc"].min()
+    if config.start_utc:
+        start = utc_timestamps(pd.Series([config.start_utc]), None).iloc[0]
+        if pd.isna(start):
+            raise DatasetValidationError("start_utc deve ter timezone válido.", report)
+    if pd.notna(start):
+        start = start.floor("h")
+        end = start + pd.Timedelta(days=config.experiment_days)
+        selected &= df.timestamp_utc.between(start, end, inclusive="left") | df.timestamp_utc.isna()
+    report["exclusions"]["outside_experiment"] = int((~selected).sum())
+    report["experiment"] = {"usina_id": list(map(str, plants)), "days": config.experiment_days,
+                            "start": start.isoformat() if pd.notna(start) else None}
+    bad = pd.Series(False, index=df.index)
+    for reason, mask in reasons.items():
+        bad |= mask.fillna(True)
+        report["exclusions"][reason] = int((mask & selected).sum())
+    # Do not average the remaining half-hour over missing target/availability.
+    # Exclude the whole affected hour and account for this explicitly.
+    df["timestamp_utc"] = df.timestamp_utc.dt.floor("h")
+    bad_keys = pd.MultiIndex.from_frame(df.loc[selected & bad & df[KEY].notna().all(axis=1), KEY])
+    bad_hour = pd.Series(pd.MultiIndex.from_frame(df[KEY]).isin(bad_keys), index=df.index)
+    report["exclusions"]["additional_rows_in_invalid_hour"] = int((selected & ~bad & bad_hour).sum())
+    clean = df.loc[selected & ~bad & ~bad_hour].copy()
+    numeric = NUMERIC + ([config.target] if config.target else [])
+    if "era5_distance_km" in clean:
+        numeric += ["era5_distance_km"]
+    hourly = clean.groupby(KEY, as_index=False)[numeric].mean().sort_values(KEY[::-1]).reset_index(drop=True)
+    expected_hours = config.experiment_days * 24
+    report.update({
+        "status": "valid" if len(hourly) else "invalid",
+        "rows_after_validation": len(clean), "rows_excluded": len(df) - len(clean),
+        "rows_hourly": len(hourly), "hourly_duplicate_keys": int(hourly.duplicated(KEY).sum()),
+        "coverage": {"expected_hours": expected_hours, "observed_hours": len(hourly),
+                     "missing_hours": expected_hours - len(hourly), "fraction": len(hourly) / expected_hours},
+        "hourly_period_utc": _period(hourly.timestamp_utc),
+        "aggregation": "UTC hour, arithmetic mean of MW and climate; no gap filling; reject whole invalid hours",
+        "exclusion_counts_overlap": True,
+    })
+    if len(hourly) < expected_hours:
+        report["warnings"].append("Cobertura incompleta; lacunas não foram imputadas.")
+    if not len(hourly):
+        raise DatasetValidationError("Nenhuma hora válida no experimento.", report)
+    return hourly, report
+
+
+def write_report(report: dict, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
 
 
 def _write_dataframe(frame: pd.DataFrame, path: Path) -> None:
@@ -139,16 +194,17 @@ def main() -> None:
     parser.add_argument("--input", required=True, type=Path)
     parser.add_argument("--output", type=Path, default=Path("data/processed/hourly.csv"))
     parser.add_argument("--report", type=Path, default=Path("data/processed/validation_report.json"))
-    parser.add_argument("--target", choices=["geracao_referencia_mw", "geracao_verificada_mw"])
+    parser.add_argument("--target", choices=ALLOWED_TARGETS)
+    parser.add_argument("--config", type=Path)
     args = parser.parse_args()
-    config = TrainingConfig(target=args.target)
-    source = TabularDatasetAdapter().load(args.input)
-    dataset, report = prepare_hourly_dataset(source, config)
+    try:
+        dataset, report = prepare_hourly_dataset(TabularDatasetAdapter().load(args.input), load_config(args.config, args.target))
+    except DatasetValidationError as exc:
+        write_report(exc.report, args.report)
+        parser.exit(2, f"{exc}\nRelatório: {args.report}\n")
+    write_report(report, args.report)
     _write_dataframe(dataset, args.output)
-    args.report.parent.mkdir(parents=True, exist_ok=True)
-    args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"Dataset horário: {args.output} ({len(dataset)} linhas)")
-    print(f"Relatório de validação: {args.report}")
+    print(f"Dataset horário: {args.output} ({len(dataset)} linhas); relatório: {args.report}")
 
 
 if __name__ == "__main__":

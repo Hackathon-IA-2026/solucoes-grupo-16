@@ -4,11 +4,14 @@ from __future__ import annotations
 from typing import Iterable
 import argparse
 import json
+import hashlib
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
+from training.config import PhysicalCurveConfig, default_artifact_dir
+from training.physical_curve import apply_physical_bounds
 
 
 WIND_BINS = [-np.inf, 3.0, 6.0, 9.0, 12.0, 25.0, np.inf]
@@ -46,20 +49,76 @@ def metrics_by_wind_and_plant(frame: pd.DataFrame, prediction_column: str) -> di
 
 
 def empirical_interval_table(validation: pd.DataFrame, minimum_samples: int = 20) -> dict:
-    """Absolute-error percentiles; sparse wind bands use the global validation fallback."""
-    errors = np.abs(validation["target_mw"] - validation["hybrid_mw"])
+    """Signed errors in capacity factor, so both quantiles define the interval."""
+    errors = (validation["target_mw"] - validation["hybrid_mw"]) / validation.capacidade_instalada_mw
     global_quantiles = {"p05": float(np.quantile(errors, 0.05)), "p95": float(np.quantile(errors, 0.95)), "n": int(len(errors))}
     work = validation.copy()
     work["wind_band"] = pd.cut(work["wind_speed_100m"], WIND_BINS, labels=WIND_LABELS, right=False)
     bands = {}
     for label in WIND_LABELS:
         sample = work.loc[work["wind_band"] == label, "target_mw"]
-        band_errors = np.abs(work.loc[work["wind_band"] == label, "target_mw"] - work.loc[work["wind_band"] == label, "hybrid_mw"])
+        band_errors = errors.loc[work["wind_band"] == label]
         if len(sample) >= minimum_samples:
             bands[label] = {"p05": float(np.quantile(band_errors, 0.05)), "p95": float(np.quantile(band_errors, 0.95)), "n": int(len(sample)), "source": "wind_band"}
         else:
-            bands[label] = {**global_quantiles, "source": "global_fallback"}
-    return {"method": "percentis 5/95 do erro absoluto na validação; intervalo empírico, não garantia probabilística", "global": global_quantiles, "wind_bands": bands}
+            bands[label] = {**global_quantiles, "band_n": int(len(sample)), "source": "global_fallback"}
+    return {"method": "percentis 5/95 do erro assinado (target - previsão) em fator de capacidade na validação; intervalo empírico, não garantia probabilística", "unit": "capacity_factor", "global": global_quantiles, "wind_bands": bands}
+
+
+def interval_bounds(prediction, wind, capacity, availability, table: dict,
+                    curve: PhysicalCurveConfig) -> tuple[np.ndarray, np.ndarray]:
+    bands = pd.cut(wind, WIND_BINS, labels=WIND_LABELS, right=False)
+    quantiles = [table["wind_bands"].get(str(band), table["global"]) for band in bands]
+    lower = apply_physical_bounds(prediction, np.array([q["p05"] for q in quantiles]) * capacity,
+                                  wind, capacity, availability, curve)
+    upper = apply_physical_bounds(prediction, np.array([q["p95"] for q in quantiles]) * capacity,
+                                  wind, capacity, availability, curve)
+    return lower, upper
+
+
+def interval_coverage(frame: pd.DataFrame, table: dict, curve: PhysicalCurveConfig) -> dict:
+    lower, upper = interval_bounds(frame.hybrid_mw.to_numpy(), frame.wind_speed_100m.to_numpy(),
+                                   frame.capacidade_instalada_mw.to_numpy(), frame.disponibilidade.to_numpy(), table, curve)
+    return {"fraction": float(np.mean((frame.target_mw >= lower) & (frame.target_mw <= upper))),
+            "mean_width_mw": float(np.mean(upper - lower)), "rows": len(frame)}
+
+
+def dataset_fingerprint(frame: pd.DataFrame, target: str) -> str:
+    columns = ["usina_id", "timestamp_utc", "u100", "v100", "temperature_2m", "surface_pressure",
+               "capacidade_instalada_mw", "disponibilidade", target]
+    columns.append("era5_distance_km")
+    stable = frame.sort_values(["timestamp_utc", "usina_id"]).reindex(columns=columns)
+    return hashlib.sha256(stable.to_csv(index=False, float_format="%.9g", lineterminator="\n").encode()).hexdigest()
+
+
+def evaluate_artifact(data: pd.DataFrame, artifact_dir: Path) -> dict:
+    from training.config import TrainingConfig
+    from training.features import FEATURE_COLUMNS, feature_matrix
+    from training.train import _prepared
+
+    metadata = json.loads((artifact_dir / "metadata.json").read_text(encoding="utf-8"))
+    config = TrainingConfig.from_dict(metadata["training_config"])
+    if metadata["feature_order"] != FEATURE_COLUMNS:
+        raise ValueError("Ordem de features incompatível.")
+    period = metadata["split_periods"]["test"]
+    test = data.loc[data.timestamp_utc.between(pd.Timestamp(period["start"]), pd.Timestamp(period["end"]))].copy()
+    if len(test) != period["rows"] or dataset_fingerprint(test, config.target_column()) != metadata["test_snapshot_sha256"]:
+        raise ValueError("Snapshot de teste diferente do registrado no artefato.")
+    test = _prepared(test, config.target_column(), config)
+    if hashlib.sha256((artifact_dir / "model.txt").read_bytes()).hexdigest() != metadata["model_sha256"]:
+        raise ValueError("Modelo não corresponde ao metadata.")
+    model = lgb.Booster(model_file=str(artifact_dir / "model.txt"))
+    if model.feature_name() != FEATURE_COLUMNS:
+        raise ValueError("Features do modelo incompatíveis.")
+    correction = model.predict(feature_matrix(test), num_threads=config.n_jobs) * test.capacidade_instalada_mw
+    test["hybrid_mw"] = apply_physical_bounds(test.baseline_mw, correction, test.wind_speed_100m,
+                                             test.capacidade_instalada_mw, test.disponibilidade, config.physical_curve)
+    table = json.loads((artifact_dir / "residual_quantiles.json").read_text(encoding="utf-8"))
+    return {"split_periods": metadata["split_periods"],
+            "baseline_test": metrics_by_wind_and_plant(test, "baseline_mw"),
+            "hybrid_test": metrics_by_wind_and_plant(test, "hybrid_mw"),
+            "hybrid_interval_coverage_test": interval_coverage(test, table, config.physical_curve),
+            "note": "Teste original identificado por período e SHA256; não usado no early stopping."}
 
 
 def main() -> None:
@@ -67,34 +126,20 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Avalia um artefato no teste temporal ClimaGrid.")
     parser.add_argument("--input", required=True, type=Path)
     parser.add_argument("--target", required=True, choices=["geracao_referencia_mw", "geracao_verificada_mw"])
-    parser.add_argument("--artifacts", type=Path, default=Path("artifacts/global/v1"))
-    parser.add_argument("--output", type=Path, default=Path("artifacts/global/v1/evaluation_report.json"))
+    parser.add_argument("--artifacts", type=Path, default=default_artifact_dir())
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     # Local imports avoid a training/evaluation import cycle in library usage.
     from training.build_dataset import TabularDatasetAdapter, prepare_hourly_dataset
     from training.config import TrainingConfig
-    from training.features import add_features, feature_matrix
-    from training.physical_curve import apply_physical_bounds, physical_power_mw
-    from training.train import temporal_split
 
     metadata = json.loads((args.artifacts / "metadata.json").read_text(encoding="utf-8"))
     if metadata.get("target") != args.target:
         raise ValueError("O target informado não corresponde ao registrado no artefato.")
-    config = TrainingConfig(target=args.target)
+    config = TrainingConfig.from_dict(metadata["training_config"])
     data, _ = prepare_hourly_dataset(TabularDatasetAdapter().load(args.input), config)
-    prepared = add_features(data)
-    prepared["target_mw"] = prepared[args.target]
-    prepared["baseline_mw"] = physical_power_mw(prepared.wind_speed_100m, prepared.capacidade_instalada_mw, prepared.disponibilidade, config.physical_curve)
-    _, _, test, periods = temporal_split(prepared)
-    model = lgb.Booster(model_file=str(args.artifacts / "model.txt"))
-    correction = model.predict(feature_matrix(test)) * test.capacidade_instalada_mw
-    test["hybrid_mw"] = apply_physical_bounds(test.baseline_mw, correction, test.wind_speed_100m, test.capacidade_instalada_mw, test.disponibilidade, config.physical_curve)
-    report = {
-        "split_periods": periods,
-        "baseline_test": metrics_by_wind_and_plant(test.assign(prediction_mw=test.baseline_mw), "prediction_mw"),
-        "hybrid_test": metrics_by_wind_and_plant(test, "hybrid_mw"),
-        "note": "Avaliação no bloco de teste temporal. Não use este resultado para early stopping.",
-    }
+    report = evaluate_artifact(data, args.artifacts)
+    args.output = args.output or args.artifacts / "evaluation_report.json"
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(report, ensure_ascii=False, indent=2))

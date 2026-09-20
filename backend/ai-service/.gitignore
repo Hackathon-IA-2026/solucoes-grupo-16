@@ -3,3 +3,11 @@ pip-install.log
 pip-install.err.log
 __pycache__/
 *.py[cod]
+.pytest_cache/
+.test-tmp/
+.env
+data/**/*.csv
+data/**/*.parquet
+data/**/*.json
+artifacts/**/*.txt
+artifacts/**/*.json

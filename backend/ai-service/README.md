@@ -12,22 +12,48 @@ No diretório `ai-service`:
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-pytest -q
+python -m pytest -q
 uvicorn app.main:app --reload --port 8000
 ```
 
 Com a API ativa, consulte `GET /health` e `POST /estimar-geracao` em `http://127.0.0.1:8000/docs`.
 
+`requirements.txt` aplica `constraints.txt`, que registra as versões exercitadas no Windows com Python 3.13. Extras de plataforma podem diferir no Linux. O ambiente inclui `scikit-learn`, necessário ao `LGBMRegressor`. Use `python -m pip check` para verificar consistência das dependências.
+
 ## Dados reais esperados depois
 
-O serviço não baixa dados e não pressupõe os nomes originais do ONS. Primeiro prepare um snapshot único CSV/Parquet unido, em que os nomes são os canônicos abaixo (ou adapte explicitamente `ColumnConfig` em `training/config.py`):
+O serviço não baixa dados e não pressupõe os nomes originais do ONS. Primeiro prepare um snapshot único CSV/Parquet unido, em que os nomes são os canônicos abaixo (ou configure o mapeamento JSON descrito adiante):
 
 - ONS tratado, com `usina_id`, `timestamp_utc`, `disponibilidade` e o target escolhido;
 - ERA5 horário com `u100`, `v100`, `temperature_2m` (K) e `surface_pressure` (Pa);
 - cadastro de usinas para `capacidade_instalada_mw` e, futuramente, latitude/longitude e `era5_distance_km`;
 - definição semântica validada de **um** target: `geracao_referencia_mw` ou `geracao_verificada_mw`.
 
-`timestamp_utc` é convertido para UTC e os dados são consolidados em hora, pela chave lógica `usina_id + timestamp_utc`. Não há imputação silenciosa de target ou disponibilidade. A distância ERA5 é suportada quando for fornecida; o pipeline não inventa esse valor.
+`timestamp_utc` é convertido para UTC e os dados são consolidados em hora, pela chave lógica `usina_id + timestamp_utc`. Timestamps sem timezone são excluídos, a menos que `source_timezone` esteja explicitamente configurado após validar o fuso da fonte. Não há imputação de target, disponibilidade ou lacunas. A distância ERA5 permanece ausente quando não fornecida.
+
+O adaptador `DatasetAdapter` define a interface para futuros conectores; `TabularDatasetAdapter` lê somente o snapshot já unido. A extração NetCDF, associação por coordenadas e junção das bases reais permanecem a cargo da preparação anterior, pois seus schemas ainda não foram validados. A cobertura calculada aqui é do snapshot recebido; não mede perdas de joins que ocorreram antes dele.
+
+### Configuração do experimento
+
+Use `training/config.example.json` como ponto de partida. O target inicia em `null`, bloqueando treino até uma escolha explícita em `--target` ou no JSON. `--target` tem precedência. Exemplo de configuração com nomes canônicos, sem presumir campos ONS:
+
+```json
+{
+  "target": "geracao_referencia_mw",
+  "usina_id": "ID_REAL_VALIDADO",
+  "start_utc": "2026-08-01T00:00:00Z",
+  "experiment_days": 30,
+  "source_timezone": null,
+  "columns": {},
+  "physical_curve": {"cut_in_ms": 3, "rated_ms": 12, "cut_out_ms": 25}
+}
+```
+
+Em `columns`, cada chave é o nome canônico e cada valor é o nome confirmado no seu snapshot. O mapeamento inclui os dois targets. Não renomeie campos sem conferir unidade e semântica. Com `usina_id: null`, só são aceitos dados de uma única usina; com `start_utc: null`, a janela começa na primeira hora encontrada. São selecionados 30 dias por padrão, com exclusões e cobertura registradas. Dados menores podem testar a execução, mas geram aviso de cobertura incompleta; o split requer ao menos sete horas distintas.
+
+Disponibilidade deve ser uma fração conhecida no instante da previsão. O serviço não converte automaticamente disponibilidade em MW para fração. Temperatura deve estar em 150–350 K, pressão em 50.000–120.000 Pa e vento derivado em 0–50 m/s, tanto no dataset quanto na API. Essas faixas são verificações iniciais, sujeitas à revisão com os dados reais.
+
+Duplicatas exatas da chave lógica são excluídas por inteiro. Se uma linha contiver campo obrigatório ausente/inválido, toda a hora correspondente é excluída para não mascarar, por média, um target ou disponibilidade faltante. Subintervalos válidos são consolidados por média aritmética, assumindo duração uniforme e valores em MW, nunca energia acumulada em MWh. O relatório inclui nulos após conversão numérica, duplicatas, período, cobertura e motivos de exclusão que podem se sobrepor. Ele também é salvo quando faltam colunas ou nenhuma hora é aproveitável.
 
 ## CLI
 
@@ -49,7 +75,15 @@ Reavalie o artefato no bloco temporal de teste (sem usá-lo para early stopping)
 python -m training.evaluate --input data/raw/snapshot_unido.csv --target geracao_referencia_mw
 ```
 
-O treino registra em `artifacts/global/v1/`: `model.txt`, `metadata.json`, `residual_quantiles.json` e `validation_report.json`. O metadata contém ordem de features, parâmetros, períodos do split 70/15/15, métricas geral/por faixa de vento/por usina e a decisão de aprovação.
+Validação e treino aceitam `--config caminho/config.json`. O treino também gera `data/processed/hourly.csv` (alterável por `--processed`). Use `--artifacts caminho` no treino/avaliação para escolher o diretório do artefato; a avaliação aceita `--output` e reutiliza a configuração salva, inclusive curva física e mapeamento. Para avaliar, forneça o mesmo snapshot original do treino.
+
+O treino não sobrescreve um `model.txt` existente: escolha outro diretório para cada versão. O hash do modelo permite detectar mistura de arquivos de artefatos diferentes no carregamento.
+
+O treino registra em `artifacts/global/v1/`: `model.txt`, `metadata.json`, `residual_quantiles.json` e `validation_report.json`. O metadata contém configuração completa, ordem de features, versões das bibliotecas, melhor iteração, períodos do split 70/15/15, hash do dataset/teste, métricas geral/por faixa de vento/por usina, cobertura do intervalo e decisão de aprovação. A avaliação verifica o período e o conteúdo do teste pelo hash; não refaz o split com os dados novos.
+
+LightGBM aprende `(target_mw - baseline_mw) / capacidade_instalada_mw`. Os parâmetros do prompt são mantidos, com `subsample_freq=1` para ativar efetivamente a amostragem de 0,8, determinismo habilitado e uma thread por padrão para o pequeno experimento. `n_jobs` é configurável. Apenas validação entra no early stopping de 100 rodadas. O teste decide aprovação por MAE estritamente menor; empate implica fallback. A aprovação é experimental, não validação de produção.
+
+MAE/RMSE são em MW; `nmae_cf` é a média de `abs(erro_mw) / capacidade_mw`; WAPE é `sum(abs(erro)) / sum(abs(target))`, ou `null` quando a geração total é zero. O domínio de entrada é calculado somente no treino, sobre vento, temperatura, pressão, capacidade e disponibilidade. Como este primeiro artefato foi treinado com uma usina, outras usinas usam fallback, mesmo que o diretório seja `global/v1`.
 
 ## API
 
@@ -70,4 +104,29 @@ Exemplo de corpo para `POST /estimar-geracao`:
 }
 ```
 
-O lote é limitado a 500 registros, o timestamp deve ter timezone e a velocidade derivada deve estar em 0–50 m/s. A incerteza é o intervalo empírico simétrico derivado do p95 do erro absoluto da validação por faixa de vento, com fallback global para amostras escassas; não é garantia probabilística.
+O lote é limitado a 500 registros, com timestamps únicos em ordem crescente e timezone obrigatório. A resposta converte os horários para UTC. Entradas não finitas são rejeitadas. O artefato é carregado uma vez no startup de cada processo; `GET /health` informa aprovação e escopo efetivo.
+
+A incerteza usa os percentis 5 e 95 do erro **assinado**, `(target - híbrido) / capacidade`, calculados exclusivamente na validação por faixa de vento. Faixas com menos de 20 amostras usam quantis globais da validação. Na previsão, ambos os quantis são multiplicados pela capacidade e somados à estimativa; os limites passam pelo clipping e cut-in/cut-out. O intervalo pode ser assimétrico e não precisa conter a estimativa pontual. Sua cobertura no teste é registrada: trata-se de intervalo empírico, sem garantia probabilística.
+
+Sem artefato, com modelo reprovado/incompatível ou lote fora do domínio, a API retorna `model_scope: physical_fallback`, correção zero e confiança baixa. Um registro fora do domínio provoca fallback do lote inteiro. Os limites são `null` com warning `incerteza_nao_calibrada`; um intervalo de largura zero não representa incerteza desconhecida. `correcao_ml_mw` representa a correção efetiva após limites físicos. `model_version` identifica o artefato consultado; `model_scope` informa se ele foi usado.
+
+Configure `CLIMAGRID_ARTIFACT_DIR` no ambiente para alterar o artefato da API. O arquivo `.env` não é lido automaticamente: use `uvicorn app.main:app --env-file .env --port 8000` se quiser carregá-lo.
+
+## Docker
+
+```powershell
+docker build -t climagrid-ai .
+docker run --rm -p 8000:8000 climagrid-ai
+```
+
+A imagem inclui `libgomp1`, necessário ao LightGBM no Linux. Por padrão inicia em fallback físico; dados locais, `.venv`, segredos e artefatos não entram no contexto. Para usar um modelo, monte seu diretório em `/service/artifacts/global/v1` como volume somente leitura.
+
+## Limites e decisões pendentes
+
+- Confirmar target com o especialista ONS. Referência precisa representar o potencial sem corte. Se usar geração verificada, preparar previamente um snapshot filtrado por ausência de restrição e disponibilidade adequada, com critérios documentados pelo especialista. Esses filtros não são inferidos e restrição nunca entra nas features.
+- Validar nomes, unidades, timezone, identificação entre bases `tm`/`detail`, coordenadas e associação ao ERA5. Não assumir equivalência entre conjuntos e usinas.
+- Escolher a usina, os 30 dias e uma cobertura mínima aceitável. Sem dados reais não há estimativa de desempenho, intervalo calibrado ou artefato de produção.
+- Confirmar se a disponibilidade histórica estaria disponível antes da previsão. O serviço não estima nem imputa disponibilidade futura.
+- ERA5 é reanálise histórica; previsões futuras exigem cenário climático informado ou uma fonte meteorológica de previsão.
+
+Os dados sintéticos determinísticos vivem exclusivamente nos testes e seus diretórios temporários. Os testes exercitam treino real do LightGBM, aprovação/reprovação, gravação/leitura do artefato, avaliação no teste preservado, contrato HTTP, consistência de features e regras físicas. Nenhum modelo sintético é instalado em `artifacts/global/v1/`.
