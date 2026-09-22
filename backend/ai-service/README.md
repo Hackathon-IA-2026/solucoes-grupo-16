@@ -2,7 +2,9 @@
 
 Experimento mínimo e reproduzível de estimativa de geração eólica a partir de vento. A camada de ML aprende somente o resíduo normalizado da curva física; ela só é usada se superar o MAE da curva física no teste temporal. Caso contrário — inclusive sem artefato — a API informa e usa `physical_fallback`.
 
-Não há classificador de curtailment, XGBoost, SHAP, modelos por usina/cluster ou integração NestJS nesta fase.
+Não há classificador de curtailment, XGBoost, SHAP ou modelos por usina/cluster
+nesta fase. A integração com o NestJS está disponível, mas mantém essas
+ausências explícitas no contrato em vez de fabricar classificações.
 
 ## Instalação e execução
 
@@ -16,7 +18,15 @@ pytest -q
 uvicorn app.main:app --reload --port 8000
 ```
 
-Com a API ativa, consulte `GET /health` e `POST /estimar-geracao` em `http://127.0.0.1:8000/docs`.
+Com a API ativa, consulte `GET /health`, `GET /capabilities`,
+`POST /estimar-geracao` e `POST /estimar-historico` em
+`http://127.0.0.1:8000/docs`.
+
+`POST /estimar-historico` lê o snapshot unido configurado por
+`CLIMAGRID_TRAINING_SNAPSHOT`, filtra o período e devolve a média horária por
+usina. Sem artefato aprovado, a resposta usa e identifica `physical_fallback`.
+Sem snapshot unido, responde `409`; o arquivo ONS bruto sozinho não habilita a
+estimativa porque ainda faltam as observações ERA5 alinhadas.
 
 ## Coleta oficial ONS, SIGA e ERA5
 

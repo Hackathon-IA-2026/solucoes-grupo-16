@@ -64,11 +64,16 @@ class Predictor:
         raw = pd.DataFrame([record.model_dump() for record in request.registros])
         raw["usina_id"] = request.usina_id
         raw["capacidade_instalada_mw"] = request.capacidade_instalada_mw
-        raw["disponibilidade"] = request.disponibilidade
+        raw["disponibilidade"] = pd.to_numeric(
+            raw["disponibilidade"], errors="coerce"
+        ).fillna(request.disponibilidade)
         features_frame = add_features(raw)
         wind = features_frame["wind_speed_100m"].to_numpy()
         curve = self._curve_config()
-        baseline = physical_power_mw(wind, request.capacidade_instalada_mw, request.disponibilidade, curve)
+        availability = raw["disponibilidade"].to_numpy(dtype=float)
+        baseline = physical_power_mw(
+            wind, request.capacidade_instalada_mw, availability, curve
+        )
         warnings: list[str] = []
         use_ml = self.approved and not self._outside_domain(wind)
         if not self.approved:
@@ -78,10 +83,17 @@ class Predictor:
         correction = np.zeros(len(raw))
         if use_ml:
             correction = self.model.predict(feature_matrix(raw)) * request.capacidade_instalada_mw
-        final = apply_physical_bounds(baseline, correction, wind, request.capacidade_instalada_mw, request.disponibilidade, curve)
+        final = apply_physical_bounds(
+            baseline,
+            correction,
+            wind,
+            request.capacidade_instalada_mw,
+            availability,
+            curve,
+        )
         scope = self.metadata["model_scope"] if use_ml else "physical_fallback"
         predictions = []
-        available = request.capacidade_instalada_mw * request.disponibilidade
+        available = request.capacidade_instalada_mw * availability
         for index, record in enumerate(request.registros):
             local_warnings = warnings.copy()
             if wind[index] < curve.cut_in_ms or wind[index] >= curve.cut_out_ms:
@@ -92,8 +104,8 @@ class Predictor:
                 baseline_mw=round(float(baseline[index]), 6),
                 correcao_ml_mw=round(float(final[index] - baseline[index]), 6),
                 geracao_estimada_mw=round(float(final[index]), 6),
-                limite_inferior_mw=round(float(np.clip(final[index] - radius, 0, available)), 6),
-                limite_superior_mw=round(float(np.clip(final[index] + radius, 0, available)), 6),
+                limite_inferior_mw=round(float(np.clip(final[index] - radius, 0, available[index])), 6),
+                limite_superior_mw=round(float(np.clip(final[index] + radius, 0, available[index])), 6),
                 confianca="media" if use_ml else "baixa",
                 warnings=local_warnings,
             ))

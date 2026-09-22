@@ -4,11 +4,18 @@ import { PwfReferenceCaseService } from './application/pwf-reference-case.servic
 import { PwfParserService } from './parser/pwf-parser.service.js';
 import { PwfStorageService } from './storage/pwf-storage.service.js';
 import { SupabaseModule } from '../supabase/supabase.module.js';
+import { PwfExportController } from './api/pwf-export.controller.js';
+import { PwfExportService } from './application/pwf-export.service.js';
 
 @Module({
   imports: [SupabaseModule],
-  controllers: [PwfReferenceCaseController],
-  providers: [PwfReferenceCaseService, PwfParserService, PwfStorageService],
+  controllers: [PwfReferenceCaseController, PwfExportController],
+  providers: [
+    PwfReferenceCaseService,
+    PwfExportService,
+    PwfParserService,
+    PwfStorageService,
+  ],
   exports: [PwfReferenceCaseService, PwfParserService],
 })
 export class PwfModule {}

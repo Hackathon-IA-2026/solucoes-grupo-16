@@ -6,9 +6,19 @@ import { usePathname } from "next/navigation";
 import { Icon } from "@/components/ui/icon";
 import { runtimeConfig } from "@/lib/api";
 import { workflowSteps } from "@/lib/workflow";
+import { useSystemStatus } from "@/context/system-context";
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { capabilities, isLoading, error } = useSystemStatus();
+  const isConnected = Boolean(capabilities?.backend.available);
+  const statusLabel = runtimeConfig.isDemoMode
+    ? "Demonstração local"
+    : isLoading
+      ? "Verificando serviços"
+      : isConnected
+        ? "Backend conectado"
+        : "Backend indisponível";
 
   return (
     <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col justify-between border-r border-outline-variant/50 bg-surface-container-low lg:flex">
@@ -46,13 +56,17 @@ export function Sidebar() {
       </div>
       <div className="m-4 rounded-xl border border-outline-variant/50 bg-surface-container-lowest p-4">
         <div className="flex items-center gap-2 text-xs font-semibold text-on-surface">
-          <span className={`h-2 w-2 rounded-full ${runtimeConfig.isDemoMode ? "bg-amber-300" : "bg-emerald-300"}`} />
-          {runtimeConfig.isDemoMode ? "Demonstração local" : "API configurada"}
+          <span className={`h-2 w-2 rounded-full ${runtimeConfig.isDemoMode || !isConnected ? "bg-amber-300" : "bg-emerald-300"}`} />
+          {statusLabel}
         </div>
         <p className="mt-2 text-[11px] leading-4 text-outline">
           {runtimeConfig.isDemoMode
             ? "Os valores exibidos são fictícios e servem apenas para validar o fluxo do frontend."
-            : "Dados e arquivos serão solicitados ao backend configurado."}
+            : error
+              ? error
+              : capabilities?.aiService.available
+                ? "NestJS e serviço de IA responderam."
+                : "NestJS respondeu; o serviço de IA está indisponível."}
         </p>
       </div>
     </aside>

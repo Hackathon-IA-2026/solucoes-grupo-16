@@ -7,6 +7,7 @@ import { Icon } from "@/components/ui/icon";
 import { Notice } from "@/components/ui/notice";
 import { PageHeader } from "@/components/ui/page-header";
 import { useScenario } from "@/context/scenario-context";
+import { useSystemStatus } from "@/context/system-context";
 import { climagridApi, runtimeConfig } from "@/lib/api";
 import { climateFileSchema, validateClimateFile } from "@/lib/file-validation";
 import { DEMO_SNAPSHOT_DATE } from "@/lib/mock-data";
@@ -18,6 +19,7 @@ export default function ClimateInputPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { resetScenario, setProcessedScenario } = useScenario();
+  const { capabilities, isLoading: isLoadingCapabilities, error: capabilitiesError } = useSystemStatus();
   const [source, setSource] = useState<ClimateSource>("historical");
   const [startAt, setStartAt] = useState("2026-08-01T00:00");
   const [endAt, setEndAt] = useState("2026-08-15T23:00");
@@ -29,7 +31,11 @@ export default function ClimateInputPage() {
 
   const isHistoricalRangeValid = Boolean(startAt && endAt && Date.parse(startAt) < Date.parse(endAt));
   const isUploadReady = Boolean(file && (validation.status === "valid" || validation.status === "pending-backend"));
-  const canProcess = source === "historical" ? isHistoricalRangeValid : isUploadReady;
+  const historicalAvailable = runtimeConfig.isDemoMode || capabilities?.climate.historicalEstimates === true;
+  const uploadAvailable = runtimeConfig.isDemoMode || capabilities?.climate.fileUpload === true;
+  const canProcess = source === "historical"
+    ? isHistoricalRangeValid && historicalAvailable
+    : isUploadReady && uploadAvailable;
 
   async function handleFile(nextFile: File | null) {
     setFile(nextFile);
@@ -99,13 +105,23 @@ export default function ClimateInputPage() {
           </Notice>
         ) : null}
 
+        {!runtimeConfig.isDemoMode && capabilitiesError ? (
+          <Notice tone="error" title="Backend indisponível">{capabilitiesError}</Notice>
+        ) : null}
+
+        {!runtimeConfig.isDemoMode && capabilities && !historicalAvailable ? (
+          <Notice tone="warning" title="Coleta histórica ainda incompleta">
+            O catálogo de usinas e o arquivo bruto da ONS estão {capabilities.data?.plantCatalog && capabilities.data?.onsRaw ? "disponíveis" : "pendentes"}, mas o snapshot unido ONS + ERA5 ainda não foi publicado. Execute o backfill ERA5 e o <code>join-ons</code> para liberar as estimativas reais.
+          </Notice>
+        ) : null}
+
         <section className="rounded-2xl border border-outline-variant/50 bg-surface-container-low p-5 shadow-sm sm:p-7">
           <div className="inline-flex w-full rounded-xl bg-surface-container-lowest p-1 sm:w-auto" role="tablist" aria-label="Fonte de dados climáticos">
             <button type="button" role="tab" aria-selected={source === "historical"} onClick={() => setSource("historical")} className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors sm:flex-none ${source === "historical" ? "bg-primary-container text-on-primary-container" : "text-on-surface-variant hover:text-on-surface"}`}>
               <Icon name="database" className="h-4 w-4" /> Histórico
             </button>
-            <button type="button" role="tab" aria-selected={source === "upload"} onClick={() => setSource("upload")} className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors sm:flex-none ${source === "upload" ? "bg-primary-container text-on-primary-container" : "text-on-surface-variant hover:text-on-surface"}`}>
-              <Icon name="upload" className="h-4 w-4" /> Cenário próprio
+            <button type="button" role="tab" aria-selected={source === "upload"} disabled={!uploadAvailable} onClick={() => setSource("upload")} className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-45 sm:flex-none ${source === "upload" ? "bg-primary-container text-on-primary-container" : "text-on-surface-variant hover:text-on-surface"}`}>
+              <Icon name="upload" className="h-4 w-4" /> Cenário próprio {!uploadAvailable ? "(em breve)" : ""}
             </button>
           </div>
 
@@ -131,7 +147,7 @@ export default function ClimateInputPage() {
                   <label className="field-label" htmlFor="resolution">Resolução temporal</label>
                   <select id="resolution" className="field-input" value={resolutionMinutes} onChange={(event) => setResolutionMinutes(Number(event.target.value) as 30 | 60)}>
                     <option value={60}>1 hora — resolução nativa ERA5</option>
-                    <option value={30}>30 minutos — requer reamostragem</option>
+                    <option value={30} disabled={!runtimeConfig.isDemoMode}>30 minutos — ainda não integrado</option>
                   </select>
                   {resolutionMinutes === 30 ? <p className="mt-2 text-xs text-amber-200">A API deverá sinalizar a interpolação para atender à RN02.</p> : null}
                 </div>
@@ -141,9 +157,10 @@ export default function ClimateInputPage() {
                 <Icon name="database" className="h-6 w-6 text-secondary" />
                 <h2 className="mt-3 font-semibold text-on-surface">Rastreabilidade da fonte</h2>
                 <dl className="mt-4 space-y-3 text-sm">
-                  <div className="flex justify-between gap-4"><dt className="text-on-surface-variant">Snapshot</dt><dd className="font-mono text-on-surface">{runtimeConfig.isDemoMode ? DEMO_SNAPSHOT_DATE : "informado pela API"}</dd></div>
+                  <div className="flex justify-between gap-4"><dt className="text-on-surface-variant">Snapshot</dt><dd className="font-mono text-on-surface">{runtimeConfig.isDemoMode ? DEMO_SNAPSHOT_DATE : capabilities?.data?.snapshotDate ?? "pendente"}</dd></div>
                   <div className="flex justify-between gap-4"><dt className="text-on-surface-variant">Clima</dt><dd className="text-right text-on-surface">ERA5, vento a 100 m</dd></div>
-                  <div className="flex justify-between gap-4"><dt className="text-on-surface-variant">Operação</dt><dd className="text-right text-on-surface">ONS constrained-off</dd></div>
+                  <div className="flex justify-between gap-4"><dt className="text-on-surface-variant">Operação</dt><dd className="text-right text-on-surface">{capabilities?.data?.onsRaw || runtimeConfig.isDemoMode ? "ONS disponível" : "ONS pendente"}</dd></div>
+                  <div className="flex justify-between gap-4"><dt className="text-on-surface-variant">ERA5 processado</dt><dd className="text-right text-on-surface">{runtimeConfig.isDemoMode ? "demonstração" : capabilities?.data?.era5Processed ? `${capabilities.data.era5PartitionCount} partição(ões)` : "pendente"}</dd></div>
                   <div className="flex justify-between gap-4"><dt className="text-on-surface-variant">Região</dt><dd className="text-on-surface">Nordeste</dd></div>
                 </dl>
               </div>
@@ -204,8 +221,8 @@ export default function ClimateInputPage() {
 
         <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
           <button type="button" onClick={handleReset} className="button-secondary"><Icon name="refresh" /> Limpar cenário</button>
-          <button type="button" onClick={() => void handleProcess()} disabled={!canProcess || isProcessing} className="button-primary">
-            {isProcessing ? "Processando…" : "Processar e estimar geração"}<Icon name="arrow-right" />
+          <button type="button" onClick={() => void handleProcess()} disabled={!canProcess || isProcessing || isLoadingCapabilities} className="button-primary">
+            {isProcessing ? "Processando…" : isLoadingCapabilities ? "Verificando dados…" : "Processar e estimar geração"}<Icon name="arrow-right" />
           </button>
         </div>
       </div>

@@ -7,6 +7,7 @@ import type {
   PwfExportResult,
   PwfGenerationTarget,
   ReferencePwf,
+  SystemCapabilities,
 } from "@/types/climagrid";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "");
@@ -37,15 +38,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    const body = await response.text();
-    let message = body;
-    try {
-      const parsed = JSON.parse(body) as { message?: string | string[] };
-      message = Array.isArray(parsed.message) ? parsed.message.join(" ") : parsed.message ?? body;
-    } catch {
-      // A API pode responder texto simples em falhas de infraestrutura.
-    }
-    throw new Error(message || `A API respondeu com status ${response.status}.`);
+    throw new Error(await responseErrorMessage(response));
   }
 
   return response.json() as Promise<T>;
@@ -66,6 +59,10 @@ async function processScenario(input: ProcessScenarioInput): Promise<ProcessScen
       fileName: input.file?.name,
       fileSizeBytes: input.file?.size,
       rowCount: input.rowCount,
+      dataVersion: input.source === "historical" ? `demo-${DEMO_SNAPSHOT_DATE}` : input.file?.name,
+      modelVersion: "mock-local-v1",
+      modelScope: "demonstration",
+      modelApproved: false,
       createdAt: now,
     };
 
@@ -75,38 +72,19 @@ async function processScenario(input: ProcessScenarioInput): Promise<ProcessScen
     };
   }
 
-  let scenario: ClimateScenario;
-
   if (input.source === "upload" && input.file) {
-    const formData = new FormData();
-    formData.append("file", input.file);
-    formData.append("subsystem", "NE");
-    formData.append("resolutionMinutes", String(input.resolutionMinutes));
-    scenario = await requestJson<ClimateScenario>("/climate-scenarios/upload", {
-      method: "POST",
-      body: formData,
-    });
-  } else {
-    scenario = await requestJson<ClimateScenario>("/climate-scenarios/historical", {
-      method: "POST",
-      body: JSON.stringify({
-        subsystem: "NE",
-        startAt: input.startAt,
-        endAt: input.endAt,
-        resolutionMinutes: input.resolutionMinutes,
-      }),
-    });
+    throw new Error("O upload climático ainda não está disponível no backend.");
   }
 
-  const estimates = await requestJson<ProcessScenarioResult["estimates"]>(
-    "/generation/estimates",
-    {
-      method: "POST",
-      body: JSON.stringify({ scenarioId: scenario.id }),
-    },
-  );
-
-  return { scenario, estimates };
+  return requestJson<ProcessScenarioResult>("/climate-scenarios/historical", {
+    method: "POST",
+    body: JSON.stringify({
+      subsystem: "NE",
+      startAt: new Date(input.startAt).toISOString(),
+      endAt: new Date(input.endAt).toISOString(),
+      resolutionMinutes: input.resolutionMinutes,
+    }),
+  });
 }
 
 async function exportPwf(request: PwfExportRequest): Promise<PwfExportResult> {
@@ -144,15 +122,27 @@ async function exportPwf(request: PwfExportRequest): Promise<PwfExportResult> {
       scenarioId: request.climateScenario.id,
       studyName: request.study.name,
       referencePwfId: request.study.referencePwf?.id,
-      referencePwfName: request.study.referencePwf?.name,
-      mappings: Object.values(request.study.mappings),
-      selectedPlantIds: request.selectedPlantIds,
+      modelVersion: request.climateScenario.modelVersion ?? "unknown",
+      dataVersion:
+        request.climateScenario.dataVersion ??
+        request.climateScenario.snapshotDate ??
+        request.climateScenario.fileName ??
+        "unknown",
+      plants: request.selectedPlantIds.map((plantId) => {
+        const estimate = request.estimates.find((item) => item.id === plantId);
+        const mapping = request.study.mappings[plantId];
+        return {
+          plantId,
+          onsId: estimate?.onsId ?? plantId,
+          estimatedGenerationMw: estimate?.estimatedGenerationMw,
+          mapping,
+        };
+      }),
     }),
   });
 
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || "Não foi possível gerar o arquivo PWF.");
+    throw new Error(await responseErrorMessage(response));
   }
 
   const generatedAt = response.headers.get("x-generated-at") ?? new Date().toISOString();
@@ -164,6 +154,19 @@ async function exportPwf(request: PwfExportRequest): Promise<PwfExportResult> {
     dataVersion: response.headers.get("x-data-version") ?? "informada-pela-api",
     isDemonstration: false,
   };
+}
+
+async function responseErrorMessage(response: Response): Promise<string> {
+  const body = await response.text();
+  try {
+    const parsed = JSON.parse(body) as { message?: string | string[]; detail?: string };
+    if (parsed.detail) return parsed.detail;
+    if (Array.isArray(parsed.message)) return parsed.message.join(" ");
+    if (parsed.message) return parsed.message;
+  } catch {
+    // A API pode responder texto simples em falhas de infraestrutura.
+  }
+  return body || `A API respondeu com status ${response.status}.`;
 }
 
 async function uploadReferencePwf(file: File): Promise<ReferencePwf> {
@@ -196,9 +199,24 @@ async function getPwfGenerationTargets(referencePwfId: string): Promise<PwfGener
   return result.items;
 }
 
+async function getCapabilities(): Promise<SystemCapabilities> {
+  if (!apiBaseUrl) {
+    return {
+      backend: { available: false },
+      pwf: { upload: false, generationTargets: false, export: false },
+      aiService: { available: false },
+      climate: { historicalEstimates: false, fileUpload: false },
+      model: null,
+      data: null,
+    };
+  }
+  return requestJson<SystemCapabilities>("/system/capabilities");
+}
+
 export const climagridApi = {
   processScenario,
   uploadReferencePwf,
   getPwfGenerationTargets,
+  getCapabilities,
   exportPwf,
 };

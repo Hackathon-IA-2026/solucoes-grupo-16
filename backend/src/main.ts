@@ -19,6 +19,13 @@ async function bootstrap() {
     origin: allowedOrigins,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+    exposedHeaders: [
+      'X-Filename',
+      'X-Generated-At',
+      'X-Model-Version',
+      'X-Data-Version',
+      'X-Modified-Buses',
+    ],
     credentials: true,
   });
 
@@ -44,4 +51,3 @@ async function bootstrap() {
   await app.listen(process.env.PORT ?? 3333);
 }
 await bootstrap();
-
