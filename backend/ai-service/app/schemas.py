@@ -109,8 +109,8 @@ class HistoricalPlantEstimate(BaseModel):
     longitude: float | None
     installed_capacity_mw: float
     estimated_generation_mw: float
-    confidence_low_mw: float
-    confidence_high_mw: float
+    confidence_low_mw: float | None
+    confidence_high_mw: float | None
     confidence: Literal["alta", "media", "baixa"]
     historical_availability_percent: float
     historical_curtailment_percent: float | None = None

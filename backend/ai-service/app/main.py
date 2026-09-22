@@ -16,6 +16,7 @@ def create_app(artifact_dir: Path | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(application: FastAPI):
         application.state.predictor = Predictor.from_artifacts(artifact_dir)
+        application.state.historical = HistoricalScenarioService.from_environment(application.state.predictor)
         yield
 
     application = FastAPI(title="ClimaGrid AI Service", version="1.0.0", lifespan=lifespan)
@@ -27,6 +28,17 @@ def create_app(artifact_dir: Path | None = None) -> FastAPI:
     @application.post("/estimar-geracao", response_model=EstimationResponse)
     def estimate(payload: EstimationRequest, request: Request) -> EstimationResponse:
         return request.app.state.predictor.estimate(payload)
+
+    @application.get("/capabilities")
+    def capabilities(request: Request) -> dict:
+        return request.app.state.historical.capabilities()
+
+    @application.post("/estimar-historico", response_model=HistoricalEstimationResponse)
+    def estimate_historical(payload: HistoricalScenarioRequest, request: Request) -> HistoricalEstimationResponse:
+        try:
+            return request.app.state.historical.estimate(payload)
+        except HistoricalDataUnavailable as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     return application
 

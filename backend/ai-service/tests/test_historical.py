@@ -2,13 +2,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
+from fastapi.testclient import TestClient
 
+from app.main import create_app
 from app.historical import HistoricalScenarioService
 from app.predictor import Predictor
 from app.schemas import HistoricalScenarioRequest
 
 
-def test_historical_scenario_uses_joined_snapshot_and_catalog(tmp_path: Path):
+def test_historical_scenario_uses_joined_snapshot_and_catalog(tmp_path: Path, monkeypatch):
     snapshot = tmp_path / "snapshot.parquet"
     catalog = tmp_path / "catalog.parquet"
     data_root = tmp_path / "data"
@@ -78,3 +80,17 @@ def test_historical_scenario_uses_joined_snapshot_and_catalog(tmp_path: Path):
     assert result.estimates[0].sample_count == 2
     assert result.estimates[0].historical_availability_percent == 85.0
     assert 0 <= result.estimates[0].estimated_generation_mw <= 85.0
+    assert result.estimates[0].confidence_low_mw is None
+    assert result.estimates[0].confidence_high_mw is None
+
+    monkeypatch.setenv("CLIMAGRID_TRAINING_SNAPSHOT", str(snapshot))
+    monkeypatch.setenv("CLIMAGRID_PLANT_CATALOG", str(catalog))
+    monkeypatch.setenv("CLIMAGRID_DATA_ROOT", str(data_root))
+    with TestClient(create_app(tmp_path)) as client:
+        assert client.get("/capabilities").json()["features"]["historical_estimates"] is True
+        response = client.post("/estimar-historico", json={
+            "start_at": "2026-09-01T00:00:00Z", "end_at": "2026-09-01T01:00:00Z",
+        })
+        assert response.status_code == 200
+        body = response.json()
+        assert body["estimates"] == result.model_dump(mode="json")["estimates"]

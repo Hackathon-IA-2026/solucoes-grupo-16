@@ -122,13 +122,13 @@ class Predictor:
                 correction = np.zeros(len(raw))
                 use_ml = False
                 warnings.append("falha_na_correcao_ml: usando_curva_fisica")
-        final = apply_physical_bounds(baseline, correction, wind, request.capacidade_instalada_mw, request.disponibilidade, curve)
+        final = apply_physical_bounds(baseline, correction, wind, request.capacidade_instalada_mw, availability, curve)
         scope = self.metadata["model_scope"] if use_ml else "physical_fallback"
         predictions = []
         lower = upper = None
         if use_ml:
             lower, upper = interval_bounds(final, wind, request.capacidade_instalada_mw,
-                                            request.disponibilidade, self.intervals, curve)
+                                            availability, self.intervals, curve)
             warnings.append("intervalo_empirico: sem_garantia_probabilistica")
         else:
             warnings.append("incerteza_nao_calibrada: limites_indisponiveis")
@@ -141,8 +141,8 @@ class Predictor:
                 baseline_mw=round(float(baseline[index]), 6),
                 correcao_ml_mw=round(float(final[index] - baseline[index]), 6),
                 geracao_estimada_mw=round(float(final[index]), 6),
-                limite_inferior_mw=round(float(np.clip(final[index] - radius, 0, available[index])), 6),
-                limite_superior_mw=round(float(np.clip(final[index] + radius, 0, available[index])), 6),
+                limite_inferior_mw=round(float(lower[index]), 6) if lower is not None else None,
+                limite_superior_mw=round(float(upper[index]), 6) if upper is not None else None,
                 confianca="media" if use_ml else "baixa",
                 warnings=local_warnings,
             ))

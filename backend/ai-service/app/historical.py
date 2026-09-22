@@ -189,12 +189,12 @@ class HistoricalScenarioService:
                         sum(item.limite_inferior_mw for item in result.predicoes)
                         / len(result.predicoes),
                         6,
-                    ),
+                    ) if all(item.limite_inferior_mw is not None for item in result.predicoes) else None,
                     confidence_high_mw=round(
                         sum(item.limite_superior_mw for item in result.predicoes)
                         / len(result.predicoes),
                         6,
-                    ),
+                    ) if all(item.limite_superior_mw is not None for item in result.predicoes) else None,
                     confidence=confidence,
                     historical_availability_percent=round(availability * 100, 3),
                     sample_count=len(result.predicoes),

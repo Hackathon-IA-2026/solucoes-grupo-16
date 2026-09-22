@@ -47,8 +47,8 @@ export interface AiHistoricalResponse {
     longitude: number | null;
     installed_capacity_mw: number;
     estimated_generation_mw: number;
-    confidence_low_mw: number;
-    confidence_high_mw: number;
+    confidence_low_mw: number | null;
+    confidence_high_mw: number | null;
     confidence: 'alta' | 'media' | 'baixa';
     historical_availability_percent: number;
     historical_curtailment_percent: number | null;
