@@ -1,0 +1,5 @@
+.venv/
+pip-install.log
+pip-install.err.log
+__pycache__/
+*.py[cod]
