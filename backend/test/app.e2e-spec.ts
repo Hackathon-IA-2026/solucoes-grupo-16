@@ -56,6 +56,40 @@ describe('AppController (e2e)', () => {
       activeGenerationMw: 100,
       editable: true,
     });
+
+    const exported = await request(app.getHttpServer())
+      .post('/pwf/exports')
+      .send({
+        referencePwfId: upload.body.id,
+        scenarioId: 'cenario-teste',
+        studyName: 'Teste integrado',
+        modelVersion: 'physical-curve-v1',
+        dataVersion: 'snapshot-teste',
+        plants: [
+          {
+            plantId: 'usina-1',
+            onsId: 'ONS_1',
+            estimatedGenerationMw: 87.5,
+            mapping: {
+              busNumber: '123',
+              busName: 'PARQUE EOL',
+              nominalVoltageKv: '230',
+              area: '5',
+            },
+          },
+        ],
+      })
+      .buffer(true)
+      .parse((response, callback) => {
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk: Buffer) => chunks.push(chunk));
+        response.on('end', () => callback(null, Buffer.concat(chunks)));
+      })
+      .expect(201);
+
+    expect(exported.headers['x-model-version']).toBe('physical-curve-v1');
+    expect(exported.headers['x-modified-buses']).toBe('123');
+    expect((exported.body as Buffer).toString('latin1')).toContain(' 87.5');
   });
 
   afterAll(async () => {

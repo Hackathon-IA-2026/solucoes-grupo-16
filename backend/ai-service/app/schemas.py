@@ -16,6 +16,7 @@ class ClimateRecord(BaseModel):
     v100: float
     temperature_2m: float = Field(ge=150, le=350, description="Kelvin")
     surface_pressure: float = Field(ge=50_000, le=120_000, description="Pascal")
+    disponibilidade: float | None = Field(default=None, ge=0, le=1)
 
     @field_validator("timestamp_utc")
     @classmethod
@@ -64,3 +65,60 @@ class EstimationResponse(BaseModel):
     model_version: str
     model_scope: str
     predicoes: list[Prediction]
+
+
+class HistoricalScenarioRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    subsystem: Literal["NE"] = "NE"
+    start_at: datetime
+    end_at: datetime
+    resolution_minutes: Literal[60] = 60
+
+    @field_validator("start_at", "end_at")
+    @classmethod
+    def historical_timestamp_requires_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("start_at e end_at devem conter timezone")
+        return value
+
+    @model_validator(mode="after")
+    def valid_period(self) -> "HistoricalScenarioRequest":
+        if self.end_at <= self.start_at:
+            raise ValueError("end_at deve ser posterior a start_at")
+        if (self.end_at - self.start_at).total_seconds() > 500 * 3600:
+            raise ValueError("o período histórico está limitado a 500 horas por cenário")
+        return self
+
+
+class HistoricalPlantEstimate(BaseModel):
+    usina_id: str
+    ons_id: str
+    name: str
+    state: str
+    latitude: float | None
+    longitude: float | None
+    installed_capacity_mw: float
+    estimated_generation_mw: float
+    confidence_low_mw: float
+    confidence_high_mw: float
+    confidence: Literal["alta", "media", "baixa"]
+    historical_availability_percent: float
+    historical_curtailment_percent: float | None = None
+    sample_count: int
+    warnings: list[str]
+
+
+class HistoricalEstimationResponse(BaseModel):
+    scenario_id: str
+    subsystem: Literal["NE"]
+    start_at: datetime
+    end_at: datetime
+    resolution_minutes: Literal[60]
+    snapshot_date: str
+    data_version: str
+    model_version: str
+    model_scope: str
+    model_approved: bool
+    estimates: list[HistoricalPlantEstimate]
+    warnings: list[str]

@@ -4,6 +4,10 @@ API NestJS do ClimaGrid. O primeiro módulo funcional recebe casos de referênci
 PWF, preserva o arquivo original, interpreta os blocos elétricos necessários e
 expõe os alvos de geração encontrados.
 
+O NestJS também funciona como fachada única do frontend: consulta o serviço
+FastAPI, expõe o estado dos insumos e transforma um snapshot unido ONS + ERA5
+em estimativas prontas para a interface.
+
 ## API PWF
 
 ```http
@@ -20,11 +24,31 @@ trocar o diretório.
 ```http
 GET /pwf/reference-cases/:id
 GET /pwf/reference-cases/:id/generation-targets
+POST /pwf/exports
 ```
 
 O parser suporta estruturalmente `TITU`, `DBAR`, `DGBT`, `DGER` e `DGEI`. A
 versão homologada nesta etapa é ANAREDE 12.03.04. Outras versões podem ser
 interpretadas, mas são devolvidas como `unverified`.
+
+`POST /pwf/exports` recebe as usinas selecionadas, suas estimativas e o de-para
+de barras. O writer copia o caso original e altera somente o campo de geração
+ativa (`Pg`) do registro `DBAR` correspondente; barras inexistentes, desligadas,
+swing, duplicadas ou valores que não cabem no campo fixo são rejeitados.
+
+## Integração com o serviço de IA
+
+Configure `AI_SERVICE_URL` (padrão `http://127.0.0.1:8000`) e use:
+
+```http
+GET /system/capabilities
+POST /climate-scenarios/historical
+```
+
+A rota de capacidades diferencia backend configurado, serviço de IA online,
+catálogo, ONS bruto, partições ERA5 e snapshot unido. A estimativa histórica só
+é liberada quando `data/processed/training/snapshot_unido.parquet` existe; a API
+responde `409` com instrução objetiva enquanto o insumo estiver ausente.
 
 ## Execução local
 
