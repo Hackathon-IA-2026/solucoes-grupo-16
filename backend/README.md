@@ -1,3 +1,76 @@
+# ClimaGrid — backend
+
+API NestJS do ClimaGrid. O primeiro módulo funcional recebe casos de referência
+PWF, preserva o arquivo original, interpreta os blocos elétricos necessários e
+expõe os alvos de geração encontrados.
+
+O NestJS também funciona como fachada única do frontend: consulta o serviço
+FastAPI, expõe o estado dos insumos e transforma um snapshot unido ONS + ERA5
+em estimativas prontas para a interface.
+
+## API PWF
+
+```http
+POST /pwf/reference-cases
+Content-Type: multipart/form-data
+Campo: file
+```
+
+O upload aceita arquivos de até 25 MB. O arquivo original é salvo de forma
+imutável, acompanhado de metadados, SHA-256 e um índice interpretado. Por
+padrão, os dados ficam em `data/pwf`; a variável `PWF_STORAGE_ROOT` permite
+trocar o diretório.
+
+```http
+GET /pwf/reference-cases/:id
+GET /pwf/reference-cases/:id/generation-targets
+POST /pwf/exports
+```
+
+O parser suporta estruturalmente `TITU`, `DBAR`, `DGBT`, `DGER` e `DGEI`. A
+versão homologada nesta etapa é ANAREDE 12.03.04. Outras versões podem ser
+interpretadas, mas são devolvidas como `unverified`.
+
+`POST /pwf/exports` recebe as usinas selecionadas, suas estimativas e o de-para
+de barras. O writer copia o caso original e altera somente o campo de geração
+ativa (`Pg`) do registro `DBAR` correspondente; barras inexistentes, desligadas,
+swing, duplicadas ou valores que não cabem no campo fixo são rejeitados.
+
+## Integração com o serviço de IA
+
+Configure `AI_SERVICE_URL` (padrão `http://127.0.0.1:8000`) e use:
+
+```http
+GET /system/capabilities
+POST /climate-scenarios/historical
+```
+
+A rota de capacidades diferencia backend configurado, serviço de IA online,
+catálogo, ONS bruto, partições ERA5 e snapshot unido. A estimativa histórica só
+é liberada quando `data/processed/training/snapshot_unido.parquet` existe; a API
+responde `409` com instrução objetiva enquanto o insumo estiver ausente.
+
+## Execução local
+
+```bash
+npm install
+npm run start:dev
+```
+
+A API inicia por padrão em `http://localhost:3333` e aceita o frontend em
+`http://localhost:3000`.
+
+## Verificação
+
+```bash
+npm run lint
+npm run build
+npm test
+npm run test:e2e
+```
+
+---
+
 <p align="center">
   <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
 </p>

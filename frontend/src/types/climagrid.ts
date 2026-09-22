@@ -2,7 +2,7 @@ export type ClimateSource = "historical" | "upload";
 
 export type CurtailmentReason = "REL" | "CNF" | "ENE" | "PAR" | "NONE";
 
-export type RiskLevel = "low" | "medium" | "high";
+export type RiskLevel = "low" | "medium" | "high" | "unavailable";
 
 export interface ClimateScenario {
   id: string;
@@ -15,6 +15,11 @@ export interface ClimateScenario {
   fileName?: string;
   fileSizeBytes?: number;
   rowCount?: number;
+  dataVersion?: string;
+  modelVersion?: string;
+  modelScope?: string;
+  modelApproved?: boolean;
+  warnings?: string[];
   createdAt: string;
 }
 
@@ -22,18 +27,20 @@ export interface WindPlantEstimate {
   id: string;
   onsId: string;
   name: string;
-  state: "BA" | "CE" | "PE" | "PI" | "RN";
-  latitude: number;
-  longitude: number;
+  state: string;
+  latitude: number | null;
+  longitude: number | null;
   installedCapacityMw: number;
   estimatedGenerationMw: number;
   confidenceLowMw: number;
   confidenceHighMw: number;
-  confidencePercent: number;
+  confidenceLevel: "alta" | "media" | "baixa";
   historicalAvailabilityPercent: number;
-  historicalCurtailmentPercent: number;
-  probableReason: CurtailmentReason;
+  historicalCurtailmentPercent: number | null;
+  sampleCount?: number;
+  probableReason: CurtailmentReason | null;
   riskLevel: RiskLevel;
+  warnings?: string[];
 }
 
 export interface PlantBusMapping {
@@ -49,11 +56,51 @@ export interface ReferencePwf {
   name: string;
   sizeBytes: number;
   uploadedAt: string;
+  status?: "valid";
+  sha256?: string;
+  anaredeVersion?: string;
+  compatibility?: "supported" | "unverified";
+  encoding?: "latin1";
+  lineEnding?: "CRLF" | "LF" | "MIXED" | "NONE";
+  title?: string;
+  studyYear?: number;
+  busCount?: number;
+  generatorBusCount?: number;
+  generatorGroupCount?: number;
+  blocks?: string[];
+  warnings?: string[];
+}
+
+export interface PwfGeneratorGroup {
+  busNumber: number;
+  groupNumber: number;
+  automaticMode: boolean;
+  status: "on" | "off";
+  units: number;
+  unitsOnline: number;
+  activeGenerationPerUnitMw: number;
+  mechanicalLimitPerUnitMw?: number;
+  activeMinimumPerUnitMw?: number;
+}
+
+export interface PwfGenerationTarget {
+  kind: "bus";
+  busNumber: number;
+  busName: string;
+  busType: 0 | 1 | 2 | 3;
+  area?: number;
+  baseVoltageKv?: number;
+  activeGenerationMw: number;
+  activeGenerationMinimumMw?: number;
+  activeGenerationMaximumMw?: number;
+  editable: boolean;
+  generatorGroups: PwfGeneratorGroup[];
 }
 
 export interface StudyDraft {
   name: string;
   referencePwf: ReferencePwf | null;
+  generationTargets: PwfGenerationTarget[];
   mappings: Record<string, PlantBusMapping>;
 }
 
@@ -99,4 +146,25 @@ export interface PwfExportResult {
   modelVersion: string;
   dataVersion: string;
   isDemonstration: boolean;
+}
+
+export interface SystemCapabilities {
+  backend: { available: boolean };
+  pwf: { upload: boolean; generationTargets: boolean; export: boolean };
+  aiService: { available: boolean };
+  climate: { historicalEstimates: boolean; fileUpload: boolean };
+  model: {
+    version: string;
+    scope: string;
+    approved: boolean;
+    physicalFallback: boolean;
+  } | null;
+  data: {
+    plantCatalog: boolean;
+    onsRaw: boolean;
+    era5Processed: boolean;
+    era5PartitionCount: number;
+    joinedSnapshot: boolean;
+    snapshotDate: string | null;
+  } | null;
 }

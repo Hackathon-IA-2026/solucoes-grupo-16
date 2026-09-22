@@ -3,6 +3,11 @@ pip-install.log
 pip-install.err.log
 __pycache__/
 *.py[cod]
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+data/manifests/
 .pytest_cache/
 .test-tmp/
 .env

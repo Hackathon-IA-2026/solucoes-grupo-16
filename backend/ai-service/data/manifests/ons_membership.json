@@ -1,0 +1,7 @@
+{
+  "source_url": "https://ons-aws-prod-opendata.s3.amazonaws.com/dataset/usina_conjunto/RELACIONAMENTO_USINA_CONJUNTO.parquet",
+  "downloaded_at": "2026-09-22T04:26:40.305998+00:00",
+  "path": "/home/victorszcruz/Documentos/Projetos/Hackathon/backend/ai-service/data/raw/ons/relacionamento_usina_conjunto.parquet",
+  "size_bytes": 69707,
+  "sha256": "9d1ac6c30981c7d1ba005855532948b395c2e0a1da536a8a64263d220c31fbf2"
+}

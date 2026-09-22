@@ -94,11 +94,16 @@ class Predictor:
         raw = pd.DataFrame([record.model_dump() for record in request.registros])
         raw["usina_id"] = request.usina_id
         raw["capacidade_instalada_mw"] = request.capacidade_instalada_mw
-        raw["disponibilidade"] = request.disponibilidade
+        raw["disponibilidade"] = pd.to_numeric(
+            raw["disponibilidade"], errors="coerce"
+        ).fillna(request.disponibilidade)
         features_frame = add_features(raw)
         wind = features_frame["wind_speed_100m"].to_numpy()
         curve = self._curve_config()
-        baseline = physical_power_mw(wind, request.capacidade_instalada_mw, request.disponibilidade, curve)
+        availability = raw["disponibilidade"].to_numpy(dtype=float)
+        baseline = physical_power_mw(
+            wind, request.capacidade_instalada_mw, availability, curve
+        )
         warnings: list[str] = []
         use_ml = self.approved and not self._outside_domain(features_frame, request.usina_id)
         if not self.approved:
@@ -136,8 +141,8 @@ class Predictor:
                 baseline_mw=round(float(baseline[index]), 6),
                 correcao_ml_mw=round(float(final[index] - baseline[index]), 6),
                 geracao_estimada_mw=round(float(final[index]), 6),
-                limite_inferior_mw=round(float(lower[index]), 6) if lower is not None else None,
-                limite_superior_mw=round(float(upper[index]), 6) if upper is not None else None,
+                limite_inferior_mw=round(float(np.clip(final[index] - radius, 0, available[index])), 6),
+                limite_superior_mw=round(float(np.clip(final[index] + radius, 0, available[index])), 6),
                 confianca="media" if use_ml else "baixa",
                 warnings=local_warnings,
             ))

@@ -1,10 +1,16 @@
 """FastAPI entry point. The artifact registry is loaded once at process startup."""
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 
+from app.historical import HistoricalDataUnavailable, HistoricalScenarioService
 from app.predictor import Predictor
-from app.schemas import EstimationRequest, EstimationResponse
+from app.schemas import (
+    EstimationRequest,
+    EstimationResponse,
+    HistoricalEstimationResponse,
+    HistoricalScenarioRequest,
+)
 
 def create_app(artifact_dir: Path | None = None) -> FastAPI:
     @asynccontextmanager

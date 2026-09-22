@@ -6,6 +6,7 @@ import type {
   ClimateScenario,
   PlantBusMapping,
   ReferencePwf,
+  PwfGenerationTarget,
   WindPlantEstimate,
 } from "@/types/climagrid";
 
@@ -18,6 +19,7 @@ const initialState: ClimaGridState = {
   study: {
     name: "",
     referencePwf: null,
+    generationTargets: [],
     mappings: {},
   },
 };
@@ -29,7 +31,7 @@ interface ScenarioContextValue {
   setSelectedPlantIds: (plantIds: string[]) => void;
   togglePlant: (plantId: string) => void;
   setStudyName: (name: string) => void;
-  setReferencePwf: (referencePwf: ReferencePwf | null) => void;
+  setReferencePwf: (referencePwf: ReferencePwf | null, generationTargets?: PwfGenerationTarget[]) => void;
   updateMapping: (plantId: string, patch: Partial<PlantBusMapping>) => void;
   resetScenario: () => void;
 }
@@ -94,10 +96,15 @@ export function ScenarioProvider({ children }: { children: React.ReactNode }) {
           study: { ...current.study, name },
         }));
       },
-      setReferencePwf: (referencePwf) => {
+      setReferencePwf: (referencePwf, generationTargets = []) => {
         setState((current) => ({
           ...current,
-          study: { ...current.study, referencePwf },
+          study: {
+            ...current.study,
+            referencePwf,
+            generationTargets,
+            mappings: {},
+          },
         }));
       },
       updateMapping: (plantId, patch) => {

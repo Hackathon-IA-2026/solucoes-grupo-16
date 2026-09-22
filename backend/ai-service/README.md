@@ -2,7 +2,9 @@
 
 Experimento mínimo e reproduzível de estimativa de geração eólica a partir de vento. A camada de ML aprende somente o resíduo normalizado da curva física; ela só é usada se superar o MAE da curva física no teste temporal. Caso contrário — inclusive sem artefato — a API informa e usa `physical_fallback`.
 
-Não há classificador de curtailment, XGBoost, SHAP, modelos por usina/cluster ou integração NestJS nesta fase.
+Não há classificador de curtailment, XGBoost, SHAP ou modelos por usina/cluster
+nesta fase. A integração com o NestJS está disponível, mas mantém essas
+ausências explícitas no contrato em vez de fabricar classificações.
 
 ## Instalação e execução
 
@@ -16,13 +18,104 @@ python -m pytest -q
 uvicorn app.main:app --reload --port 8000
 ```
 
-Com a API ativa, consulte `GET /health` e `POST /estimar-geracao` em `http://127.0.0.1:8000/docs`.
+Com a API ativa, consulte `GET /health`, `GET /capabilities`,
+`POST /estimar-geracao` e `POST /estimar-historico` em
+`http://127.0.0.1:8000/docs`.
 
 `requirements.txt` aplica `constraints.txt`, que registra as versões exercitadas no Windows com Python 3.13. Extras de plataforma podem diferir no Linux. O ambiente inclui `scikit-learn`, necessário ao `LGBMRegressor`. Use `python -m pip check` para verificar consistência das dependências.
 
-## Dados reais esperados depois
+`POST /estimar-historico` lê o snapshot unido configurado por
+`CLIMAGRID_TRAINING_SNAPSHOT`, filtra o período e devolve a média horária por
+usina. Sem artefato aprovado, a resposta usa e identifica `physical_fallback`.
+Sem snapshot unido, responde `409`; o arquivo ONS bruto sozinho não habilita a
+estimativa porque ainda faltam as observações ERA5 alinhadas.
 
-O serviço não baixa dados e não pressupõe os nomes originais do ONS. Primeiro prepare um snapshot único CSV/Parquet unido, em que os nomes são os canônicos abaixo (ou configure o mapeamento JSON descrito adiante):
+## Coleta oficial ONS, SIGA e ERA5
+
+A ingestão fica em `ingestion/` e é executada como job separado da API. O fluxo implementado:
+
+1. filtra no ONS as usinas do subsistema `NE`;
+2. concilia o CEG com o SIGA/ANEEL e publica o catálogo de coordenadas;
+3. calcula a menor caixa regional com margem de 0,5°;
+4. baixa o ERA5 em partições mensais idempotentes;
+5. extrai o ponto de grade mais próximo de cada usina;
+6. agrega o ONS de 30 minutos para hora UTC e produz o snapshot unido.
+
+Configure antes uma credencial pessoal do CDS e aceite os termos do dataset `reanalysis-era5-single-levels`, seguindo <https://cds.climate.copernicus.eu/how-to-api>. A credencial fica fora do repositório.
+
+### 1. Obter o SIGA
+
+```powershell
+python -m ingestion.era5.cli download-siga
+python -m ingestion.era5.cli download-ons-membership
+```
+
+O primeiro comando descobre o recurso CSV mais recente pela API pública da ANEEL. O segundo baixa do ONS a composição oficial dos conjuntos de usinas. Ambos gravam snapshots e manifests; essa composição é necessária porque o arquivo de constrained-off informa `ceg = "-"` para a maioria dos conjuntos.
+
+### 2. Criar o catálogo de usinas
+
+```powershell
+python -m ingestion.era5.cli build-catalog `
+  --ons data/raw/ons/restricao_coff_eolica_usi.csv `
+  --siga data/raw/siga/siga.csv `
+  --ons-membership data/raw/ons/relacionamento_usina_conjunto.parquet
+```
+
+A ligação usa primeiro o CEG exato. O fallback sem o sufixo terminal (`.1`, `.01`) só é aceito quando encontra um único empreendimento. Conjuntos são expandidos para as coordenadas exatas de suas usinas membros; o clima do conjunto é depois agregado com pesos de capacidade instalada, sem inventar um centroide. Ambiguidades ou conjuntos ausentes permanecem explícitos no relatório. Correções revisadas podem ser fornecidas com `--overrides arquivo.csv`, usando as colunas `location_id,ceg_siga`.
+
+### 3. Conferir a área e os pedidos
+
+Este comando não acessa o CDS:
+
+```powershell
+python -m ingestion.era5.cli plan `
+  --catalog data/processed/reference/plant_locations.parquet `
+  --start 2023-10-01 --end 2026-08-31
+```
+
+### 4. Fazer a prova de um mês
+
+```powershell
+python -m ingestion.era5.cli backfill `
+  --catalog data/processed/reference/plant_locations.parquet `
+  --start 2024-01-01 --end 2024-01-31
+```
+
+Use `--dry-run` para listar partições e caminhos sem baixar. Cada mês recebe NetCDF bruto, Parquet por usina e manifests com hashes. Downloads incompletos usam a extensão `.part` e nunca são publicados como concluídos.
+
+Depois da prova, execute o histórico:
+
+```powershell
+python -m ingestion.era5.cli backfill `
+  --catalog data/processed/reference/plant_locations.parquet `
+  --start 2023-10-01 --end 2026-08-31
+```
+
+### 5. Unir ONS e ERA5
+
+```powershell
+python -m ingestion.era5.cli join-ons `
+  --ons data/raw/ons/restricao_coff_eolica_usi.csv `
+  --weather data/processed/era5/year=2024/month=01/weather_hourly.parquet `
+  --catalog data/processed/reference/plant_locations.parquet `
+  --output data/processed/training/snapshot_unido.parquet `
+  --report data/processed/training/join_report.json
+```
+
+Timestamps ONS sem timezone são interpretados por padrão como `America/Sao_Paulo` e convertidos para UTC; altere `--ons-timezone` se a fonte fornecida tiver outra convenção. Horas com menos de dois intervalos são excluídas e reportadas. Potências em MWmed são agregadas por média, nunca soma.
+
+### 6. Atualização e reconciliação
+
+```powershell
+python -m ingestion.era5.cli update --catalog data/processed/reference/plant_locations.parquet
+python -m ingestion.era5.cli reconcile --catalog data/processed/reference/plant_locations.parquet --months-back 3
+```
+
+`update` usa por padrão uma janela móvel de dez dias e atraso de disponibilidade de cinco dias. `reconcile` refaz as partições recentes para permitir a substituição de ERA5T pelo ERA5 final.
+
+## Contrato do snapshot de treinamento
+
+O snapshot CSV/Parquet unido usa os nomes canônicos abaixo (ou exige adaptação explícita em `ColumnConfig`, em `training/config.py`):
 
 - ONS tratado, com `usina_id`, `timestamp_utc`, `disponibilidade` e o target escolhido;
 - ERA5 horário com `u100`, `v100`, `temperature_2m` (K) e `surface_pressure` (Pa);

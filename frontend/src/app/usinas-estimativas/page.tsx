@@ -35,6 +35,10 @@ export default function GenerationEstimatesPage() {
       return matchesQuery && matchesState && matchesRisk;
     });
   }, [query, riskFilter, state.estimates, stateFilter]);
+  const availableStates = useMemo(
+    () => Array.from(new Set(state.estimates.map((plant) => plant.state))).sort(),
+    [state.estimates],
+  );
 
   const selectedSet = useMemo(() => new Set(state.selectedPlantIds), [state.selectedPlantIds]);
   const selectedPlants = state.estimates.filter((plant) => selectedSet.has(plant.id));
@@ -79,6 +83,7 @@ export default function GenerationEstimatesPage() {
         />
 
         {runtimeConfig.isDemoMode ? <Notice tone="warning" title="Resultados simulados">Os valores desta tabela são uma massa de demonstração do frontend, não uma saída do modelo preditivo da equipe.</Notice> : null}
+        {!runtimeConfig.isDemoMode && state.climateScenario.modelScope === "physical_fallback" ? <Notice tone="warning" title="Curva física em uso">O modelo híbrido não está aprovado ou não possui artefatos disponíveis. As estimativas abaixo usam a curva física e têm confiança baixa.</Notice> : null}
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Resumo da seleção">
           <Metric label="Geração estimada" value={`${selectedGeneration.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MW`} detail="soma das usinas selecionadas" />
@@ -96,13 +101,14 @@ export default function GenerationEstimatesPage() {
             <div className="flex flex-col gap-3 sm:flex-row">
               <select className="field-input min-w-32" value={stateFilter} onChange={(event) => setStateFilter(event.target.value)} aria-label="Filtrar por estado">
                 <option value="ALL">Todos os estados</option>
-                {["BA", "CE", "PE", "PI", "RN"].map((uf) => <option key={uf} value={uf}>{uf}</option>)}
+                {availableStates.map((uf) => <option key={uf} value={uf}>{uf}</option>)}
               </select>
               <select className="field-input min-w-40" value={riskFilter} onChange={(event) => setRiskFilter(event.target.value)} aria-label="Filtrar por risco">
                 <option value="ALL">Todos os riscos</option>
                 <option value="high">Risco alto</option>
                 <option value="medium">Risco médio</option>
                 <option value="low">Risco baixo</option>
+                <option value="unavailable">Não modelado</option>
               </select>
             </div>
           </div>
@@ -116,7 +122,7 @@ export default function GenerationEstimatesPage() {
                   <th className="px-3 py-3">UF</th>
                   <th className="px-3 py-3 text-right">Capacidade</th>
                   <th className="px-3 py-3 text-right">Estimativa</th>
-                  <th className="px-3 py-3 text-right">Intervalo {state.estimates[0]?.confidencePercent}%</th>
+                  <th className="px-3 py-3 text-right">Faixa de incerteza</th>
                   <th className="px-3 py-3 text-right">Disponibilidade hist.</th>
                   <th className="px-4 py-3">Sinal de risco</th>
                 </tr>
@@ -140,7 +146,7 @@ export default function GenerationEstimatesPage() {
           </div>
         </section>
 
-        <Notice title="Como interpretar esta etapa">A estimativa deve respeitar a capacidade instalada e vir acompanhada de incerteza. O motivo de curtailment é apenas uma classificação provável; risco de confiabilidade só poderá ser confirmado após o fluxo de potência no ANAREDE.</Notice>
+        <Notice title="Como interpretar esta etapa">A estimativa exibida é a média horária do período e respeita a disponibilidade histórica do snapshot. A classificação de curtailment ainda não está implementada; risco elétrico só poderá ser confirmado após o fluxo de potência no ANAREDE.</Notice>
 
         <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
           <Link href="/" className="button-secondary"><Icon name="arrow-left" /> Alterar entrada climática</Link>
@@ -155,7 +161,10 @@ function Metric({ label, value, detail }: { label: string; value: string; detail
   return <div className="rounded-xl border border-outline-variant/40 bg-surface-container-low p-4"><p className="text-[10px] font-semibold uppercase tracking-wider text-outline">{label}</p><p className="mt-2 text-xl font-semibold text-on-surface">{value}</p><p className="mt-1 truncate text-xs text-on-surface-variant">{detail}</p></div>;
 }
 
-function RiskBadge({ level, reason }: { level: RiskLevel; reason: CurtailmentReason }) {
+function RiskBadge({ level, reason }: { level: RiskLevel; reason: CurtailmentReason | null }) {
+  if (level === "unavailable" || reason === null) {
+    return <span className="inline-flex rounded-full bg-surface-container-high px-2.5 py-1 text-[10px] font-semibold text-on-surface-variant">Não modelado</span>;
+  }
   const classes = level === "high" ? "bg-error/10 text-error" : level === "medium" ? "bg-amber-300/10 text-amber-200" : "bg-emerald-300/10 text-emerald-200";
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold ${classes}`}>{reason === "NONE" ? reasonLabels.NONE : `${reason} · ${reasonLabels[reason]}`}</span>;
 }
