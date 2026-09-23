@@ -15,7 +15,7 @@ from ingestion.era5.config import ERA5Paths
 from ingestion.era5.extract_points import extract_file, validate_weather
 from ingestion.era5.request_planner import MonthlyRequest, plan_requests
 from ingestion.ons.hourly import join_ons_era5, prepare_ons_hourly
-from ingestion.ons.source_client import download_ons_membership
+from ingestion.ons.source_client import download_ons_generation, download_ons_membership
 from ingestion.plants.catalog import (
     calculate_bounds,
     expand_ons_groups,
@@ -65,6 +65,12 @@ def command_download_siga(args: argparse.Namespace) -> None:
 
 def command_download_ons_membership(args: argparse.Namespace) -> None:
     result = download_ons_membership(args.output, source_url=args.source_url)
+    atomic_write_json(args.manifest, result)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+def command_download_ons_generation(args: argparse.Namespace) -> None:
+    result = download_ons_generation(args.output, year=args.year)
     atomic_write_json(args.manifest, result)
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
@@ -262,6 +268,28 @@ def build_parser() -> argparse.ArgumentParser:
     )
     membership.add_argument("--source-url", default="https://ons-aws-prod-opendata.s3.amazonaws.com/dataset/usina_conjunto/RELACIONAMENTO_USINA_CONJUNTO.parquet")
     membership.set_defaults(handler=command_download_ons_membership)
+
+    generation = subparsers.add_parser(
+        "download-ons-generation",
+        help="Baixa os dados brutos de geração horária/semi-horária da ONS.",
+    )
+    generation.add_argument(
+        "--year",
+        type=int,
+        required=True,
+        help="Ano de referência para baixar (ex: 2024).",
+    )
+    generation.add_argument(
+        "--output",
+        type=Path,
+        default=ERA5Paths().root / "raw" / "ons" / "geracao_usina.csv",
+    )
+    generation.add_argument(
+        "--manifest",
+        type=Path,
+        default=ERA5Paths().root / "manifests" / "ons_generation.json",
+    )
+    generation.set_defaults(handler=command_download_ons_generation)
 
     catalog = subparsers.add_parser("build-catalog", help="Concilia usinas ONS e SIGA por CEG.")
     catalog.add_argument("--ons", required=True, nargs="+", type=Path)
