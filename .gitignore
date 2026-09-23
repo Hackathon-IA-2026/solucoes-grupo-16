@@ -1,0 +1,5 @@
+# Docker Compose overrides and local secrets
+.env
+
+# Local operating-system files
+.DS_Store
