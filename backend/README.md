@@ -53,12 +53,15 @@ responde `409` com instrução objetiva enquanto o insumo estiver ausente.
 ## Execução local
 
 ```bash
-npm install
+npm ci
 npm run start:dev
 ```
 
 A API inicia por padrão em `http://localhost:3333` e aceita o frontend em
 `http://localhost:3000`.
+
+Para iniciar toda a aplicação com as versões homologadas de Node.js e Python,
+use o Docker Compose documentado no `README.md` da raiz.
 
 ## Verificação
 
@@ -132,16 +135,10 @@ $ npm run test:cov
 
 ## Deployment
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+O backend é distribuído pela imagem definida em `backend/Dockerfile`. O fluxo
+local com Compose e a arquitetura recomendada para Amazon ECR + ECS/Fargate
+estão documentados no `README.md` da raiz. Segredos devem ser injetados em
+runtime e nunca incorporados à imagem.
 
 ## Observability
 
@@ -165,7 +162,6 @@ Check out a few resources that may come in handy when working with NestJS:
 - Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
 - For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
 - To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
 - Auto-instrument your application with [NestJS Observer](https://observer.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
 - Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
 - Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).

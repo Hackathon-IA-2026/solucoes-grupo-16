@@ -118,7 +118,12 @@ function createValidPwf(): Buffer {
   return Buffer.from(content, 'latin1');
 }
 
-type Field = [number, number, string, 'left' | 'right'?];
+type Field = [
+  start: number,
+  end: number,
+  value: string,
+  alignment?: 'left' | 'right',
+];
 
 function fixedRecord(width: number, fields: Field[]): string {
   const output = Array<string>(width).fill(' ');

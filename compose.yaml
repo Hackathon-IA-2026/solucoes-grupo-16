@@ -1,0 +1,70 @@
+name: ${COMPOSE_PROJECT_NAME:-climagrid}
+
+services:
+  ai-service:
+    image: climagrid/ai-service:local
+    build:
+      context: ./backend/ai-service
+    init: true
+    env_file:
+      - path: ./backend/ai-service/.env
+        required: false
+    environment:
+      CLIMAGRID_ARTIFACT_DIR: /service/artifacts/global/v1
+      CLIMAGRID_TRAINING_SNAPSHOT: /service/data/processed/training/snapshot_unido.parquet
+      CLIMAGRID_PLANT_CATALOG: /service/data/processed/reference/plant_locations.parquet
+      CLIMAGRID_DATA_ROOT: /service/data
+    ports:
+      - "${AI_SERVICE_PORT:-8000}:8000"
+    volumes:
+      - ./backend/ai-service/data:/service/data
+      - ./backend/ai-service/artifacts:/service/artifacts
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  backend:
+    image: climagrid/backend:local
+    build:
+      context: ./backend
+    init: true
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      PORT: "3333"
+      AI_SERVICE_URL: http://ai-service:8000
+      PWF_STORAGE_ROOT: /app/data/pwf
+    ports:
+      - "${BACKEND_PORT:-3333}:3333"
+    volumes:
+      - backend-data:/app/data
+    depends_on:
+      ai-service:
+        condition: service_healthy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  frontend:
+    image: climagrid/frontend:local
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:3333}
+    init: true
+    environment:
+      PORT: "3000"
+      HOSTNAME: 0.0.0.0
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:3333}
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  backend-data:

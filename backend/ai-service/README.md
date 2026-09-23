@@ -8,15 +8,23 @@ ausências explícitas no contrato em vez de fabricar classificações.
 
 ## Instalação e execução
 
-No diretório `ai-service`:
+O ambiente homologado usa Python 3.13. Não reutilize um ambiente virtual criado
+com Python 3.10, pois as versões fixadas em `constraints.txt` exigem uma versão
+mais recente do interpretador.
+
+No diretório `ai-service`, em PowerShell:
 
 ```powershell
-python -m venv .venv
+py -3.13 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt
 python -m pytest -q
 uvicorn app.main:app --reload --port 8000
 ```
+
+Em Linux/macOS, use `python3.13 -m venv .venv` e
+`source .venv/bin/activate`. Alternativamente, o Dockerfile já fornece o
+Python correto e o `compose.yaml` da raiz inicia toda a aplicação.
 
 Com a API ativa, consulte `GET /health`, `GET /capabilities`,
 `POST /estimar-geracao` e `POST /estimar-historico` em
