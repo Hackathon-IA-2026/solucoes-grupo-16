@@ -96,6 +96,7 @@ class TrainingConfig:
     n_jobs: int = 1
     source_timezone: str | None = None
     usina_id: str | None = None
+    allow_multiple_plants: bool = False
     start_utc: str | None = None
     experiment_days: int = 30
     columns: ColumnConfig = field(default_factory=ColumnConfig)
@@ -104,7 +105,9 @@ class TrainingConfig:
 
     def __post_init__(self) -> None:
         self.columns.target_name(self.target)
-        if self.scope != "global" or self.experiment_days < 1 or self.min_interval_samples < 1 or self.n_jobs == 0:
+        if (self.scope != "global" or self.experiment_days < 1 or self.min_interval_samples < 1
+                or self.n_jobs == 0 or type(self.allow_multiple_plants) is not bool
+                or (self.allow_multiple_plants and self.usina_id is not None)):
             raise ValueError("Configuração inválida para o experimento global mínimo.")
 
     def target_column(self) -> str:

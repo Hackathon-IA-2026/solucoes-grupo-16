@@ -19,7 +19,7 @@ from ingestion.ons.hourly import (
     prepare_ons_generation_hourly,
     prepare_ons_hourly,
 )
-from ingestion.ons.source_client import download_ons_generation, download_ons_membership
+from ingestion.ons.source_client import download_ons_generation, download_ons_membership, download_ons_restriction
 from ingestion.pwf.mapping import build_pwf_bus_mapping
 from ingestion.plants.catalog import (
     calculate_bounds,
@@ -92,6 +92,20 @@ def command_download_ons_generation(args: argparse.Namespace) -> None:
         / "download.json"
     )
     result = download_ons_generation(output, year=args.year, month=args.month)
+    atomic_write_json(manifest, result)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+def command_download_ons_restriction(args: argparse.Namespace) -> None:
+    output = args.output or (
+        ERA5Paths().root / "raw" / "ons" / f"year={args.year}"
+        / f"month={args.month:02d}" / f"RESTRICAO_COFF_EOLICA_{args.year}_{args.month:02d}.parquet"
+    )
+    manifest = args.manifest or (
+        ERA5Paths().root / "manifests" / "ons_restriction"
+        / f"year={args.year}" / f"month={args.month:02d}" / "download.json"
+    )
+    result = download_ons_restriction(output, year=args.year, month=args.month)
     atomic_write_json(manifest, result)
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
@@ -347,6 +361,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
     )
     generation.set_defaults(handler=command_download_ons_generation)
+
+    restriction = subparsers.add_parser(
+        "download-ons-restriction",
+        help="Baixa o Parquet mensal ONS de constrained-off eólico para auditoria do alvo de potencial.",
+    )
+    restriction.add_argument("--year", type=int, required=True)
+    restriction.add_argument("--month", type=int, required=True, choices=range(1, 13), metavar="1-12")
+    restriction.add_argument("--output", type=Path)
+    restriction.add_argument("--manifest", type=Path)
+    restriction.set_defaults(handler=command_download_ons_restriction)
 
     catalog = subparsers.add_parser("build-catalog", help="Concilia usinas ONS e SIGA por CEG.")
     catalog.add_argument("--ons", required=True, nargs="+", type=Path)

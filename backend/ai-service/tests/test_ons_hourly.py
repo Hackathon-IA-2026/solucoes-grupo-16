@@ -6,12 +6,18 @@ from ingestion.ons.hourly import (
     prepare_ons_generation_hourly,
     prepare_ons_hourly,
 )
-from ingestion.ons.source_client import ons_generation_url
+from ingestion.ons.source_client import ons_generation_url, ons_restriction_url
 
 
 def test_official_monthly_generation_url():
     assert ons_generation_url(2024, 1).endswith(
         "/geracao_usina_2_ho/GERACAO_USINA-2_2024_01.parquet"
+    )
+
+
+def test_official_monthly_restriction_url():
+    assert ons_restriction_url(2024, 1).endswith(
+        "/restricao_coff_eolica_tm/RESTRICAO_COFF_EOLICA_2024_01.parquet"
     )
 
 

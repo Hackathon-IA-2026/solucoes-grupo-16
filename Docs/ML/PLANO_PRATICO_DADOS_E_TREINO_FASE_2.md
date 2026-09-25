@@ -35,7 +35,30 @@ não está pronto para o `training.train` atual.
 
 ## 2. Fazer uma prova de um mês completo
 
-Usar janeiro de 2024 como piloto e executar os comandos dentro de
+**Piloto atual de potencial:** agosto de 2024, com o Parquet mensal ONS
+`RESTRICAO_COFF_EOLICA_2024_08.parquet` para `geracao_referencia_mw` e
+`disponibilidade`, mais `GERACAO_USINA-2_2024_08.parquet` para conferência da
+geração verificada. O catálogo separado do piloto contém 147 conjuntos, dos
+quais 146 estão totalmente localizados; um requer revisão. O ERA5 de agosto e o
+complemento das três primeiras horas de setembro em UTC foram baixados. A geração de referência é uma estimativa ONS de produção
+sem limitação, não uma medição direta do potencial físico. Antes de treinar,
+auditar as linhas em que a referência excede a disponibilidade e o relatório
+de junção ONS–ERA5. O snapshot `data/processed/training/pilot_2024_08.parquet`
+contém 108.518 linhas, 147 conjuntos e 744 horas locais; a cobertura da junção
+dos registros ONS válidos com o ERA5 é 100%. O relatório está em
+`data/processed/training/pilot_2024_08_report.json`. O extrator não aprovou a
+partição mensal inteira de setembro porque alguns relacionamentos de usinas
+terminam naquele mês; as três horas necessárias para agosto foram verificadas
+separadamente, com 147 conjuntos em cada hora e sem duplicatas. A normalização
+descartou 10.416 registros horários sem capacidade associada e 730 com
+disponibilidade fora da tolerância; esses descartes estão no relatório. No
+snapshot, a geração de referência supera a disponibilidade em 17.709 linhas
+e a capacidade instalada em 109. É preciso decidir com critério de domínio
+como tratar esses casos antes de treinar e comparar hiperparâmetros.
+
+O procedimento abaixo documenta o piloto anterior de janeiro de 2024 com
+geração verificada. Para o piloto atual de potencial, usar agosto de 2024 e
+`--ons-format restriction` na junção. Executar os comandos dentro de
 `backend/ai-service`. A [ONS publica a geração horária por mês](https://dados.ons.org.br/dataset/geracao-usina-2);
 o [ERA5 fornece clima horário histórico](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels?tab=overview).
 

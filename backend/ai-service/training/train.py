@@ -79,6 +79,10 @@ def train(dataset: pd.DataFrame, config: TrainingConfig, artifact_dir: Path) -> 
         part["ml_correction_mw"] = model.predict(matrix) * part.capacidade_instalada_mw
         part["hybrid_mw"] = apply_physical_bounds(part.baseline_mw, part.ml_correction_mw, part.wind_speed_100m,
                                                    part.capacidade_instalada_mw, part.disponibilidade, config.physical_curve)
+    validation_metrics = {
+        "baseline": metrics_by_wind_and_plant(valid_df, "baseline_mw"),
+        "hybrid": metrics_by_wind_and_plant(valid_df, "hybrid_mw"),
+    }
     baseline_metrics = metrics_by_wind_and_plant(test_df.assign(hybrid_mw=test_df.baseline_mw), "hybrid_mw")
     hybrid_metrics = metrics_by_wind_and_plant(test_df, "hybrid_mw")
     approved = hybrid_metrics["overall"]["mae_mw"] < baseline_metrics["overall"]["mae_mw"]
@@ -102,7 +106,9 @@ def train(dataset: pd.DataFrame, config: TrainingConfig, artifact_dir: Path) -> 
         "feature_order": FEATURE_COLUMNS,
         "physical_curve": config.serializable()["physical_curve"],
         "split_periods": periods,
-        "metrics": {"baseline_test": baseline_metrics, "hybrid_test": hybrid_metrics},
+        "metrics": {"baseline_validation": validation_metrics["baseline"],
+                    "hybrid_validation": validation_metrics["hybrid"],
+                    "baseline_test": baseline_metrics, "hybrid_test": hybrid_metrics},
         "wind_speed_domain_ms": wind_domain,
         "input_domain": {c: {"min": float(train_df[c].min()), "max": float(train_df[c].max())} for c in domain_columns},
         "training_usina_ids": sorted(train_df.usina_id.unique().tolist()),

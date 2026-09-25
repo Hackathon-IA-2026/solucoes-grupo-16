@@ -72,6 +72,18 @@ def test_single_plant_selection(synthetic_frame):
     assert len(data) == 720
 
 
+def test_multi_plant_coverage_counts_plant_hours(synthetic_frame):
+    other = synthetic_frame.assign(usina_id="other").iloc[:-1]
+    source = pd.concat([synthetic_frame, other], ignore_index=True)
+    config = TrainingConfig(target=CONFIG.target, allow_multiple_plants=True)
+    data, report = prepare_hourly_dataset(source, config)
+    assert len(data) == 1439
+    assert report["coverage"]["observed_hours"] == 720
+    assert report["coverage"]["expected_plant_hours"] == 1440
+    assert report["coverage"]["observed_plant_hours"] == 1439
+    assert report["coverage"]["plant_hour_fraction"] == pytest.approx(1439 / 1440)
+
+
 def test_invalid_schema_cli_still_writes_report(tmp_path):
     source = tmp_path / "invalid.csv"
     pd.DataFrame({"usina_id": ["test"]}).to_csv(source, index=False)

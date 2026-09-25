@@ -128,7 +128,7 @@ def prepare_hourly_dataset(frame: pd.DataFrame, config: TrainingConfig) -> tuple
     if config.usina_id is not None:
         selected &= df.usina_id.eq(config.usina_id).fillna(False)
     plants = df.loc[selected, "usina_id"].dropna().unique()
-    if len(plants) > 1:
+    if len(plants) > 1 and not config.allow_multiple_plants:
         report["status"] = "invalid"
         raise DatasetValidationError("Fase 1 exige uma usina; configure usina_id para selecionar o experimento.", report)
     start = df.loc[selected, "timestamp_utc"].min()
@@ -159,17 +159,21 @@ def prepare_hourly_dataset(frame: pd.DataFrame, config: TrainingConfig) -> tuple
         numeric += ["era5_distance_km"]
     hourly = clean.groupby(KEY, as_index=False)[numeric].mean().sort_values(KEY[::-1]).reset_index(drop=True)
     expected_hours = config.experiment_days * 24
+    expected_plant_hours = expected_hours * max(1, len(plants))
+    observed_hours = int(hourly["timestamp_utc"].nunique())
     report.update({
         "status": "valid" if len(hourly) else "invalid",
         "rows_after_validation": len(clean), "rows_excluded": len(df) - len(clean),
         "rows_hourly": len(hourly), "hourly_duplicate_keys": int(hourly.duplicated(KEY).sum()),
-        "coverage": {"expected_hours": expected_hours, "observed_hours": len(hourly),
-                     "missing_hours": expected_hours - len(hourly), "fraction": len(hourly) / expected_hours},
+        "coverage": {"expected_hours": expected_hours, "observed_hours": observed_hours,
+                     "missing_hours": expected_hours - observed_hours, "fraction": observed_hours / expected_hours,
+                     "expected_plant_hours": expected_plant_hours, "observed_plant_hours": len(hourly),
+                     "plant_hour_fraction": len(hourly) / expected_plant_hours},
         "hourly_period_utc": _period(hourly.timestamp_utc),
         "aggregation": "UTC hour, arithmetic mean of MW and climate; no gap filling; reject whole invalid hours",
         "exclusion_counts_overlap": True,
     })
-    if len(hourly) < expected_hours:
+    if len(hourly) < expected_plant_hours:
         report["warnings"].append("Cobertura incompleta; lacunas não foram imputadas.")
     if not len(hourly):
         raise DatasetValidationError("Nenhuma hora válida no experimento.", report)

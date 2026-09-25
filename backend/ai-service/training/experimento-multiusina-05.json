@@ -1,0 +1,18 @@
+{
+  "target": "geracao_referencia_mw",
+  "model_version": "wind-potential-multi-exp-005",
+  "allow_multiple_plants": true,
+  "start_utc": "2024-08-01T03:00:00Z",
+  "experiment_days": 31,
+  "n_jobs": 1,
+  "physical_curve": {"cut_in_ms": 3.0, "rated_ms": 12.0, "cut_out_ms": 25.0},
+  "lightgbm": {
+    "learning_rate": 0.04,
+    "n_estimators": 2500,
+    "num_leaves": 31,
+    "min_child_samples": 50,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "reg_lambda": 5.0
+  }
+}

@@ -102,6 +102,19 @@ python -m ingestion.era5.cli download-ons-generation --year 2024 --month 1
 O comando baixa o Parquet mensal oficial e grava manifest com URL, hash e data
 de obtenção. A base de restrição não é usada como substituto da geração real.
 
+Para auditar o alvo de **potencial sem limitação** do experimento da fase 2, baixe
+separadamente o Parquet mensal de constrained-off eólico:
+
+```powershell
+python -m ingestion.era5.cli download-ons-restriction --year 2024 --month 8
+```
+
+Ele fica em `data/raw/ons/year=AAAA/month=MM/` e possui manifest próprio em
+`data/manifests/ons_restriction/`. O campo `val_geracaoreferencia` é uma estimativa
+ONS de geração sem limitação; validar sua cobertura e regras de cálculo antes de
+usá-lo como target. O dataset de fator de capacidade é derivado da geração e da
+capacidade instalada; não fornece esse alvo nem disponibilidade independente.
+
 ### 4. Conferir a área e os pedidos
 
 Este comando não acessa o CDS:
@@ -194,7 +207,7 @@ Use `training/config.example.json` como ponto de partida. O target inicia em `nu
 {
   "target": "geracao_referencia_mw",
   "usina_id": "ID_REAL_VALIDADO",
-  "start_utc": "2026-08-01T00:00:00Z",
+  "start_utc": "2024-08-01T00:00:00Z",
   "experiment_days": 30,
   "source_timezone": null,
   "columns": {},
@@ -203,7 +216,7 @@ Use `training/config.example.json` como ponto de partida. O target inicia em `nu
 }
 ```
 
-Em `columns`, cada chave é o nome canônico e cada valor é o nome confirmado no seu snapshot. O mapeamento inclui os dois targets. Não renomeie campos sem conferir unidade e semântica. Com `usina_id: null`, só são aceitos dados de uma única usina; com `start_utc: null`, a janela começa na primeira hora encontrada. São selecionados 30 dias por padrão, com exclusões e cobertura registradas. Dados menores podem testar a execução, mas geram aviso de cobertura incompleta; o split requer ao menos sete horas distintas.
+Em `columns`, cada chave é o nome canônico e cada valor é o nome confirmado no seu snapshot. O mapeamento inclui os dois targets. Não renomeie campos sem conferir unidade e semântica. Com `usina_id: null`, só são aceitos dados de uma única usina por padrão. Para um experimento multiusina explícito, use `allow_multiple_plants: true` e deixe `usina_id: null`; a cobertura registra tanto horas distintas quanto pares usina–hora. Com `start_utc: null`, a janela começa na primeira hora encontrada. São selecionados 30 dias por padrão, com exclusões e cobertura registradas. Dados menores podem testar a execução, mas geram aviso de cobertura incompleta; o split requer ao menos sete horas distintas. O piloto multiusina de agosto de 2024 está documentado em [`Docs/ML/EXPERIMENTOS_03_A_06_MULTIUSINA.md`](../../Docs/ML/EXPERIMENTOS_03_A_06_MULTIUSINA.md).
 
 Disponibilidade deve ser uma fração conhecida no instante da previsão. O serviço não converte automaticamente disponibilidade em MW para fração. Temperatura deve estar em 150–350 K, pressão em 50.000–120.000 Pa e vento derivado em 0–50 m/s, tanto no dataset quanto na API. Essas faixas são verificações iniciais, sujeitas à revisão com os dados reais.
 
@@ -235,7 +248,7 @@ O treino não sobrescreve um `model.txt` existente: escolha outro diretório par
 
 O treino registra em `artifacts/global/v1/`: `model.txt`, `metadata.json`, `residual_quantiles.json` e `validation_report.json`. O metadata contém configuração completa, ordem de features, versões das bibliotecas, melhor iteração, períodos do split 70/15/15, hash do dataset/teste, métricas geral/por faixa de vento/por usina, cobertura do intervalo e decisão de aprovação. A avaliação verifica o período e o conteúdo do teste pelo hash; não refaz o split com os dados novos.
 
-LightGBM aprende `(target_mw - baseline_mw) / capacidade_instalada_mw`. Os parâmetros padrão são mantidos quando `lightgbm` é omitido. Essa seção do JSON aceita `learning_rate`, `n_estimators`, `num_leaves`, `min_child_samples`, `subsample`, `colsample_bytree` e `reg_lambda`; o metadata registra os valores efetivos. `subsample_freq=1` ativa a amostragem, o determinismo é habilitado e uma thread é usada por padrão. `n_jobs` é configurável. Apenas validação entra no early stopping de 100 rodadas. O teste decide aprovação por MAE estritamente menor; empate implica fallback. A aprovação é experimental, não validação de produção.
+LightGBM aprende `(target_mw - baseline_mw) / capacidade_instalada_mw`. Os parâmetros padrão são mantidos quando `lightgbm` é omitido. Essa seção do JSON aceita `learning_rate`, `n_estimators`, `num_leaves`, `min_child_samples`, `subsample`, `colsample_bytree` e `reg_lambda`; o metadata registra os valores efetivos e as métricas de validação. `subsample_freq=1` ativa a amostragem, o determinismo é habilitado e uma thread é usada por padrão. `n_jobs` é configurável. Apenas validação entra no early stopping de 100 rodadas. O teste decide aprovação por MAE estritamente menor; empate implica fallback. A aprovação é experimental, não validação de produção.
 
 MAE/RMSE são em MW; `nmae_cf` é a média de `abs(erro_mw) / capacidade_mw`; WAPE é `sum(abs(erro)) / sum(abs(target))`, ou `null` quando a geração total é zero. O domínio de entrada é calculado somente no treino, sobre vento, temperatura, pressão, capacidade e disponibilidade. Como este primeiro artefato foi treinado com uma usina, outras usinas usam fallback, mesmo que o diretório seja `global/v1`.
 
