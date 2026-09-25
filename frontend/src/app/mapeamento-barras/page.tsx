@@ -30,7 +30,14 @@ export default function BusMappingPage() {
     () => new Map(selectedPlants.map((plant) => [plant.id, plant])),
     [selectedPlants],
   );
-  const targets = state.study.generationTargets.filter((target) => target.editable);
+  const targets = useMemo(
+    () => state.study.generationTargets.filter((target) => target.editable),
+    [state.study.generationTargets],
+  );
+  const targetsByBusNumber = useMemo(
+    () => new Map(targets.map((target) => [String(target.busNumber), target])),
+    [targets],
+  );
   const mappedCount = allocations.filter((mapping) => mapping.busNumber).length;
   const isReady = Boolean(
     selectedPlants.length > 0
@@ -80,12 +87,22 @@ export default function BusMappingPage() {
   }
 
   function handleTargetChange(allocationId: string, busNumber: string) {
-    const target = targets.find((item) => String(item.busNumber) === busNumber);
+    if (!busNumber) {
+      updateMapping(allocationId, {
+        busNumber: "",
+        busName: "",
+        nominalVoltageKv: "",
+        area: "",
+      });
+      return;
+    }
+    const target = targetsByBusNumber.get(busNumber);
+    if (!target) return;
     updateMapping(allocationId, {
-      busNumber,
-      busName: target?.busName ?? "",
-      nominalVoltageKv: target?.baseVoltageKv?.toString() ?? "",
-      area: target?.area?.toString() ?? "",
+      busNumber: String(target.busNumber),
+      busName: target.busName,
+      nominalVoltageKv: target.baseVoltageKv?.toString() ?? "",
+      area: target.area?.toString() ?? "",
     });
   }
 
@@ -146,6 +163,15 @@ export default function BusMappingPage() {
         {state.study.referencePwf ? (
           <section className="overflow-hidden rounded-2xl border border-outline-variant/50 bg-surface-container-low shadow-sm">
             <div className="border-b border-outline-variant/40 p-5"><h2 className="font-semibold text-on-surface">Alocações propostas</h2><p className="mt-1 text-sm text-on-surface-variant">A lista contém uma linha por parcela de geração e por barra.</p></div>
+            <datalist id="pwf-generation-targets">
+              {targets.map((target) => (
+                <option
+                  key={target.busNumber}
+                  value={target.busNumber}
+                  label={`${target.busName} · Pg ${target.activeGenerationMw.toLocaleString("pt-BR")} MW`}
+                />
+              ))}
+            </datalist>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[900px] border-collapse text-left">
                 <thead className="bg-surface-container-lowest text-[10px] uppercase tracking-wider text-outline"><tr><th className="px-5 py-3">Conjunto ONS</th><th className="px-3 py-3 text-right">Parcela</th><th className="px-3 py-3 text-right">Pg</th><th className="px-3 py-3">Barra do PWF</th><th className="px-5 py-3">Situação</th></tr></thead>
@@ -157,7 +183,31 @@ export default function BusMappingPage() {
                         <td className="px-5 py-4"><p className="text-sm font-medium text-on-surface">{plant?.name ?? allocation.plantId}</p><p className="font-mono text-[10px] text-outline">{plant?.onsId ?? allocation.plantId}</p></td>
                         <td className="px-3 py-4 text-right font-mono text-sm text-on-surface-variant">{(allocation.allocationFactor * 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%</td>
                         <td className="px-3 py-4 text-right font-mono text-sm font-semibold text-secondary">{allocation.generationMw.toLocaleString("pt-BR", { maximumFractionDigits: 3 })} MW</td>
-                        <td className="px-3 py-4"><select className="field-input min-w-72" value={allocation.busNumber} onChange={(event) => handleTargetChange(allocation.allocationId, event.target.value)}><option value="">Selecione uma barra</option>{targets.map((target) => <option key={target.busNumber} value={target.busNumber}>{target.busNumber} · {target.busName} · Pg {target.activeGenerationMw.toLocaleString("pt-BR")} MW</option>)}</select></td>
+                        <td className="px-3 py-4">
+                          <input
+                            key={`${state.study.referencePwf?.id ?? "reference"}:${allocation.allocationId}`}
+                            className="field-input min-w-72"
+                            type="text"
+                            inputMode="numeric"
+                            autoComplete="off"
+                            list="pwf-generation-targets"
+                            defaultValue={allocation.busNumber}
+                            placeholder="Digite ou selecione uma barra"
+                            aria-label={`Barra do PWF para ${plant?.name ?? allocation.plantId}`}
+                            onChange={(event) => {
+                              const busNumber = event.currentTarget.value.trim();
+                              if (!busNumber || targetsByBusNumber.has(busNumber)) {
+                                handleTargetChange(allocation.allocationId, busNumber);
+                              }
+                            }}
+                            onBlur={(event) => {
+                              const busNumber = event.currentTarget.value.trim();
+                              if (!targetsByBusNumber.has(busNumber)) {
+                                event.currentTarget.value = allocation.busNumber;
+                              }
+                            }}
+                          />
+                        </td>
                         <td className="px-5 py-4">{allocation.busNumber ? <span className="inline-flex rounded-full bg-emerald-300/10 px-2.5 py-1 text-[10px] font-semibold text-emerald-200">Correspondência validada</span> : <span className="inline-flex rounded-full bg-amber-300/10 px-2.5 py-1 text-[10px] font-semibold text-amber-200">Revisão necessária</span>}</td>
                       </tr>
                     );
