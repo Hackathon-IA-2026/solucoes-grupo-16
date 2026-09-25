@@ -32,8 +32,8 @@ export interface WindPlantEstimate {
   longitude: number | null;
   installedCapacityMw: number;
   estimatedGenerationMw: number;
-  confidenceLowMw: number;
-  confidenceHighMw: number;
+  confidenceLowMw: number | null;
+  confidenceHighMw: number | null;
   confidenceLevel: "alta" | "media" | "baixa";
   historicalAvailabilityPercent: number;
   historicalCurtailmentPercent: number | null;

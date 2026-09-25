@@ -135,7 +135,11 @@ export default function GenerationEstimatesPage() {
                     <td className="px-3 py-4 text-sm text-on-surface-variant">{plant.state}</td>
                     <td className="px-3 py-4 text-right font-mono text-sm text-on-surface-variant">{plant.installedCapacityMw.toLocaleString("pt-BR")} MW</td>
                     <td className="px-3 py-4 text-right font-mono text-sm font-semibold text-secondary">{plant.estimatedGenerationMw.toLocaleString("pt-BR")} MW</td>
-                    <td className="px-3 py-4 text-right font-mono text-xs text-on-surface-variant">{plant.confidenceLowMw.toLocaleString("pt-BR")}–{plant.confidenceHighMw.toLocaleString("pt-BR")} MW</td>
+                    <td className="px-3 py-4 text-right font-mono text-xs text-on-surface-variant">
+                      {plant.confidenceLowMw != null && plant.confidenceHighMw != null
+                        ? `${plant.confidenceLowMw.toLocaleString("pt-BR")}–${plant.confidenceHighMw.toLocaleString("pt-BR")} MW`
+                        : "Indisponível"}
+                    </td>
                     <td className="px-3 py-4 text-right font-mono text-sm text-on-surface-variant">{plant.historicalAvailabilityPercent.toLocaleString("pt-BR")}%</td>
                     <td className="px-4 py-4"><RiskBadge level={plant.riskLevel} reason={plant.probableReason} /></td>
                   </tr>
