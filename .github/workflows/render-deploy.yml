@@ -2,11 +2,6 @@ name: Build, push and deploy to Render
 
 on:
   workflow_dispatch:
-    inputs:
-      run_ingestion:
-        description: 'Run ingestion in CI to produce observations.parquet (true/false)'
-        required: false
-        default: 'false'
 
 env:
   DOCKER_REPO: ${{ secrets.DOCKER_REPO }} # ex: victorszcruzpoli
@@ -59,24 +54,30 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Restore validated historical runtime data
+        run: |
+          DATA_TAG=$(tr -d '\r\n ' < deploy/historical-data-version.txt)
+          DATA_IMAGE="docker.io/${DOCKER_REPO}/climagrid-historical-data:${DATA_TAG}"
+          docker pull "$DATA_IMAGE"
+
+          data_container=$(docker create "$DATA_IMAGE" /bin/true)
+          trap 'docker rm -f "$data_container" >/dev/null 2>&1 || true' EXIT
+          docker cp "$data_container:/service/data/." backend/ai-service/.runtime-data/
+
+          test -s backend/ai-service/.runtime-data/processed/historical/observations.parquet
+          test -s backend/ai-service/.runtime-data/processed/reference/plant_locations.parquet
+          test -s backend/ai-service/.runtime-data/processed/reference/pwf_bus_mapping.parquet
+          (
+            cd backend/ai-service/.runtime-data
+            sha256sum --check "$GITHUB_WORKSPACE/deploy/historical-data.sha256"
+          )
+
       - name: Set tags
         id: tags
         run: |
           SHORT=$(git rev-parse --short HEAD)
           echo "SHORT=$SHORT" >> $GITHUB_OUTPUT
           echo "TAG=sha-$SHORT" >> $GITHUB_OUTPUT
-
-      - name: Optionally run ingestion (produce observations.parquet)
-        if: ${{ github.event.inputs.run_ingestion == 'true' }}
-        run: |
-          docker build -t ai-runner -f backend/ai-service/Dockerfile backend/ai-service
-          mkdir -p backend/ai-service/data
-          # run ingestion steps you need; example: download and join (adjust args as needed)
-          docker run --rm -v $PWD/backend/ai-service/data:/service/data ai-runner \
-            python -m ingestion.era5.cli download-siga
-          docker run --rm -v $PWD/backend/ai-service/data:/service/data ai-runner \
-            python -m ingestion.era5.cli download-ons-membership
-          # add your backfill/join commands here; WARNING: can be long-running
 
       - name: Build & push ai-service image
         run: |

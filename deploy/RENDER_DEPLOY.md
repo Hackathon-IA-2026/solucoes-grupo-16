@@ -5,9 +5,25 @@ Resumo rápido
 - Se você não consegue ligar o repositório do GitHub ao Render por permissões da org, publique imagens Docker em um registry (Docker Hub ou GHCR) e crie serviços no Render apontando para essas imagens.
 
 Fluxo geral
-1. Build das imagens a partir dos Dockerfiles do monorepo
-2. Push para um registry (Docker Hub ou GitHub Container Registry)
-3. No Render: criar 3 serviços apontando para as imagens (frontend, backend, ai-service)
+1. Publicação versionada do snapshot histórico validado
+2. Build das imagens a partir dos Dockerfiles do monorepo
+3. Push para um registry (Docker Hub ou GitHub Container Registry)
+4. No Render: criar 3 serviços apontando para as imagens (frontend, backend, ai-service)
+
+0) Publicar os dados históricos validados
+
+Os dados brutos e processados continuam fora do Git. Antes do primeiro deploy,
+publique uma imagem contendo somente o snapshot unido, o catálogo e o mapa de
+barras:
+
+```bash
+docker login --username DOCKER_USER
+DOCKER_REPO=DOCKER_USER ./deploy/publish-historical-data.sh --push
+```
+
+O GitHub Actions usa a tag registrada em
+`deploy/historical-data-version.txt`. Quando o snapshot mudar, altere a tag,
+publique novamente a imagem de dados e só então execute o workflow de deploy.
 
 Convenções recomendadas de tags
 - Use $(git rev-parse --short HEAD) para tag semântica: :sha-<short> e mantenha :latest opcional.

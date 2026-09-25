@@ -1,0 +1,7 @@
+**
+!processed/
+!processed/historical/
+!processed/historical/observations.parquet
+!processed/reference/
+!processed/reference/plant_locations.parquet
+!processed/reference/pwf_bus_mapping.parquet

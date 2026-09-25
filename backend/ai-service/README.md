@@ -270,6 +270,21 @@ docker run --rm -p 8000:8000 climagrid-ai
 
 A imagem inclui `libgomp1`, necessário ao LightGBM no Linux. Por padrão inicia em fallback físico; dados locais, `.venv`, segredos e artefatos não entram no contexto. Para usar um modelo, monte seu diretório em `/service/artifacts/global/v1` como volume somente leitura.
 
+Em produção, o snapshot histórico validado permanece fora do Git e é publicado
+como uma imagem de dados separada. Depois de gerar ou atualizar
+`observations.parquet`, `plant_locations.parquet` e `pwf_bus_mapping.parquet`,
+publique a versão indicada em `deploy/historical-data-version.txt` a partir da
+raiz do repositório:
+
+```bash
+docker login --username SEU_USUARIO
+DOCKER_REPO=SEU_USUARIO ./deploy/publish-historical-data.sh --push
+```
+
+O workflow de deploy baixa essa imagem e copia somente os três arquivos
+validados para a imagem final do AI service. Alterações do snapshot exigem uma
+nova tag no arquivo de versão, nova publicação da imagem de dados e novo deploy.
+
 ## Limites e decisões pendentes
 
 - Confirmar target com o especialista ONS. Referência precisa representar o potencial sem corte. Se usar geração verificada, preparar previamente um snapshot filtrado por ausência de restrição e disponibilidade adequada, com critérios documentados pelo especialista. Esses filtros não são inferidos e restrição nunca entra nas features.
