@@ -1,5 +1,10 @@
 # ClimaGrid AI Service — replay histórico e base experimental
 
+> A fonte canônica de escopo e status é
+> [`../../Docs/CONTEXTO_PROJETO_IA.md`](../../Docs/CONTEXTO_PROJETO_IA.md). O
+> replay é a etapa 1; upload climático encerra o MVP na etapa 2; previsão futura
+> e curtailment são etapas posteriores.
+
 O fluxo operacional desta etapa reproduz uma hora já observada: geração
 verificada da ONS e vento ERA5 alinhados por conjunto eólico do Nordeste. Ele
 não executa previsão nem usa o modelo experimental para produzir o `Pg` do PWF.
@@ -76,7 +81,8 @@ ONS aos CEGs das usinas integrantes.
 
 ```powershell
 python -m ingestion.era5.cli build-catalog `
-  --ons data/raw/ons/restricao_coff_eolica_usi.csv `
+  --ons data/raw/ons/year=2024/month=01/GERACAO_USINA-2_2024_01.parquet `
+  --plant-type EOL `
   --siga data/raw/siga/siga.csv `
   --ons-membership data/raw/ons/relacionamento_usina_conjunto.parquet
 ```
@@ -150,6 +156,9 @@ python -m ingestion.era5.cli build-pwf-mapping `
 A associação usa o CEG. Quando um conjunto ONS possui várias usinas ou barras,
 a API distribui a geração observada proporcionalmente à potência conectada. A
 cobertura parcial permanece explícita em vez de ser tratada como completa.
+
+Para ampliar o período publicado, siga o procedimento completo em
+[`../../Docs/OPERACAO_HISTORICO_MENSAL.md`](../../Docs/OPERACAO_HISTORICO_MENSAL.md).
 
 ### Atualização e reconciliação do ERA5
 

@@ -1,5 +1,9 @@
 # Respostas às dúvidas sobre o modelo ML com ERA5 e ONS
 
+> **Documento de pesquisa para a etapa 3.** Algumas afirmações sobre “código
+> atual” registram um estado antigo do merge e não devem ser usadas como status
+> do projeto. Consulte [`../CONTEXTO_PROJETO_IA.md`](../CONTEXTO_PROJETO_IA.md).
+
 Este documento complementa o [guia prático](GUIA_PRATICO_MODELO_ML_ERA5_ONS.md). As respostas foram conferidas no código atual de `backend/ai-service`. Os comandos partem desse diretório.
 
 ## Visão geral
@@ -182,7 +186,11 @@ Ao mudar uma regra, execute primeiro o arquivo relacionado e, antes de concluir,
 
 ### Situação atual
 
-O guia registra regressões ainda visíveis no código: `app/predictor.py` usa `radius` e `available` sem defini-los ao criar limites; `app/main.py` ainda não expõe `GET /capabilities` e `POST /estimar-historico`. Portanto, não se deve esperar a suíte toda verde antes das correções. Na verificação para este documento, `pip check` passou, mas o `pytest` indicou falhas.
+As regressões antigas em `app/predictor.py` e `app/main.py` foram corrigidas.
+O replay histórico operacional usa `GET /capabilities` e
+`POST /replay-historico`; a suíte automatizada deve permanecer verde antes de
+qualquer publicação. O restante deste documento continua útil como referência
+para a pesquisa de estimativa e previsão das etapas 2 e 3.
 
 ## 5. Como funciona a pasta `training`? Preciso mudar hiperparâmetros a cada teste?
 

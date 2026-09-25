@@ -97,7 +97,11 @@ def command_download_ons_generation(args: argparse.Namespace) -> None:
 
 
 def command_build_catalog(args: argparse.Namespace) -> None:
-    ons = load_ons_catalog(args.ons, subsystem=args.subsystem)
+    ons = load_ons_catalog(
+        args.ons,
+        subsystem=args.subsystem,
+        plant_type=args.plant_type,
+    )
     membership = load_ons_membership(args.ons_membership, subsystem=args.subsystem) if args.ons_membership else None
     ons = expand_ons_groups(ons, membership)
     siga = load_siga_catalog(args.siga)
@@ -349,6 +353,13 @@ def build_parser() -> argparse.ArgumentParser:
     catalog.add_argument("--siga", required=True, type=Path)
     catalog.add_argument("--ons-membership", type=Path)
     catalog.add_argument("--subsystem", default="NE")
+    catalog.add_argument(
+        "--plant-type",
+        help=(
+            "Filtra a tecnologia quando a fonte ONS possui nom_tipousina. "
+            "Use EOL com GERACAO_USINA-2_HO."
+        ),
+    )
     catalog.add_argument("--overrides", type=Path)
     catalog.add_argument("--location-source")
     catalog.add_argument("--minimum-coverage", type=float, default=0.95)

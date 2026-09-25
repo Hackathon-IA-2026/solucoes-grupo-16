@@ -1,10 +1,16 @@
 # Plano oficial de implementação — coleta e preparação dos dados ERA5
 
+> **Status histórico:** este plano precede a implementação do replay. Várias
+> lacunas descritas abaixo já foram resolvidas. Para o estado atual, roadmap e
+> operação mensal, consulte [`CONTEXTO_PROJETO_IA.md`](CONTEXTO_PROJETO_IA.md) e
+> [`OPERACAO_HISTORICO_MENSAL.md`](OPERACAO_HISTORICO_MENSAL.md).
+
 **Projeto:** ClimaGrid  
 **Escopo desta versão:** geração eólica no subsistema Nordeste  
 **Versão:** 1.0  
 **Data:** 21 de setembro de 2026  
-**Status:** implementado em código; execução do backfill depende das credenciais CDS e dos arquivos reais do ONS
+**Status:** pipeline implementado; janeiro/2024 materializado; ampliação depende
+das credenciais CDS, download dos meses ONS e republicação do snapshot
 
 ## 1. Objetivo
 
@@ -77,16 +83,19 @@ Essa caixa contém cerca de 3.185 pontos de grade de 0,25°, contra aproximadame
 - A interface já usa 60 minutos como padrão e identifica essa opção como a resolução nativa do ERA5.
 - O modelo já prevê os campos de cadastro `capacidade_instalada_mw`, latitude, longitude e `era5_distance_km`.
 
-### 4.2 Lacunas que esta implementação deve fechar
+### 4.2 Estado após a implementação do replay
 
-- ainda não existe coletor do CDS/ERA5;
-- ainda não existe ingestão oficial do cadastro SIGA;
-- os arquivos de dados do ONS não estão versionados no repositório;
-- não existe tabela ou snapshot canônico de localização das usinas;
-- as coordenadas do `mock-data.ts` são apenas demonstração e não podem alimentar o modelo;
-- o banco atual contém estruturas do fluxo PWF, mas não um catálogo de plantas, coletas ou observações meteorológicas;
-- a interface tipa apenas cinco UFs. O backend não deve herdar essa limitação: o subsistema NE será a regra oficial, e a apresentação deve aceitar as UFs retornadas pelo cadastro validado;
-- as dependências de coleta (`cdsapi`, `xarray` e um leitor NetCDF) ainda não constam nos requisitos do serviço de IA.
+- o coletor mensal do ONS e o coletor/backfill do CDS/ERA5 estão implementados;
+- SIGA e o relacionamento ONS usina–conjunto alimentam o catálogo canônico;
+- os snapshots de localização, clima processado e observações históricas são
+  publicados em Parquet;
+- o catálogo aceita o filtro explícito `--plant-type EOL`, necessário quando a
+  entrada ONS contém várias tecnologias;
+- os dados reais substituíram o `mock-data.ts` no fluxo de replay;
+- a operação disponível cobre janeiro de 2024; a expansão exige repetir a
+  ingestão para os novos meses e republicar o snapshot consolidado;
+- o procedimento operacional atualizado está em
+  [`OPERACAO_HISTORICO_MENSAL.md`](OPERACAO_HISTORICO_MENSAL.md).
 
 ## 5. Como localizar exatamente cada usina
 

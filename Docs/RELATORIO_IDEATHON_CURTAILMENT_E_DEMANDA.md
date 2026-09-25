@@ -1,5 +1,10 @@
 # Inteligência para triagem de curtailment e flexibilidade do SIN
 
+> **Relatório de pesquisa da etapa 4.** A recomendação abaixo não é o escopo do
+> MVP atual. O roadmap vigente prioriza replay, depois upload climático, depois
+> previsão futura e somente então curtailment. Consulte
+> [`CONTEXTO_PROJETO_IA.md`](CONTEXTO_PROJETO_IA.md).
+
 ## 1. Resumo executivo
 
 **Recomendação:** seguir com **SINAL — Sistema Inteligente de Antecipação e Lógica de Curtailment**, uma camada analítica que estima, para agrupamentos de usinas e subsistemas, o risco e o montante de *constrained-off* nas próximas 6–24 horas, **separa a provável causa** (energética, confiabilidade ou indisponibilidade externa) e seleciona poucos cenários críticos para estudo elétrico. A saída não é um alerta genérico: é uma fila priorizada de decisões, por exemplo: “cluster eólico do NE: 78% de risco de ENE nas próximas 6 h; 120–180 MW esperados; confiança moderada; fatores: carga líquida baixa, geração renovável alta e exportação próxima ao histórico alto”.

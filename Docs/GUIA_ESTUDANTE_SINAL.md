@@ -1,5 +1,9 @@
 # Guia universitário: curtailment, demanda e a proposta SINAL
 
+> **Pesquisa reservada para a etapa 4.** Curtailment está fora do MVP atual e
+> não deve ser implementado antes do upload climático da etapa 2. Consulte
+> [`CONTEXTO_PROJETO_IA.md`](CONTEXTO_PROJETO_IA.md).
+
 > **Como usar este arquivo:** este é o guia de leitura do relatório técnico completo. Ele mantém a mesma conclusão, os mesmos limites e a mesma recomendação, mas explica primeiro a ideia e depois o termo técnico. Para tabelas completas, fontes e detalhes de implementação, consulte [o relatório técnico](RELATORIO_IDEATHON_CURTAILMENT_E_DEMANDA.md).
 
 ## Comece por aqui

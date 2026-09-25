@@ -4,6 +4,16 @@ Aplicação para reproduzir uma hora histórica de geração eólica do Nordeste
 combinar a geração verificada da ONS com o vento ERA5, mapear os conjuntos para
 as barras de um caso ANAREDE e exportar uma cópia do PWF com o `Pg` observado.
 
+O contexto canônico para pessoas e agentes de IA está em
+[`Docs/CONTEXTO_PROJETO_IA.md`](Docs/CONTEXTO_PROJETO_IA.md). O roadmap oficial
+possui quatro etapas:
+
+1. replay histórico — **implementado**;
+2. upload climático do usuário → geração estimada → PWF — **próxima etapa e
+   limite do MVP**;
+3. escolha de hora futura → previsão de geração → PWF — pós-MVP;
+4. curtailment — por último e fora do MVP.
+
 ## Arquitetura local
 
 - `frontend/`: Next.js, sempre conectado ao NestJS;
@@ -147,20 +157,21 @@ restrições. Todos os comandos abaixo são executados na raiz do repositório.
    docker compose run --rm ai-service python -m ingestion.era5.cli download-ons-membership
    ```
 
-2. Construir o catálogo por CEG, com coordenadas e vigência:
-
-   ```bash
-   docker compose run --rm ai-service python -m ingestion.era5.cli build-catalog \
-     --ons data/raw/ons/restricao_coff_eolica_usi.csv \
-     --siga data/raw/siga/siga.csv \
-     --ons-membership data/raw/ons/relacionamento_usina_conjunto.parquet
-   ```
-
-3. Baixar a geração horária oficial do mês desejado:
+2. Baixar a geração horária oficial do mês desejado:
 
    ```bash
    docker compose run --rm ai-service python -m ingestion.era5.cli \
      download-ons-generation --year 2024 --month 1
+   ```
+
+3. Construir o catálogo por CEG, com coordenadas e vigência:
+
+   ```bash
+   docker compose run --rm ai-service python -m ingestion.era5.cli build-catalog \
+     --ons data/raw/ons/year=2024/month=01/GERACAO_USINA-2_2024_01.parquet \
+     --plant-type EOL \
+     --siga data/raw/siga/siga.csv \
+     --ons-membership data/raw/ons/relacionamento_usina_conjunto.parquet
    ```
 
 4. Baixar e extrair o ERA5 para o mesmo período:
@@ -206,6 +217,11 @@ O caso PWF deve corresponder ao horizonte da planilha de barras. Para o arquivo
 `Lista_de_Usinas.xlsx`, use preferencialmente um caso de 2040. Um mesmo conjunto
 ONS pode alimentar várias barras; a interface distribui a geração por capacidade
 conectada e o backend soma parcelas que chegam à mesma barra.
+
+Para adicionar fevereiro, um ano completo ou outro intervalo, não basta baixar
+um arquivo: catálogo, ERA5, mapa de barras e snapshot consolidado devem ser
+reconstruídos com todos os meses desejados. O procedimento está em
+[`Docs/OPERACAO_HISTORICO_MENSAL.md`](Docs/OPERACAO_HISTORICO_MENSAL.md).
 
 ## Execução nativa opcional
 

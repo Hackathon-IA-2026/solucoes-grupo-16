@@ -90,7 +90,11 @@ def _number(series: pd.Series) -> pd.Series:
     return pd.to_numeric(text, errors="coerce")
 
 
-def load_ons_catalog(paths: Iterable[Path], subsystem: str = "NE") -> pd.DataFrame:
+def load_ons_catalog(
+    paths: Iterable[Path],
+    subsystem: str = "NE",
+    plant_type: str | None = None,
+) -> pd.DataFrame:
     frames = [read_tabular(path) for path in paths]
     if not frames:
         raise ValueError("Informe ao menos um arquivo ONS.")
@@ -101,6 +105,7 @@ def load_ons_catalog(paths: Iterable[Path], subsystem: str = "NE") -> pd.DataFra
         "ceg": ["ceg", "cod_ceg", "codceg"],
         "id_subsistema": ["id_subsistema", "subsistema"],
         "id_estado": ["id_estado", "estado", "uf"],
+        "plant_type": ["nom_tipousina", "tipo_usina", "plant_type"],
     }
     rename: dict[str, str] = {}
     for canonical, options in aliases.items():
@@ -113,6 +118,17 @@ def load_ons_catalog(paths: Iterable[Path], subsystem: str = "NE") -> pd.DataFra
         raise ValueError(f"Campos ONS ausentes: {missing}")
     source["id_subsistema"] = source["id_subsistema"].map(normalize_text)
     source = source[source["id_subsistema"] == normalize_text(subsystem)].copy()
+    if plant_type:
+        if "plant_type" not in source:
+            raise ValueError(
+                "A fonte ONS não possui o tipo de usina necessário para aplicar "
+                f"o filtro {plant_type!r}."
+            )
+        normalized_type = normalize_text(plant_type)
+        source["plant_type"] = source["plant_type"].map(normalize_text)
+        source = source[
+            source["plant_type"].str.contains(normalized_type, na=False)
+        ].copy()
     for column in ["id_ons", "nom_usina", "ceg"]:
         source[column] = source[column].astype("string").str.strip()
     source["ceg_normalized"] = source["ceg"].map(normalize_text)

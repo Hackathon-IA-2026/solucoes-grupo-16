@@ -1,5 +1,10 @@
 # ClimaGrid — backend
 
+> Contexto e prioridades: [`../Docs/CONTEXTO_PROJETO_IA.md`](../Docs/CONTEXTO_PROJETO_IA.md).
+> O backend concluiu a integração da etapa 1. A próxima entrega do MVP é o
+> upload climático da etapa 2; previsão futura e curtailment não devem ser
+> misturados a esse contrato.
+
 API NestJS do ClimaGrid. O primeiro módulo funcional recebe casos de referência
 PWF, preserva o arquivo original, interpreta os blocos elétricos necessários e
 expõe os alvos de geração encontrados.

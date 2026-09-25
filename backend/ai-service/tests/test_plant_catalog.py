@@ -3,12 +3,37 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from ingestion.plants.catalog import calculate_bounds, ceg_root, expand_ons_groups, load_siga_catalog, reconcile_catalog
+from ingestion.plants.catalog import (
+    calculate_bounds,
+    ceg_root,
+    expand_ons_groups,
+    load_ons_catalog,
+    load_siga_catalog,
+    reconcile_catalog,
+)
 
 
 def test_ceg_root_removes_only_terminal_unit_suffix():
     assert ceg_root(" EOL.CV.BA.012345-6.01 ") == "EOL.CV.BA.012345-6"
     assert ceg_root("-") == ""
+
+
+def test_ons_catalog_can_filter_wind_from_the_full_generation_dataset(tmp_path: Path):
+    path = tmp_path / "generation.parquet"
+    pd.DataFrame(
+        {
+            "id_ons": ["wind", "solar"],
+            "nom_usina": ["Parque eólico", "Parque solar"],
+            "ceg": ["EOL.CV.RN.1-0", "UFV.RS.RN.2-0"],
+            "id_subsistema": ["NE", "NE"],
+            "id_estado": ["RN", "RN"],
+            "nom_tipousina": ["EOLIELÉTRICA", "FOTOVOLTAICA"],
+        }
+    ).to_parquet(path, index=False)
+
+    result = load_ons_catalog([path], subsystem="NE", plant_type="EOL")
+
+    assert result["id_ons"].tolist() == ["wind"]
 
 
 def test_siga_parser_handles_decimal_comma_and_capacity(tmp_path: Path):

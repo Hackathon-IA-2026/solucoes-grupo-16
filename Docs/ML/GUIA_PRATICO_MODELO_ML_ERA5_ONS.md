@@ -1,5 +1,11 @@
 # Guia prático do modelo de geração eólica com ERA5 e ONS
 
+> **Documento da etapa 3 / pesquisa de ML.** Não representa o status atual do
+> MVP e contém registros históricos de pendências já corrigidas. A ordem vigente
+> é: replay implementado; upload climático como próxima etapa e fim do MVP;
+> previsão futura depois; curtailment por último. Consulte
+> [`../CONTEXTO_PROJETO_IA.md`](../CONTEXTO_PROJETO_IA.md).
+
 Este guia explica como preparar os dados, treinar, avaliar e melhorar o modelo de geração eólica do ClimaGrid. Os comandos partem do diretório `backend/ai-service`.
 
 ## 1. Como o modelo funciona
@@ -13,15 +19,15 @@ O LightGBM só é aprovado quando seu MAE no teste temporal é menor que o MAE d
 
 As principais features são velocidade e direção do vento a 100 metros, densidade aproximada do ar, hora do dia, dia do ano, capacidade instalada, disponibilidade e distância entre a usina e o ponto da grade ERA5.
 
-## 2. Pendências atuais do merge
+## 2. Estado desta pesquisa de ML
 
-Antes de usar a API, corrija estas regressões:
+As regressões que este guia registrava em `app/predictor.py` e `app/main.py`
+foram corrigidas. A API atual expõe `GET /capabilities`, o replay histórico usa
+`POST /replay-historico` e a suíte automatizada cobre esses contratos.
 
-- `ai-service/app/predictor.py` referencia `radius` e `available`, que não existem, ao gerar os limites da previsão;
-- o mesmo arquivo usa a disponibilidade geral onde deveria preservar a disponibilidade de cada registro;
-- `ai-service/app/main.py` perdeu `GET /capabilities` e `POST /estimar-historico` durante a resolução do conflito.
-
-Enquanto isso não for corrigido, `POST /estimar-geracao` pode terminar com `NameError`, e o NestJS não encontra as rotas históricas.
+O treinamento descrito a seguir continua sendo trabalho de pesquisa para as
+etapas 2 e 3. Ele não é necessário para reproduzir a geração observada na etapa
+1 e não deve ser confundido com uma previsão futura já operacional.
 
 ## 3. Preparar o ambiente
 
@@ -82,7 +88,9 @@ val_geracao
 
 `data/raw/ons/RESTRICAO_COFF_EOLICA_2026_09.parquet` já contém essas colunas e possui dados entre 1 e 20 de setembro de 2026.
 
-`build-catalog` filtra o subsistema `NE`, mas não a tecnologia. O resultado atual fica eólico porque `RESTRICAO_COFF_EOLICA` já contém usinas eólicas. Se outra base ONS for usada, filtre-a antes ou adicione um filtro explícito ao código.
+`build-catalog` deve filtrar o subsistema `NE` e a tecnologia eólica. Ao usar a
+série completa de geração, passe `--plant-type EOL`; isso evita misturar usinas
+solares, hidráulicas e térmicas no catálogo.
 
 Para um modelo robusto, não treine apenas com ocorrências de restrição. Essa amostra pode representar principalmente situações de corte. O ideal é obter uma série histórica completa, incluindo a operação sem restrição.
 
@@ -294,7 +302,7 @@ Melhorias futuras incluem curvas por modelo de turbina, topografia, altura real 
 
 ## 12. Executar a API
 
-Depois de corrigir o merge:
+Para executar a API:
 
 ```powershell
 $env:CLIMAGRID_ARTIFACT_DIR = "artifacts/experiments/usina-01-exp-001"
@@ -311,8 +319,12 @@ Abra `http://127.0.0.1:8000/docs`. Os endpoints esperados são:
 GET  /health
 GET  /capabilities
 POST /estimar-geracao
-POST /estimar-historico
+POST /replay-historico
 ```
+
+`POST /replay-historico` retorna geração observada de um instante já ingerido.
+`POST /estimar-geracao` pertence ao fluxo experimental de estimativa e não
+transforma o ERA5 histórico em previsão meteorológica futura.
 
 ## 13. Papel do Supabase
 

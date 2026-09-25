@@ -1,5 +1,10 @@
 # Tutorial para Iniciantes: Como Utilizar o Modelo Preditivo (LightGBM + Curva Física)
 
+> **Documento de pesquisa para a etapa 3, fora do MVP atual.** O próximo trabalho
+> oficial é a etapa 2 (arquivo climático do usuário → geração → PWF). Leia
+> [`../CONTEXTO_PROJETO_IA.md`](../CONTEXTO_PROJETO_IA.md) antes de executar ou
+> alterar este tutorial.
+
 Olá! Este guia foi feito para você que está começando a mexer na parte de inteligência artificial (Machine Learning) do ClimaGrid. Não se preocupe se você não tem muita experiência prévia, vamos explicar o passo a passo bem detalhado!
 
 Tudo o que vamos fazer aqui roda em **Python** (não Node.js). O Node.js/NestJS é usado apenas para a API do backend da aplicação web, mas o treinamento, download e processamento dos dados do modelo preditivo são feitos com scripts Python usando o ecossistema de dados (`pandas`, `lightgbm`, etc).

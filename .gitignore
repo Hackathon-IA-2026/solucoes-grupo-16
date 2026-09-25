@@ -1,5 +1,6 @@
 # Docker Compose overrides and local secrets
 .env
+.cdsapirc
 
 # Local operating-system files
 .DS_Store

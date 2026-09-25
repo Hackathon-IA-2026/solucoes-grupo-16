@@ -1,5 +1,9 @@
 # ClimaGrid — frontend
 
+> Leia [`../Docs/CONTEXTO_PROJETO_IA.md`](../Docs/CONTEXTO_PROJETO_IA.md) antes de
+> alterar o fluxo. A interface atual implementa a etapa 1. A próxima etapa é o
+> cenário climático enviado pelo usuário e encerra o escopo do MVP.
+
 Interface do MVP para reproduzir a geração eólica observada em uma hora,
 mapear conjuntos ONS para barras elétricas e gerar um PWF para estudo no
 ANAREDE.
@@ -47,6 +51,13 @@ Os tipos compartilhados pelo frontend ficam em `src/types/climagrid.ts`. A regra
 O upload de cenário futuro, a estimativa por IA e a classificação de
 curtailment permanecem fora desta etapa. Não há queda silenciosa do replay real
 para dados previstos ou fictícios.
+
+Roadmap da interface:
+
+1. replay histórico observado — implementado;
+2. arquivo climático do usuário e PWF de uma hora — próximo/MVP;
+3. hora futura prevista — pós-MVP;
+4. curtailment — fora do MVP.
 
 ## Verificação
 
