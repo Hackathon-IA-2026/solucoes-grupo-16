@@ -1,6 +1,13 @@
-# ClimaGrid AI Service — Fase 1
+# ClimaGrid AI Service — replay histórico e base experimental
 
-Experimento mínimo e reproduzível de estimativa de geração eólica a partir de vento. A camada de ML aprende somente o resíduo normalizado da curva física; ela só é usada se superar o MAE da curva física no teste temporal. Caso contrário — inclusive sem artefato — a API informa e usa `physical_fallback`.
+O fluxo operacional desta etapa reproduz uma hora já observada: geração
+verificada da ONS e vento ERA5 alinhados por conjunto eólico do Nordeste. Ele
+não executa previsão nem usa o modelo experimental para produzir o `Pg` do PWF.
+
+O repositório também mantém um experimento reproduzível de estimativa de geração
+eólica a partir de vento. A camada de ML aprende somente o resíduo normalizado
+da curva física; ela só é usada se superar o MAE da curva física no teste
+temporal. Esse experimento é separado do replay.
 
 Não há classificador de curtailment, XGBoost, SHAP ou modelos por usina/cluster
 nesta fase. A integração com o NestJS está disponível, mas mantém essas
@@ -27,27 +34,29 @@ Em Linux/macOS, use `python3.13 -m venv .venv` e
 Python correto e o `compose.yaml` da raiz inicia toda a aplicação.
 
 Com a API ativa, consulte `GET /health`, `GET /capabilities`,
-`POST /estimar-geracao` e `POST /estimar-historico` em
+`GET /historico/disponibilidade`, `POST /replay-historico` e
+`POST /estimar-geracao` em
 `http://127.0.0.1:8000/docs`.
 
 `requirements.txt` aplica `constraints.txt`, que registra as versões exercitadas no Windows com Python 3.13. Extras de plataforma podem diferir no Linux. O ambiente inclui `scikit-learn`, necessário ao `LGBMRegressor`. Use `python -m pip check` para verificar consistência das dependências.
 
-`POST /estimar-historico` lê o snapshot unido configurado por
-`CLIMAGRID_TRAINING_SNAPSHOT`, filtra o período e devolve a média horária por
-usina. Sem artefato aprovado, a resposta usa e identifica `physical_fallback`.
-Sem snapshot unido, responde `409`; o arquivo ONS bruto sozinho não habilita a
-estimativa porque ainda faltam as observações ERA5 alinhadas.
+`POST /replay-historico` recebe uma hora com timezone, exige correspondência
+exata no snapshot configurado por `CLIMAGRID_HISTORICAL_SNAPSHOT` e devolve a
+geração observada, fator de capacidade, vento e alocações sugeridas de barras.
+Sem snapshot unido, responde `409`; o arquivo ONS bruto sozinho não habilita o
+replay porque ainda faltam as observações ERA5 alinhadas.
 
 ## Coleta oficial ONS, SIGA e ERA5
 
 A ingestão fica em `ingestion/` e é executada como job separado da API. O fluxo implementado:
 
-1. filtra no ONS as usinas do subsistema `NE`;
-2. concilia o CEG com o SIGA/ANEEL e publica o catálogo de coordenadas;
-3. calcula a menor caixa regional com margem de 0,5°;
-4. baixa o ERA5 em partições mensais idempotentes;
-5. extrai o ponto de grade mais próximo de cada usina;
-6. agrega o ONS de 30 minutos para hora UTC e produz o snapshot unido.
+1. baixa a geração horária oficial `GERACAO_USINA-2_HO`;
+2. filtra conjuntos eólicos do subsistema `NE`;
+3. concilia o CEG com o SIGA/ANEEL e publica o catálogo de coordenadas;
+4. baixa e extrai o ERA5 em partições mensais idempotentes;
+5. une ONS e ERA5 por conjunto e hora UTC;
+6. relaciona os CEGs às barras da planilha PWF;
+7. publica o snapshot observado e o mapa de alocação para a API.
 
 Configure antes uma credencial pessoal do CDS e aceite os termos do dataset `reanalysis-era5-single-levels`, seguindo <https://cds.climate.copernicus.eu/how-to-api>. A credencial fica fora do repositório.
 
@@ -58,7 +67,10 @@ python -m ingestion.era5.cli download-siga
 python -m ingestion.era5.cli download-ons-membership
 ```
 
-O primeiro comando descobre o recurso CSV mais recente pela API pública da ANEEL. O segundo baixa do ONS a composição oficial dos conjuntos de usinas. Ambos gravam snapshots e manifests; essa composição é necessária porque o arquivo de constrained-off informa `ceg = "-"` para a maioria dos conjuntos.
+O primeiro comando descobre o recurso CSV mais recente pela API pública da
+ANEEL. O segundo baixa do ONS a composição oficial dos conjuntos de usinas.
+Ambos gravam snapshots e manifests e permitem ligar o identificador agregado da
+ONS aos CEGs das usinas integrantes.
 
 ### 2. Criar o catálogo de usinas
 
@@ -71,7 +83,16 @@ python -m ingestion.era5.cli build-catalog `
 
 A ligação usa primeiro o CEG exato. O fallback sem o sufixo terminal (`.1`, `.01`) só é aceito quando encontra um único empreendimento. Conjuntos são expandidos para as coordenadas exatas de suas usinas membros; o clima do conjunto é depois agregado com pesos de capacidade instalada, sem inventar um centroide. Ambiguidades ou conjuntos ausentes permanecem explícitos no relatório. Correções revisadas podem ser fornecidas com `--overrides arquivo.csv`, usando as colunas `location_id,ceg_siga`.
 
-### 3. Conferir a área e os pedidos
+### 3. Baixar a geração horária ONS
+
+```powershell
+python -m ingestion.era5.cli download-ons-generation --year 2024 --month 1
+```
+
+O comando baixa o Parquet mensal oficial e grava manifest com URL, hash e data
+de obtenção. A base de restrição não é usada como substituto da geração real.
+
+### 4. Conferir a área e os pedidos
 
 Este comando não acessa o CDS:
 
@@ -81,7 +102,7 @@ python -m ingestion.era5.cli plan `
   --start 2023-10-01 --end 2026-08-31
 ```
 
-### 4. Fazer a prova de um mês
+### 5. Fazer a prova de um mês
 
 ```powershell
 python -m ingestion.era5.cli backfill `
@@ -99,20 +120,38 @@ python -m ingestion.era5.cli backfill `
   --start 2023-10-01 --end 2026-08-31
 ```
 
-### 5. Unir ONS e ERA5
+### 6. Unir ONS e ERA5
 
 ```powershell
 python -m ingestion.era5.cli join-ons `
-  --ons data/raw/ons/restricao_coff_eolica_usi.csv `
+  --ons data/raw/ons/year=2024/month=01/GERACAO_USINA-2_2024_01.parquet `
   --weather data/processed/era5/year=2024/month=01/weather_hourly.parquet `
   --catalog data/processed/reference/plant_locations.parquet `
-  --output data/processed/training/snapshot_unido.parquet `
-  --report data/processed/training/join_report.json
+  --ons-format generation `
+  --output data/processed/historical/observations.parquet `
+  --report data/processed/historical/report.json
 ```
 
-Timestamps ONS sem timezone são interpretados por padrão como `America/Sao_Paulo` e convertidos para UTC; altere `--ons-timezone` se a fonte fornecida tiver outra convenção. Horas com menos de dois intervalos são excluídas e reportadas. Potências em MWmed são agregadas por média, nunca soma.
+Timestamps ONS sem timezone são interpretados por padrão como
+`America/Sao_Paulo` e convertidos para UTC; altere `--ons-timezone` se a fonte
+fornecida tiver outra convenção. A fonte oficial desta etapa já é horária e não
+é agregada a partir de registros de restrição.
 
-### 6. Atualização e reconciliação
+### 7. Gerar o mapa de barras PWF
+
+```powershell
+python -m ingestion.era5.cli build-pwf-mapping `
+  --workbook "../../Docs/Casos de Referência/Lista_de_Usinas.xlsx" `
+  --catalog data/processed/reference/plant_locations.parquet `
+  --output data/processed/reference/pwf_bus_mapping.parquet `
+  --report data/processed/reference/pwf_bus_mapping_report.json
+```
+
+A associação usa o CEG. Quando um conjunto ONS possui várias usinas ou barras,
+a API distribui a geração observada proporcionalmente à potência conectada. A
+cobertura parcial permanece explícita em vez de ser tratada como completa.
+
+### Atualização e reconciliação do ERA5
 
 ```powershell
 python -m ingestion.era5.cli update --catalog data/processed/reference/plant_locations.parquet

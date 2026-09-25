@@ -76,31 +76,29 @@ class EstimationResponse(BaseModel):
     predicoes: list[Prediction]
 
 
-class HistoricalScenarioRequest(BaseModel):
+class HistoricalReplayRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     subsystem: Literal["NE"] = "NE"
-    start_at: datetime
-    end_at: datetime
+    timestamp: datetime
     resolution_minutes: Literal[60] = 60
 
-    @field_validator("start_at", "end_at")
+    @field_validator("timestamp")
     @classmethod
     def historical_timestamp_requires_timezone(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
-            raise ValueError("start_at e end_at devem conter timezone")
-        return value
-
-    @model_validator(mode="after")
-    def valid_period(self) -> "HistoricalScenarioRequest":
-        if self.end_at <= self.start_at:
-            raise ValueError("end_at deve ser posterior a start_at")
-        if (self.end_at - self.start_at).total_seconds() > 500 * 3600:
-            raise ValueError("o período histórico está limitado a 500 horas por cenário")
-        return self
+            raise ValueError("timestamp deve conter timezone")
+        return value.astimezone(timezone.utc)
 
 
-class HistoricalPlantEstimate(BaseModel):
+class HistoricalBusAllocation(BaseModel):
+    bus_number: int = Field(gt=0)
+    bus_name: str
+    allocation_factor: float = Field(gt=0, le=1)
+    allocated_generation_mw: float = Field(ge=0)
+
+
+class HistoricalPlantObservation(BaseModel):
     usina_id: str
     ons_id: str
     name: str
@@ -108,26 +106,36 @@ class HistoricalPlantEstimate(BaseModel):
     latitude: float | None
     longitude: float | None
     installed_capacity_mw: float
-    estimated_generation_mw: float
-    confidence_low_mw: float | None
-    confidence_high_mw: float | None
-    confidence: Literal["alta", "media", "baixa"]
-    historical_availability_percent: float
-    historical_curtailment_percent: float | None = None
-    sample_count: int
+    observed_generation_mw: float
+    capacity_factor_percent: float | None
+    u100: float
+    v100: float
+    wind_speed_mps: float
+    wind_direction_degrees: float
+    generation_source: Literal["ONS_GERACAO_USINA_2_HO"]
+    weather_source: Literal["ERA5"]
+    suggested_bus_allocations: list[HistoricalBusAllocation]
+    mapping_coverage_percent: float = Field(ge=0, le=100)
     warnings: list[str]
 
 
-class HistoricalEstimationResponse(BaseModel):
+class HistoricalReplayResponse(BaseModel):
     scenario_id: str
     subsystem: Literal["NE"]
-    start_at: datetime
-    end_at: datetime
+    timestamp: datetime
     resolution_minutes: Literal[60]
     snapshot_date: str
     data_version: str
-    model_version: str
-    model_scope: str
-    model_approved: bool
-    estimates: list[HistoricalPlantEstimate]
+    generation_source: Literal["ONS_GERACAO_USINA_2_HO"]
+    weather_source: Literal["ERA5"]
+    observations: list[HistoricalPlantObservation]
     warnings: list[str]
+
+
+class HistoricalAvailabilityResponse(BaseModel):
+    available: bool
+    first_timestamp: datetime | None = None
+    last_timestamp: datetime | None = None
+    latest_timestamp: datetime | None = None
+    instant_count: int = 0
+    resolution_minutes: Literal[60] = 60

@@ -19,7 +19,7 @@ export class PwfExportController {
 
   @Post()
   @ApiOperation({
-    summary: 'Gerar um PWF com as estimativas nas barras mapeadas',
+    summary: 'Gerar um PWF com a geração do cenário nas barras mapeadas',
   })
   @ApiResponse({ status: 201, description: 'Arquivo PWF gerado.' })
   async export(
@@ -32,7 +32,7 @@ export class PwfExportController {
       'Content-Disposition': `attachment; filename="${result.filename}"`,
       'X-Filename': result.filename,
       'X-Generated-At': result.generatedAt,
-      'X-Model-Version': result.modelVersion,
+      'X-Generation-Source': result.generationSource,
       'X-Data-Version': result.dataVersion,
       'X-Modified-Buses': result.modifiedBuses.join(','),
     });

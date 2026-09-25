@@ -1,7 +1,54 @@
 import pandas as pd
 import pytest
 
-from ingestion.ons.hourly import join_ons_era5, prepare_ons_hourly
+from ingestion.ons.hourly import (
+    join_ons_era5,
+    prepare_ons_generation_hourly,
+    prepare_ons_hourly,
+)
+from ingestion.ons.source_client import ons_generation_url
+
+
+def test_official_monthly_generation_url():
+    assert ons_generation_url(2024, 1).endswith(
+        "/geracao_usina_2_ho/GERACAO_USINA-2_2024_01.parquet"
+    )
+
+
+def test_observed_generation_filters_scope_and_converts_local_time_to_utc():
+    ons = pd.DataFrame(
+        {
+            "din_instante": [
+                "2024-01-01 00:00:00",
+                "2024-01-01 00:00:00",
+                "2024-01-01 00:00:00",
+                "2024-01-01 00:00:00",
+            ],
+            "id_subsistema": ["NE", "NE", "S", "NE"],
+            "nom_tipousina": [
+                "EOLIELÉTRICA",
+                "EOLIELÉTRICA",
+                "EOLIELÉTRICA",
+                "FOTOVOLTAICA",
+            ],
+            "id_ons": ["u1", None, "u2", "u3"],
+            "val_geracao": [25.5, 4.0, 30.0, 12.0],
+        }
+    )
+    catalog = pd.DataFrame(
+        {"id_ons": ["u1"], "capacidade_instalada_mw": [50.0]}
+    )
+
+    hourly, report = prepare_ons_generation_hourly(ons, catalog)
+
+    assert len(hourly) == 1
+    assert hourly.loc[0, "usina_id"] == "u1"
+    assert hourly.loc[0, "timestamp_utc"] == pd.Timestamp(
+        "2024-01-01 03:00:00+00:00"
+    )
+    assert hourly.loc[0, "geracao_verificada_mw"] == pytest.approx(25.5)
+    assert hourly.loc[0, "fator_capacidade"] == pytest.approx(0.51)
+    assert report["excluded_missing_ons_id"] == 1
 
 
 def test_ons_half_hours_are_averaged_and_converted_to_utc():

@@ -8,8 +8,9 @@ from app.predictor import Predictor
 from app.schemas import (
     EstimationRequest,
     EstimationResponse,
-    HistoricalEstimationResponse,
-    HistoricalScenarioRequest,
+    HistoricalAvailabilityResponse,
+    HistoricalReplayRequest,
+    HistoricalReplayResponse,
 )
 
 def create_app(artifact_dir: Path | None = None) -> FastAPI:
@@ -33,10 +34,14 @@ def create_app(artifact_dir: Path | None = None) -> FastAPI:
     def capabilities(request: Request) -> dict:
         return request.app.state.historical.capabilities()
 
-    @application.post("/estimar-historico", response_model=HistoricalEstimationResponse)
-    def estimate_historical(payload: HistoricalScenarioRequest, request: Request) -> HistoricalEstimationResponse:
+    @application.get("/historico/disponibilidade", response_model=HistoricalAvailabilityResponse)
+    def historical_availability(request: Request) -> HistoricalAvailabilityResponse:
+        return request.app.state.historical.availability()
+
+    @application.post("/replay-historico", response_model=HistoricalReplayResponse)
+    def replay_historical(payload: HistoricalReplayRequest, request: Request) -> HistoricalReplayResponse:
         try:
-            return request.app.state.historical.estimate(payload)
+            return request.app.state.historical.replay(payload)
         except HistoricalDataUnavailable as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 

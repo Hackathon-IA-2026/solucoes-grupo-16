@@ -1,10 +1,15 @@
 import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module.js';
+import { configureBodyParsers } from './http-body-parser.js';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bodyParser: false,
+  });
+  configureBodyParsers(app);
 
   // ── CORS ──────────────────────────────────────────────────────────────
   // Permite requisições do frontend. Múltiplas origens podem ser separadas
@@ -24,6 +29,7 @@ async function bootstrap() {
       'X-Generated-At',
       'X-Model-Version',
       'X-Data-Version',
+      'X-Generation-Source',
       'X-Modified-Buses',
     ],
     credentials: true,

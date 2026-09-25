@@ -10,8 +10,7 @@ import { AiServiceClient } from './ai-service.client.js';
 
 interface HistoricalScenarioBody {
   subsystem?: string;
-  startAt?: string;
-  endAt?: string;
+  timestamp?: string;
   resolutionMinutes?: number;
 }
 
@@ -30,7 +29,8 @@ export class IntegrationController {
         pwf: { upload: true, generationTargets: true, export: true },
         aiService: { available: true },
         climate: {
-          historicalEstimates: capabilities.features.historical_estimates,
+          historicalReplay: capabilities.features.historical_replay,
+          historicalEstimates: false,
           fileUpload: capabilities.features.climate_file_upload,
         },
         model: {
@@ -46,6 +46,14 @@ export class IntegrationController {
           era5PartitionCount: capabilities.data.era5_partition_count,
           joinedSnapshot: capabilities.data.joined_snapshot_available,
           snapshotDate: capabilities.data.joined_snapshot_date,
+          historicalFirstTimestamp:
+            capabilities.data.historical_first_timestamp,
+          historicalLastTimestamp:
+            capabilities.data.historical_last_timestamp,
+          historicalLatestTimestamp:
+            capabilities.data.historical_latest_timestamp,
+          historicalInstantCount:
+            capabilities.data.historical_instant_count,
         },
       };
     } catch {
@@ -53,7 +61,11 @@ export class IntegrationController {
         backend: { available: true },
         pwf: { upload: true, generationTargets: true, export: true },
         aiService: { available: false },
-        climate: { historicalEstimates: false, fileUpload: false },
+        climate: {
+          historicalReplay: false,
+          historicalEstimates: false,
+          fileUpload: false,
+        },
         model: null,
         data: null,
       };
@@ -61,13 +73,9 @@ export class IntegrationController {
   }
 
   @Post('climate-scenarios/historical')
-  @ApiOperation({ summary: 'Estimar geração para um período ONS + ERA5' })
+  @ApiOperation({ summary: 'Reproduzir a geração observada em uma hora ONS + ERA5' })
   async historical(@Body() body: HistoricalScenarioBody) {
-    const startAt = parseTimestamp(body.startAt, 'startAt');
-    const endAt = parseTimestamp(body.endAt, 'endAt');
-    if (endAt <= startAt) {
-      throw new BadRequestException('endAt deve ser posterior a startAt.');
-    }
+    const timestamp = parseTimestamp(body.timestamp, 'timestamp');
     if (body.subsystem !== 'NE') {
       throw new BadRequestException('O MVP aceita somente o subsistema NE.');
     }
@@ -77,10 +85,9 @@ export class IntegrationController {
       );
     }
 
-    const result = await this.ai.estimateHistorical({
+    const result = await this.ai.replayHistorical({
       subsystem: 'NE',
-      start_at: startAt.toISOString(),
-      end_at: endAt.toISOString(),
+      timestamp: timestamp.toISOString(),
       resolution_minutes: 60,
     });
 
@@ -88,38 +95,44 @@ export class IntegrationController {
       scenario: {
         id: result.scenario_id,
         source: 'historical',
+        mode: 'replay',
         subsystem: result.subsystem,
-        startAt: result.start_at,
-        endAt: result.end_at,
+        timestamp: result.timestamp,
         resolutionMinutes: result.resolution_minutes,
         snapshotDate: result.snapshot_date,
         dataVersion: result.data_version,
-        modelVersion: result.model_version,
-        modelScope: result.model_scope,
-        modelApproved: result.model_approved,
+        generationSource: result.generation_source,
+        weatherSource: result.weather_source,
         warnings: result.warnings,
         createdAt: new Date().toISOString(),
       },
-      estimates: result.estimates.map((estimate) => ({
-        id: estimate.usina_id,
-        onsId: estimate.ons_id,
-        name: estimate.name,
-        state: estimate.state,
-        latitude: estimate.latitude,
-        longitude: estimate.longitude,
-        installedCapacityMw: estimate.installed_capacity_mw,
-        estimatedGenerationMw: estimate.estimated_generation_mw,
-        confidenceLowMw: estimate.confidence_low_mw,
-        confidenceHighMw: estimate.confidence_high_mw,
-        confidenceLevel: estimate.confidence,
-        historicalAvailabilityPercent:
-          estimate.historical_availability_percent,
-        historicalCurtailmentPercent:
-          estimate.historical_curtailment_percent,
-        sampleCount: estimate.sample_count,
-        probableReason: null,
-        riskLevel: 'unavailable',
-        warnings: estimate.warnings,
+      observations: result.observations.map((observation) => ({
+        id: observation.usina_id,
+        onsId: observation.ons_id,
+        name: observation.name,
+        state: observation.state,
+        latitude: observation.latitude,
+        longitude: observation.longitude,
+        installedCapacityMw: observation.installed_capacity_mw,
+        observedGenerationMw: observation.observed_generation_mw,
+        estimatedGenerationMw: null,
+        capacityFactorPercent: observation.capacity_factor_percent,
+        u100: observation.u100,
+        v100: observation.v100,
+        windSpeedMps: observation.wind_speed_mps,
+        windDirectionDegrees: observation.wind_direction_degrees,
+        generationSource: observation.generation_source,
+        weatherSource: observation.weather_source,
+        suggestedBusAllocations: observation.suggested_bus_allocations.map(
+          (allocation) => ({
+            busNumber: String(allocation.bus_number),
+            busName: allocation.bus_name,
+            allocationFactor: allocation.allocation_factor,
+            allocatedGenerationMw: allocation.allocated_generation_mw,
+          }),
+        ),
+        mappingCoveragePercent: observation.mapping_coverage_percent,
+        warnings: observation.warnings,
       })),
     };
   }

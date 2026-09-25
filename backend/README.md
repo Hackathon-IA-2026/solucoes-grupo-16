@@ -6,7 +6,7 @@ expõe os alvos de geração encontrados.
 
 O NestJS também funciona como fachada única do frontend: consulta o serviço
 FastAPI, expõe o estado dos insumos e transforma um snapshot unido ONS + ERA5
-em estimativas prontas para a interface.
+em observações horárias prontas para a interface.
 
 ## API PWF
 
@@ -31,10 +31,11 @@ O parser suporta estruturalmente `TITU`, `DBAR`, `DGBT`, `DGER` e `DGEI`. A
 versão homologada nesta etapa é ANAREDE 12.03.04. Outras versões podem ser
 interpretadas, mas são devolvidas como `unverified`.
 
-`POST /pwf/exports` recebe as usinas selecionadas, suas estimativas e o de-para
-de barras. O writer copia o caso original e altera somente o campo de geração
-ativa (`Pg`) do registro `DBAR` correspondente; barras inexistentes, desligadas,
-swing, duplicadas ou valores que não cabem no campo fixo são rejeitados.
+`POST /pwf/exports` recebe as parcelas de geração observada e o de-para de
+barras. Parcelas destinadas à mesma barra são somadas. O writer copia o caso
+original e altera somente o campo de geração ativa (`Pg`) do registro `DBAR`;
+barras inexistentes, desligadas, swing, valores acima do limite ou que não
+cabem no campo fixo são rejeitados. Os blocos `DGER` e `DGEI` são preservados.
 
 ## Integração com o serviço de IA
 
@@ -46,9 +47,12 @@ POST /climate-scenarios/historical
 ```
 
 A rota de capacidades diferencia backend configurado, serviço de IA online,
-catálogo, ONS bruto, partições ERA5 e snapshot unido. A estimativa histórica só
-é liberada quando `data/processed/training/snapshot_unido.parquet` existe; a API
+catálogo, ONS bruto, partições ERA5 e snapshot observado. O replay só é
+liberado quando `data/processed/historical/observations.parquet` existe; a API
 responde `409` com instrução objetiva enquanto o insumo estiver ausente.
+
+O corpo JSON de exportação aceita até 2 MB para comportar centenas de parcelas
+usina–barra em um único replay.
 
 ## Execução local
 

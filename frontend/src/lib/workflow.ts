@@ -9,14 +9,14 @@ export const workflowSteps: Array<{
 }> = [
   {
     href: "/",
-    label: "Entrada climática",
-    shortLabel: "Dados",
-    description: "ERA5/ONS ou cenário próprio",
+    label: "Instante histórico",
+    shortLabel: "Hora",
+    description: "Replay horário ONS + ERA5",
     icon: "wind",
   },
   {
     href: "/usinas-estimativas",
-    label: "Geração estimada",
+    label: "Geração observada",
     shortLabel: "Usinas",
     description: "Seleção dos parques eólicos",
     icon: "turbine",
@@ -32,7 +32,7 @@ export const workflowSteps: Array<{
     href: "/exportacao-pwf",
     label: "Exportação PWF",
     shortLabel: "Exportar",
-    description: "Risco e arquivo para o ANAREDE",
+    description: "Arquivo para o ANAREDE",
     icon: "file",
   },
 ];

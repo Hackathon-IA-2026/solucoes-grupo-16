@@ -10,7 +10,7 @@ import type {
   WindPlantEstimate,
 } from "@/types/climagrid";
 
-const STORAGE_KEY = "climagrid:mvp-scenario:v1";
+const STORAGE_KEY = "climagrid:historical-replay:v2";
 
 const initialState: ClimaGridState = {
   climateScenario: null,
@@ -32,7 +32,7 @@ interface ScenarioContextValue {
   togglePlant: (plantId: string) => void;
   setStudyName: (name: string) => void;
   setReferencePwf: (referencePwf: ReferencePwf | null, generationTargets?: PwfGenerationTarget[]) => void;
-  updateMapping: (plantId: string, patch: Partial<PlantBusMapping>) => void;
+  updateMapping: (allocationId: string, patch: Partial<PlantBusMapping>) => void;
   resetScenario: () => void;
 }
 
@@ -75,7 +75,7 @@ export function ScenarioProvider({ children }: { children: React.ReactNode }) {
           selectedPlantIds: estimates.map((estimate) => estimate.id),
           study: {
             ...initialState.study,
-            name: `Estudo ${new Date(scenario.startAt).toLocaleDateString("pt-BR")}`,
+            name: `Replay ${new Date(scenario.timestamp).toLocaleString("pt-BR")}`,
           },
         });
       },
@@ -97,23 +97,68 @@ export function ScenarioProvider({ children }: { children: React.ReactNode }) {
         }));
       },
       setReferencePwf: (referencePwf, generationTargets = []) => {
-        setState((current) => ({
-          ...current,
-          study: {
-            ...current.study,
-            referencePwf,
-            generationTargets,
-            mappings: {},
-          },
-        }));
-      },
-      updateMapping: (plantId, patch) => {
         setState((current) => {
+          const targets = new Map(
+            generationTargets.map((target) => [String(target.busNumber), target]),
+          );
+          const mappings: Record<string, PlantBusMapping> = {};
+          if (referencePwf) {
+            current.estimates
+              .filter((plant) => current.selectedPlantIds.includes(plant.id))
+              .forEach((plant) => {
+                const allocations = plant.suggestedBusAllocations.length > 0
+                  ? plant.suggestedBusAllocations
+                  : [{
+                      busNumber: "",
+                      busName: "",
+                      allocationFactor: 1,
+                      allocatedGenerationMw:
+                        plant.observedGenerationMw ?? plant.estimatedGenerationMw ?? 0,
+                    }];
+                allocations.forEach((allocation, index) => {
+                  const allocationId = `${plant.id}:${allocation.busNumber || `manual-${index}`}`;
+                  const target = targets.get(allocation.busNumber);
+                  mappings[allocationId] = {
+                    plantId: plant.id,
+                    allocationId,
+                    allocationFactor: allocation.allocationFactor,
+                    generationMw: allocation.allocatedGenerationMw,
+                    busNumber: target?.editable ? String(target.busNumber) : "",
+                    busName: target?.editable ? target.busName : allocation.busName,
+                    nominalVoltageKv: target?.baseVoltageKv?.toString() ?? "",
+                    area: target?.area?.toString() ?? "",
+                  };
+                });
+              });
+          }
+          return {
+            ...current,
+            study: {
+              ...current.study,
+              referencePwf,
+              generationTargets,
+              mappings,
+            },
+          };
+        });
+      },
+      updateMapping: (allocationId, patch) => {
+        setState((current) => {
+          const existing = current.study.mappings[allocationId];
           const mapping = Object.assign(
-            { plantId, busNumber: "", busName: "", nominalVoltageKv: "", area: "" },
-            current.study.mappings[plantId],
+            {
+              plantId: existing?.plantId ?? allocationId.split(":")[0],
+              allocationId,
+              allocationFactor: existing?.allocationFactor ?? 1,
+              generationMw: existing?.generationMw ?? 0,
+              busNumber: "",
+              busName: "",
+              nominalVoltageKv: "",
+              area: "",
+            },
+            existing,
             patch,
-            { plantId },
+            { allocationId },
           );
           return {
             ...current,
@@ -121,7 +166,7 @@ export function ScenarioProvider({ children }: { children: React.ReactNode }) {
               ...current.study,
               mappings: {
                 ...current.study.mappings,
-                [plantId]: mapping,
+                [allocationId]: mapping,
               },
             },
           };

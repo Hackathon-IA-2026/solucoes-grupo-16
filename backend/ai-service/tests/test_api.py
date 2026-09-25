@@ -101,15 +101,15 @@ def test_per_record_availability_and_calibrated_bounds(tmp_path, hybrid):
 
 
 def test_historical_routes_without_snapshot(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLIMAGRID_TRAINING_SNAPSHOT", str(tmp_path / "missing.parquet"))
+    monkeypatch.setenv("CLIMAGRID_HISTORICAL_SNAPSHOT", str(tmp_path / "missing.parquet"))
     monkeypatch.setenv("CLIMAGRID_PLANT_CATALOG", str(tmp_path / "catalog.parquet"))
     monkeypatch.setenv("CLIMAGRID_DATA_ROOT", str(tmp_path / "data"))
     with TestClient(create_app(tmp_path)) as client:
         response = client.get("/capabilities")
         assert response.status_code == 200
-        assert response.json()["features"]["historical_estimates"] is False
-        response = client.post("/estimar-historico", json={
-            "start_at": "2026-09-01T00:00:00Z", "end_at": "2026-09-01T01:00:00Z",
+        assert response.json()["features"]["historical_replay"] is False
+        response = client.post("/replay-historico", json={
+            "timestamp": "2026-09-01T00:00:00Z",
         })
         assert response.status_code == 409
         assert "snapshot" in response.json()["detail"]

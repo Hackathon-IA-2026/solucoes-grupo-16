@@ -14,8 +14,13 @@ from ingestion.era5.cds_client import download_month
 from ingestion.era5.config import ERA5Paths
 from ingestion.era5.extract_points import extract_file, validate_weather
 from ingestion.era5.request_planner import MonthlyRequest, plan_requests
-from ingestion.ons.hourly import join_ons_era5, prepare_ons_hourly
+from ingestion.ons.hourly import (
+    join_ons_era5,
+    prepare_ons_generation_hourly,
+    prepare_ons_hourly,
+)
 from ingestion.ons.source_client import download_ons_generation, download_ons_membership
+from ingestion.pwf.mapping import build_pwf_bus_mapping
 from ingestion.plants.catalog import (
     calculate_bounds,
     expand_ons_groups,
@@ -70,8 +75,24 @@ def command_download_ons_membership(args: argparse.Namespace) -> None:
 
 
 def command_download_ons_generation(args: argparse.Namespace) -> None:
-    result = download_ons_generation(args.output, year=args.year)
-    atomic_write_json(args.manifest, result)
+    output = args.output or (
+        ERA5Paths().root
+        / "raw"
+        / "ons"
+        / f"year={args.year}"
+        / f"month={args.month:02d}"
+        / f"GERACAO_USINA-2_{args.year}_{args.month:02d}.parquet"
+    )
+    manifest = args.manifest or (
+        ERA5Paths().root
+        / "manifests"
+        / "ons"
+        / f"year={args.year}"
+        / f"month={args.month:02d}"
+        / "download.json"
+    )
+    result = download_ons_generation(output, year=args.year, month=args.month)
+    atomic_write_json(manifest, result)
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
@@ -219,18 +240,42 @@ def command_join_ons(args: argparse.Namespace) -> None:
     ons = _load_many(args.ons)
     catalog = read_tabular(args.catalog)
     weather = _load_many(args.weather)
-    ons_hourly, ons_report = prepare_ons_hourly(
-        ons,
-        catalog,
-        source_timezone=args.ons_timezone,
-        minimum_intervals=args.minimum_intervals,
-    )
+    if args.ons_format == "generation":
+        ons_hourly, ons_report = prepare_ons_generation_hourly(
+            ons,
+            catalog,
+            subsystem=args.subsystem,
+            source_timezone=args.ons_timezone,
+        )
+    else:
+        ons_hourly, ons_report = prepare_ons_hourly(
+            ons,
+            catalog,
+            source_timezone=args.ons_timezone,
+            minimum_intervals=args.minimum_intervals,
+        )
     joined, join_report = join_ons_era5(ons_hourly, weather)
     atomic_write_parquet(joined, args.output)
     report = {"ons": ons_report, "join": join_report}
     atomic_write_json(args.report, report)
     print(f"Snapshot unido: {args.output} ({len(joined)} linhas)")
     print(f"Cobertura da união: {join_report['ons_join_coverage']:.1%}")
+
+
+def command_build_pwf_mapping(args: argparse.Namespace) -> None:
+    catalog = read_tabular(args.catalog)
+    mapping, report = build_pwf_bus_mapping(
+        args.workbook,
+        catalog,
+        sheet_name=args.sheet,
+    )
+    atomic_write_parquet(mapping, args.output)
+    atomic_write_json(args.report, report)
+    print(
+        f"Mapeamento PWF: {args.output} ({report['mapped_plants']} conjuntos, "
+        f"{report['mapped_buses']} barras)"
+    )
+    print(f"Relatório: {args.report}")
 
 
 def _add_run_options(parser: argparse.ArgumentParser) -> None:
@@ -280,14 +325,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Ano de referência para baixar (ex: 2024).",
     )
     generation.add_argument(
+        "--month",
+        type=int,
+        required=True,
+        choices=range(1, 13),
+        metavar="1-12",
+        help="Mês de referência do arquivo horário.",
+    )
+    generation.add_argument(
         "--output",
         type=Path,
-        default=ERA5Paths().root / "raw" / "ons" / "geracao_usina.csv",
+        default=None,
     )
     generation.add_argument(
         "--manifest",
         type=Path,
-        default=ERA5Paths().root / "manifests" / "ons_generation.json",
+        default=None,
     )
     generation.set_defaults(handler=command_download_ons_generation)
 
@@ -345,15 +398,28 @@ def build_parser() -> argparse.ArgumentParser:
     validate.add_argument("--output", type=Path)
     validate.set_defaults(handler=command_validate)
 
-    join = subparsers.add_parser("join-ons", help="Agrega ONS para hora e une ao ERA5.")
+    join = subparsers.add_parser("join-ons", help="Normaliza a ONS horária e une ao ERA5.")
     join.add_argument("--ons", required=True, nargs="+", type=Path)
     join.add_argument("--weather", required=True, nargs="+", type=Path)
     join.add_argument("--catalog", required=True, type=Path)
+    join.add_argument("--ons-format", choices=["generation", "restriction"], default="generation")
+    join.add_argument("--subsystem", default="NE")
     join.add_argument("--ons-timezone", default="America/Sao_Paulo")
     join.add_argument("--minimum-intervals", type=int, default=2)
     join.add_argument("--output", required=True, type=Path)
     join.add_argument("--report", required=True, type=Path)
     join.set_defaults(handler=command_join_ons)
+
+    pwf_mapping = subparsers.add_parser(
+        "build-pwf-mapping",
+        help="Concilia o catálogo ONS com as barras da planilha de referência PWF.",
+    )
+    pwf_mapping.add_argument("--workbook", required=True, type=Path)
+    pwf_mapping.add_argument("--sheet", default="Usinas")
+    pwf_mapping.add_argument("--catalog", required=True, type=Path)
+    pwf_mapping.add_argument("--output", required=True, type=Path)
+    pwf_mapping.add_argument("--report", required=True, type=Path)
+    pwf_mapping.set_defaults(handler=command_build_pwf_mapping)
     return parser
 
 

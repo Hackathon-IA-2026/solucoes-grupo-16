@@ -1,14 +1,14 @@
 # ClimaGrid
 
-Aplicação para combinar clima ERA5, operação ONS e um modelo físico/híbrido de
-geração eólica, mapear usinas para barras de um caso ANAREDE e exportar uma
-cópia do PWF com a geração ativa atualizada.
+Aplicação para reproduzir uma hora histórica de geração eólica do Nordeste,
+combinar a geração verificada da ONS com o vento ERA5, mapear os conjuntos para
+as barras de um caso ANAREDE e exportar uma cópia do PWF com o `Pg` observado.
 
 ## Arquitetura local
 
 - `frontend/`: Next.js, sempre conectado ao NestJS;
 - `backend/`: NestJS, fachada da aplicação, parser e writer PWF;
-- `backend/ai-service/`: FastAPI, ingestão ERA5/ONS e predição.
+- `backend/ai-service/`: FastAPI, ingestão ERA5/ONS e replay histórico.
 
 ## Execução recomendada com Docker
 
@@ -131,9 +131,81 @@ docker compose ps
 docker compose logs --tail=200 ai-service backend frontend
 ```
 
-Um AI service saudável sem snapshot ou modelo é um estado válido: a API inicia
-com a curva física de fallback, mas a estimativa histórica permanece bloqueada
-até os dados necessários existirem.
+Um AI service saudável sem snapshot é um estado válido: a API inicia, mas o
+replay histórico permanece bloqueado até a geração ONS e o ERA5 terem sido
+unidos. O replay não depende de modelo preditivo.
+
+## Replay histórico — os 7 passos operacionais
+
+O recorte concluído usa a geração horária verificada da ONS, não a base de
+restrições. Todos os comandos abaixo são executados na raiz do repositório.
+
+1. Baixar SIGA e a composição oficial dos conjuntos ONS:
+
+   ```bash
+   docker compose run --rm ai-service python -m ingestion.era5.cli download-siga
+   docker compose run --rm ai-service python -m ingestion.era5.cli download-ons-membership
+   ```
+
+2. Construir o catálogo por CEG, com coordenadas e vigência:
+
+   ```bash
+   docker compose run --rm ai-service python -m ingestion.era5.cli build-catalog \
+     --ons data/raw/ons/restricao_coff_eolica_usi.csv \
+     --siga data/raw/siga/siga.csv \
+     --ons-membership data/raw/ons/relacionamento_usina_conjunto.parquet
+   ```
+
+3. Baixar a geração horária oficial do mês desejado:
+
+   ```bash
+   docker compose run --rm ai-service python -m ingestion.era5.cli \
+     download-ons-generation --year 2024 --month 1
+   ```
+
+4. Baixar e extrair o ERA5 para o mesmo período:
+
+   ```bash
+   docker compose run --rm ai-service python -m ingestion.era5.cli backfill \
+     --catalog data/processed/reference/plant_locations.parquet \
+     --start 2024-01-01 --end 2024-01-31
+   ```
+
+5. Gerar o de-para CEG → barras a partir da planilha de referência:
+
+   ```bash
+   docker compose run --rm \
+     -v "$PWD/Docs:/service/Docs:ro" \
+     ai-service python -m ingestion.era5.cli build-pwf-mapping \
+     --workbook "/service/Docs/Casos de Referência/Lista_de_Usinas.xlsx" \
+     --catalog data/processed/reference/plant_locations.parquet \
+     --output data/processed/reference/pwf_bus_mapping.parquet \
+     --report data/processed/reference/pwf_bus_mapping_report.json
+   ```
+
+6. Unir geração e vento por conjunto e hora UTC:
+
+   ```bash
+   docker compose run --rm ai-service python -m ingestion.era5.cli join-ons \
+     --ons data/raw/ons/year=2024/month=01/GERACAO_USINA-2_2024_01.parquet \
+     --weather data/processed/era5/year=2024/month=01/weather_hourly.parquet \
+     --catalog data/processed/reference/plant_locations.parquet \
+     --ons-format generation \
+     --output data/processed/historical/observations.parquet \
+     --report data/processed/historical/report.json
+   ```
+
+7. Subir a aplicação e percorrer Hora → Usinas → Barras → Exportar:
+
+   ```bash
+   docker compose up --build -d
+   docker compose ps
+   ```
+
+O caso PWF deve corresponder ao horizonte da planilha de barras. Para o arquivo
+`Lista_de_Usinas.xlsx`, use preferencialmente um caso de 2040. Um mesmo conjunto
+ONS pode alimentar várias barras; a interface distribui a geração por capacidade
+conectada e o backend soma parcelas que chegam à mesma barra.
 
 ## Execução nativa opcional
 
@@ -180,11 +252,15 @@ cd ../backend/ai-service && python -m pytest -q
 
 ## Estado atual dos dados
 
-`GET /system/capabilities` informa o que está realmente disponível. Enquanto o
-snapshot `backend/ai-service/data/processed/training/snapshot_unido.parquet`
-não existir, o frontend bloqueia a estimativa histórica e explica que ainda é
-necessário processar o ERA5 e executar `join-ons`. O upload climático e o
-classificador de curtailment também permanecem explicitamente desabilitados.
+`GET /system/capabilities` informa o que está realmente disponível. Nesta cópia
+de trabalho, o snapshot de janeiro de 2024 está em
+`backend/ai-service/data/processed/historical/observations.parquet`; ele contém
+741 horas disponíveis entre 1 e 31 de janeiro. Os dados brutos e processados são
+ignorados pelo Git e precisam ser preservados ou republicados separadamente.
+
+O upload de cenário futuro, a estimativa por IA e o classificador de
+curtailment permanecem fora deste recorte. A interface do MVP identifica
+explicitamente o fluxo atual como replay de geração observada.
 
 ## Preparação para AWS
 

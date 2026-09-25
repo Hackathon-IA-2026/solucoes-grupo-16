@@ -7,18 +7,17 @@ export type RiskLevel = "low" | "medium" | "high" | "unavailable";
 export interface ClimateScenario {
   id: string;
   source: ClimateSource;
+  mode: "replay" | "forecast";
   subsystem: "NE";
-  startAt: string;
-  endAt: string;
+  timestamp: string;
   resolutionMinutes: 30 | 60;
   snapshotDate?: string;
   fileName?: string;
   fileSizeBytes?: number;
   rowCount?: number;
   dataVersion?: string;
-  modelVersion?: string;
-  modelScope?: string;
-  modelApproved?: boolean;
+  generationSource: "ONS_GERACAO_USINA_2_HO" | "MODEL";
+  weatherSource: "ERA5" | "USER";
   warnings?: string[];
   createdAt: string;
 }
@@ -31,20 +30,32 @@ export interface WindPlantEstimate {
   latitude: number | null;
   longitude: number | null;
   installedCapacityMw: number;
-  estimatedGenerationMw: number;
-  confidenceLowMw: number;
-  confidenceHighMw: number;
-  confidenceLevel: "alta" | "media" | "baixa";
-  historicalAvailabilityPercent: number;
-  historicalCurtailmentPercent: number | null;
-  sampleCount?: number;
-  probableReason: CurtailmentReason | null;
-  riskLevel: RiskLevel;
+  observedGenerationMw: number | null;
+  estimatedGenerationMw: number | null;
+  capacityFactorPercent: number | null;
+  u100: number;
+  v100: number;
+  windSpeedMps: number;
+  windDirectionDegrees: number;
+  generationSource: "ONS_GERACAO_USINA_2_HO" | "MODEL";
+  weatherSource: "ERA5" | "USER";
+  suggestedBusAllocations: SuggestedBusAllocation[];
+  mappingCoveragePercent: number;
   warnings?: string[];
+}
+
+export interface SuggestedBusAllocation {
+  busNumber: string;
+  busName: string;
+  allocationFactor: number;
+  allocatedGenerationMw: number;
 }
 
 export interface PlantBusMapping {
   plantId: string;
+  allocationId: string;
+  allocationFactor: number;
+  generationMw: number;
   busNumber: string;
   busName: string;
   nominalVoltageKv: string;
@@ -143,7 +154,7 @@ export interface PwfExportResult {
   blob: Blob;
   filename: string;
   generatedAt: string;
-  modelVersion: string;
+  generationSource: "observed" | "estimated";
   dataVersion: string;
   isDemonstration: boolean;
 }
@@ -152,7 +163,11 @@ export interface SystemCapabilities {
   backend: { available: boolean };
   pwf: { upload: boolean; generationTargets: boolean; export: boolean };
   aiService: { available: boolean };
-  climate: { historicalEstimates: boolean; fileUpload: boolean };
+  climate: {
+    historicalReplay: boolean;
+    historicalEstimates: boolean;
+    fileUpload: boolean;
+  };
   model: {
     version: string;
     scope: string;
@@ -166,5 +181,9 @@ export interface SystemCapabilities {
     era5PartitionCount: number;
     joinedSnapshot: boolean;
     snapshotDate: string | null;
+    historicalFirstTimestamp: string | null;
+    historicalLastTimestamp: string | null;
+    historicalLatestTimestamp: string | null;
+    historicalInstantCount: number;
   } | null;
 }

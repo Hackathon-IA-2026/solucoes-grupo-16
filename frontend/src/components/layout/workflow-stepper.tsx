@@ -14,10 +14,10 @@ export function WorkflowStepper() {
   const completed = [
     Boolean(state.climateScenario),
     state.selectedPlantIds.length > 0,
-    state.selectedPlantIds.length > 0 && state.selectedPlantIds.every((id) => {
-      const mapping = state.study.mappings[id];
-      return Boolean(mapping?.busNumber && mapping.busName && mapping.nominalVoltageKv && mapping.area);
-    }) && Boolean(state.study.referencePwf),
+    state.selectedPlantIds.length > 0
+      && Object.values(state.study.mappings).length > 0
+      && Object.values(state.study.mappings).every((mapping) => Boolean(mapping.busNumber))
+      && Boolean(state.study.referencePwf),
     false,
   ];
 

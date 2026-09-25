@@ -9,47 +9,34 @@ import { Notice } from "@/components/ui/notice";
 import { PageHeader } from "@/components/ui/page-header";
 import { useScenario } from "@/context/scenario-context";
 import { runtimeConfig } from "@/lib/api";
-import type { CurtailmentReason, RiskLevel } from "@/types/climagrid";
 
-const reasonLabels: Record<CurtailmentReason, string> = {
-  REL: "Indisponibilidade externa",
-  CNF: "Confiabilidade",
-  ENE: "Razão energética",
-  PAR: "Parecer de acesso",
-  NONE: "Sem sinal relevante",
-};
-
-export default function GenerationEstimatesPage() {
+export default function HistoricalObservationsPage() {
   const router = useRouter();
   const { state, isHydrated, setSelectedPlantIds, togglePlant } = useScenario();
   const [query, setQuery] = useState("");
   const [stateFilter, setStateFilter] = useState("ALL");
-  const [riskFilter, setRiskFilter] = useState("ALL");
 
-  const filteredEstimates = useMemo(() => {
+  const filteredPlants = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase("pt-BR");
     return state.estimates.filter((plant) => {
       const matchesQuery = !normalizedQuery || `${plant.name} ${plant.onsId}`.toLocaleLowerCase("pt-BR").includes(normalizedQuery);
-      const matchesState = stateFilter === "ALL" || plant.state === stateFilter;
-      const matchesRisk = riskFilter === "ALL" || plant.riskLevel === riskFilter;
-      return matchesQuery && matchesState && matchesRisk;
+      return matchesQuery && (stateFilter === "ALL" || plant.state === stateFilter);
     });
-  }, [query, riskFilter, state.estimates, stateFilter]);
+  }, [query, state.estimates, stateFilter]);
   const availableStates = useMemo(
     () => Array.from(new Set(state.estimates.map((plant) => plant.state))).sort(),
     [state.estimates],
   );
-
   const selectedSet = useMemo(() => new Set(state.selectedPlantIds), [state.selectedPlantIds]);
   const selectedPlants = state.estimates.filter((plant) => selectedSet.has(plant.id));
-  const selectedGeneration = selectedPlants.reduce((total, plant) => total + plant.estimatedGenerationMw, 0);
+  const selectedGeneration = selectedPlants.reduce((total, plant) => total + generationMw(plant), 0);
   const selectedCapacity = selectedPlants.reduce((total, plant) => total + plant.installedCapacityMw, 0);
-  const allFilteredSelected = filteredEstimates.length > 0 && filteredEstimates.every((plant) => selectedSet.has(plant.id));
+  const allVisibleSelected = filteredPlants.length > 0 && filteredPlants.every((plant) => selectedSet.has(plant.id));
 
   function toggleVisible() {
-    const visibleIds = filteredEstimates.map((plant) => plant.id);
+    const visibleIds = filteredPlants.map((plant) => plant.id);
     setSelectedPlantIds(
-      allFilteredSelected
+      allVisibleSelected
         ? state.selectedPlantIds.filter((id) => !visibleIds.includes(id))
         : Array.from(new Set([...state.selectedPlantIds, ...visibleIds])),
     );
@@ -64,9 +51,9 @@ export default function GenerationEstimatesPage() {
       <AppShell>
         <div className="mx-auto flex min-h-[55vh] max-w-xl flex-col items-center justify-center text-center">
           <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary/10 text-secondary"><Icon name="wind" className="h-7 w-7" /></span>
-          <h1 className="mt-5 text-2xl font-semibold">Nenhum cenário processado</h1>
-          <p className="mt-2 text-sm leading-6 text-on-surface-variant">Defina os dados climáticos da etapa 1 para solicitar as estimativas de geração por usina.</p>
-          <Link href="/" className="button-primary mt-6"><Icon name="arrow-left" /> Ir para entrada climática</Link>
+          <h1 className="mt-5 text-2xl font-semibold">Nenhum replay carregado</h1>
+          <p className="mt-2 text-sm leading-6 text-on-surface-variant">Escolha uma hora histórica para consultar a geração observada das usinas.</p>
+          <Link href="/" className="button-primary mt-6"><Icon name="arrow-left" /> Escolher uma hora</Link>
         </div>
       </AppShell>
     );
@@ -76,20 +63,22 @@ export default function GenerationEstimatesPage() {
     <AppShell>
       <div className="space-y-6">
         <PageHeader
-          eyebrow="Etapa 2 de 4 · Geração estimada"
+          eyebrow="Etapa 2 de 4 · Observações históricas"
           title="Selecione as usinas do estudo"
-          description="Revise a geração prevista e o intervalo de confiança retornados pelo modelo. Somente as usinas selecionadas seguirão para o mapeamento elétrico."
+          description="Os valores abaixo são medições horárias da ONS, acompanhadas pelo vento ERA5 da mesma hora. Selecione somente as usinas que serão associadas ao PWF."
           aside={<div className="rounded-xl bg-surface-container-lowest px-4 py-3 text-right"><p className="text-[10px] font-semibold uppercase tracking-wider text-outline">Selecionadas</p><p className="mt-1 text-xl font-semibold text-secondary">{state.selectedPlantIds.length} de {state.estimates.length}</p></div>}
         />
 
-        {runtimeConfig.isDemoMode ? <Notice tone="warning" title="Resultados simulados">Os valores desta tabela são uma massa de demonstração do frontend, não uma saída do modelo preditivo da equipe.</Notice> : null}
-        {!runtimeConfig.isDemoMode && state.climateScenario.modelScope === "physical_fallback" ? <Notice tone="warning" title="Curva física em uso">O modelo híbrido não está aprovado ou não possui artefatos disponíveis. As estimativas abaixo usam a curva física e têm confiança baixa.</Notice> : null}
+        {runtimeConfig.isDemoMode ? <Notice tone="warning" title="Resultados simulados">A API não está configurada; estes valores servem apenas para navegar pelo fluxo.</Notice> : null}
+        <Notice tone="success" title="Geração observada, não estimada">
+          Instante reproduzido: <strong>{new Date(state.climateScenario.timestamp).toLocaleString("pt-BR")}</strong>. Fonte de geração: ONS; fonte de vento: ERA5.
+        </Notice>
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Resumo da seleção">
-          <Metric label="Geração estimada" value={`${selectedGeneration.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MW`} detail="soma das usinas selecionadas" />
-          <Metric label="Capacidade instalada" value={`${selectedCapacity.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} MW`} detail="limite físico cadastrado" />
-          <Metric label="Fator estimado" value={selectedCapacity > 0 ? `${((selectedGeneration / selectedCapacity) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%` : "—"} detail="geração / capacidade" />
-          <Metric label="Fonte do cenário" value={state.climateScenario.source === "historical" ? "ERA5 + ONS" : "Upload"} detail={state.climateScenario.snapshotDate ? `snapshot ${state.climateScenario.snapshotDate}` : state.climateScenario.fileName ?? "arquivo do usuário"} />
+          <Metric label="Geração observada" value={`${selectedGeneration.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MW`} detail="soma das usinas selecionadas" />
+          <Metric label="Capacidade instalada" value={`${selectedCapacity.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} MW`} detail="capacidade cadastrada" />
+          <Metric label="Fator observado" value={selectedCapacity > 0 ? `${((selectedGeneration / selectedCapacity) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%` : "—"} detail="geração / capacidade" />
+          <Metric label="Cobertura" value={`${state.estimates.length} conjuntos`} detail={`snapshot ${state.climateScenario.snapshotDate ?? "—"}`} />
         </section>
 
         <section className="overflow-hidden rounded-2xl border border-outline-variant/50 bg-surface-container-low shadow-sm">
@@ -98,58 +87,47 @@ export default function GenerationEstimatesPage() {
               <Icon name="search" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-outline" />
               <input className="field-input pl-10" placeholder="Buscar por nome ou ID ONS" value={query} onChange={(event) => setQuery(event.target.value)} />
             </div>
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <select className="field-input min-w-32" value={stateFilter} onChange={(event) => setStateFilter(event.target.value)} aria-label="Filtrar por estado">
-                <option value="ALL">Todos os estados</option>
-                {availableStates.map((uf) => <option key={uf} value={uf}>{uf}</option>)}
-              </select>
-              <select className="field-input min-w-40" value={riskFilter} onChange={(event) => setRiskFilter(event.target.value)} aria-label="Filtrar por risco">
-                <option value="ALL">Todos os riscos</option>
-                <option value="high">Risco alto</option>
-                <option value="medium">Risco médio</option>
-                <option value="low">Risco baixo</option>
-                <option value="unavailable">Não modelado</option>
-              </select>
-            </div>
+            <select className="field-input min-w-40" value={stateFilter} onChange={(event) => setStateFilter(event.target.value)} aria-label="Filtrar por estado">
+              <option value="ALL">Todos os estados</option>
+              {availableStates.map((uf) => <option key={uf} value={uf}>{uf}</option>)}
+            </select>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[980px] border-collapse text-left">
+            <table className="w-full min-w-[920px] border-collapse text-left">
               <thead className="bg-surface-container-lowest text-[10px] uppercase tracking-wider text-outline">
                 <tr>
-                  <th className="w-12 px-4 py-3"><input type="checkbox" checked={allFilteredSelected} onChange={toggleVisible} aria-label="Selecionar usinas visíveis" /></th>
+                  <th className="w-12 px-4 py-3"><input type="checkbox" checked={allVisibleSelected} onChange={toggleVisible} aria-label="Selecionar usinas visíveis" /></th>
                   <th className="px-3 py-3">Usina</th>
                   <th className="px-3 py-3">UF</th>
                   <th className="px-3 py-3 text-right">Capacidade</th>
-                  <th className="px-3 py-3 text-right">Estimativa</th>
-                  <th className="px-3 py-3 text-right">Faixa de incerteza</th>
-                  <th className="px-3 py-3 text-right">Disponibilidade hist.</th>
-                  <th className="px-4 py-3">Sinal de risco</th>
+                  <th className="px-3 py-3 text-right">Geração ONS</th>
+                  <th className="px-3 py-3 text-right">Fator</th>
+                  <th className="px-3 py-3 text-right">Vento ERA5</th>
+                  <th className="px-4 py-3 text-right">Direção</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant/30">
-                {filteredEstimates.map((plant) => (
+                {filteredPlants.map((plant) => (
                   <tr key={plant.id} className={`transition-colors hover:bg-surface-container ${selectedSet.has(plant.id) ? "bg-primary-container/5" : ""}`}>
                     <td className="px-4 py-4"><input type="checkbox" checked={selectedSet.has(plant.id)} onChange={() => togglePlant(plant.id)} aria-label={`Selecionar ${plant.name}`} /></td>
                     <td className="px-3 py-4"><p className="text-sm font-medium text-on-surface">{plant.name}</p><p className="mt-0.5 font-mono text-[10px] text-outline">{plant.onsId}</p></td>
                     <td className="px-3 py-4 text-sm text-on-surface-variant">{plant.state}</td>
                     <td className="px-3 py-4 text-right font-mono text-sm text-on-surface-variant">{plant.installedCapacityMw.toLocaleString("pt-BR")} MW</td>
-                    <td className="px-3 py-4 text-right font-mono text-sm font-semibold text-secondary">{plant.estimatedGenerationMw.toLocaleString("pt-BR")} MW</td>
-                    <td className="px-3 py-4 text-right font-mono text-xs text-on-surface-variant">{plant.confidenceLowMw.toLocaleString("pt-BR")}–{plant.confidenceHighMw.toLocaleString("pt-BR")} MW</td>
-                    <td className="px-3 py-4 text-right font-mono text-sm text-on-surface-variant">{plant.historicalAvailabilityPercent.toLocaleString("pt-BR")}%</td>
-                    <td className="px-4 py-4"><RiskBadge level={plant.riskLevel} reason={plant.probableReason} /></td>
+                    <td className="px-3 py-4 text-right font-mono text-sm font-semibold text-secondary">{generationMw(plant).toLocaleString("pt-BR")} MW</td>
+                    <td className="px-3 py-4 text-right font-mono text-sm text-on-surface-variant">{plant.capacityFactorPercent?.toLocaleString("pt-BR", { maximumFractionDigits: 1 }) ?? "—"}%</td>
+                    <td className="px-3 py-4 text-right font-mono text-sm text-on-surface-variant">{plant.windSpeedMps.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} m/s</td>
+                    <td className="px-4 py-4 text-right font-mono text-sm text-on-surface-variant">{plant.windDirectionDegrees.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}°</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            {filteredEstimates.length === 0 ? <div className="p-10 text-center text-sm text-on-surface-variant">Nenhuma usina corresponde aos filtros.</div> : null}
+            {filteredPlants.length === 0 ? <div className="p-10 text-center text-sm text-on-surface-variant">Nenhuma usina corresponde aos filtros.</div> : null}
           </div>
         </section>
 
-        <Notice title="Como interpretar esta etapa">A estimativa exibida é a média horária do período e respeita a disponibilidade histórica do snapshot. A classificação de curtailment ainda não está implementada; risco elétrico só poderá ser confirmado após o fluxo de potência no ANAREDE.</Notice>
-
         <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <Link href="/" className="button-secondary"><Icon name="arrow-left" /> Alterar entrada climática</Link>
+          <Link href="/" className="button-secondary"><Icon name="arrow-left" /> Alterar instante</Link>
           <button type="button" disabled={state.selectedPlantIds.length === 0} onClick={() => router.push("/mapeamento-barras")} className="button-primary">Mapear {state.selectedPlantIds.length} {state.selectedPlantIds.length === 1 ? "usina" : "usinas"}<Icon name="arrow-right" /></button>
         </div>
       </div>
@@ -157,14 +135,10 @@ export default function GenerationEstimatesPage() {
   );
 }
 
-function Metric({ label, value, detail }: { label: string; value: string; detail: string }) {
-  return <div className="rounded-xl border border-outline-variant/40 bg-surface-container-low p-4"><p className="text-[10px] font-semibold uppercase tracking-wider text-outline">{label}</p><p className="mt-2 text-xl font-semibold text-on-surface">{value}</p><p className="mt-1 truncate text-xs text-on-surface-variant">{detail}</p></div>;
+function generationMw(plant: { observedGenerationMw: number | null; estimatedGenerationMw: number | null }): number {
+  return plant.observedGenerationMw ?? plant.estimatedGenerationMw ?? 0;
 }
 
-function RiskBadge({ level, reason }: { level: RiskLevel; reason: CurtailmentReason | null }) {
-  if (level === "unavailable" || reason === null) {
-    return <span className="inline-flex rounded-full bg-surface-container-high px-2.5 py-1 text-[10px] font-semibold text-on-surface-variant">Não modelado</span>;
-  }
-  const classes = level === "high" ? "bg-error/10 text-error" : level === "medium" ? "bg-amber-300/10 text-amber-200" : "bg-emerald-300/10 text-emerald-200";
-  return <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold ${classes}`}>{reason === "NONE" ? reasonLabels.NONE : `${reason} · ${reasonLabels[reason]}`}</span>;
+function Metric({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return <div className="rounded-xl border border-outline-variant/40 bg-surface-container-low p-4"><p className="text-[10px] font-semibold uppercase tracking-wider text-outline">{label}</p><p className="mt-2 text-xl font-semibold text-on-surface">{value}</p><p className="mt-1 truncate text-xs text-on-surface-variant">{detail}</p></div>;
 }

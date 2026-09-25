@@ -9,6 +9,10 @@ from ingestion.common.io import sha256_file, utc_now_iso
 
 
 ONS_MEMBERSHIP_URL = "https://ons-aws-prod-opendata.s3.amazonaws.com/dataset/usina_conjunto/RELACIONAMENTO_USINA_CONJUNTO.parquet"
+ONS_GENERATION_BASE_URL = (
+    "https://ons-aws-prod-opendata.s3.amazonaws.com/"
+    "dataset/geracao_usina_2_ho"
+)
 
 
 def download_ons_membership(output: Path, source_url: str = ONS_MEMBERSHIP_URL) -> dict:
@@ -31,8 +35,18 @@ def download_ons_membership(output: Path, source_url: str = ONS_MEMBERSHIP_URL) 
     }
 
 
-def download_ons_generation(output: Path, year: int) -> dict:
-    source_url = f"https://ons-aws-prod-opendata.s3.amazonaws.com/dataset/geracao_usina_2/GERACAO_USINA_{year}.csv"
+def ons_generation_url(year: int, month: int) -> str:
+    if year < 2022:
+        raise ValueError(
+            "O download mensal de geração da ONS está disponível a partir de 2022."
+        )
+    if not 1 <= month <= 12:
+        raise ValueError("O mês da geração ONS deve estar entre 1 e 12.")
+    return f"{ONS_GENERATION_BASE_URL}/GERACAO_USINA-2_{year}_{month:02d}.parquet"
+
+
+def download_ons_generation(output: Path, year: int, month: int) -> dict:
+    source_url = ons_generation_url(year, month)
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_suffix(output.suffix + ".part")
     request = Request(source_url, headers={"User-Agent": "ClimaGrid/1.0"})
@@ -41,13 +55,16 @@ def download_ons_generation(output: Path, year: int) -> dict:
             target.write(chunk)
     if temporary.stat().st_size == 0:
         temporary.unlink(missing_ok=True)
-        raise RuntimeError(f"A geração da ONS para {year} retornou um arquivo vazio.")
+        raise RuntimeError(
+            f"A geração da ONS para {year}-{month:02d} retornou um arquivo vazio."
+        )
     os.replace(temporary, output)
     return {
         "source_url": source_url,
+        "year": year,
+        "month": month,
         "downloaded_at": utc_now_iso(),
         "path": str(output),
         "size_bytes": output.stat().st_size,
         "sha256": sha256_file(output),
     }
-

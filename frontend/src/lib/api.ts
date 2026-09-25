@@ -19,8 +19,7 @@ export const runtimeConfig = {
 
 interface ProcessScenarioInput {
   source: ClimateSource;
-  startAt: string;
-  endAt: string;
+  timestamp: string;
   resolutionMinutes: 30 | 60;
   file?: File;
   rowCount?: number;
@@ -52,17 +51,16 @@ async function processScenario(input: ProcessScenarioInput): Promise<ProcessScen
       id: `demo-${Date.now()}`,
       source: input.source,
       subsystem: "NE",
-      startAt: input.startAt,
-      endAt: input.endAt,
+      mode: "replay",
+      timestamp: input.timestamp,
       resolutionMinutes: input.resolutionMinutes,
       snapshotDate: input.source === "historical" ? DEMO_SNAPSHOT_DATE : undefined,
       fileName: input.file?.name,
       fileSizeBytes: input.file?.size,
       rowCount: input.rowCount,
       dataVersion: input.source === "historical" ? `demo-${DEMO_SNAPSHOT_DATE}` : input.file?.name,
-      modelVersion: "mock-local-v1",
-      modelScope: "demonstration",
-      modelApproved: false,
+      generationSource: "ONS_GERACAO_USINA_2_HO",
+      weatherSource: "ERA5",
       createdAt: now,
     };
 
@@ -76,25 +74,27 @@ async function processScenario(input: ProcessScenarioInput): Promise<ProcessScen
     throw new Error("O upload climático ainda não está disponível no backend.");
   }
 
-  return requestJson<ProcessScenarioResult>("/climate-scenarios/historical", {
+  const result = await requestJson<{
+    scenario: ClimateScenario;
+    observations: ProcessScenarioResult["estimates"];
+  }>("/climate-scenarios/historical", {
     method: "POST",
     body: JSON.stringify({
       subsystem: "NE",
-      startAt: new Date(input.startAt).toISOString(),
-      endAt: new Date(input.endAt).toISOString(),
+      timestamp: new Date(input.timestamp).toISOString(),
       resolutionMinutes: input.resolutionMinutes,
     }),
   });
+  return { scenario: result.scenario, estimates: result.observations };
 }
 
 async function exportPwf(request: PwfExportRequest): Promise<PwfExportResult> {
   if (!apiBaseUrl) {
     await new Promise((resolve) => window.setTimeout(resolve, 500));
     const generatedAt = new Date().toISOString();
-    const mappedPlants = request.selectedPlantIds.map((plantId) => {
-      const plant = request.estimates.find((estimate) => estimate.id === plantId);
-      const mapping = request.study.mappings[plantId];
-      return `${plant?.onsId ?? plantId};${mapping?.busNumber ?? ""};${plant?.estimatedGenerationMw ?? 0}`;
+    const mappedPlants = Object.values(request.study.mappings).map((mapping) => {
+      const plant = request.estimates.find((estimate) => estimate.id === mapping.plantId);
+      return `${plant?.onsId ?? mapping.plantId};${mapping.busNumber};${mapping.generationMw}`;
     });
     const content = [
       "CLIMAGRID — ARQUIVO DEMONSTRATIVO SEM VALIDADE PARA O ANAREDE",
@@ -109,7 +109,7 @@ async function exportPwf(request: PwfExportRequest): Promise<PwfExportResult> {
       blob: new Blob([content], { type: "text/plain;charset=utf-8" }),
       filename: "CLIMAGRID_DEMO_SEM_VALIDADE.pwf.txt",
       generatedAt,
-      modelVersion: "mock-local-v1",
+      generationSource: request.climateScenario.mode === "replay" ? "observed" : "estimated",
       dataVersion: request.climateScenario.snapshotDate ?? request.climateScenario.fileName ?? "upload-local",
       isDemonstration: true,
     };
@@ -122,19 +122,18 @@ async function exportPwf(request: PwfExportRequest): Promise<PwfExportResult> {
       scenarioId: request.climateScenario.id,
       studyName: request.study.name,
       referencePwfId: request.study.referencePwf?.id,
-      modelVersion: request.climateScenario.modelVersion ?? "unknown",
+      generationSource: request.climateScenario.mode === "replay" ? "observed" : "estimated",
       dataVersion:
         request.climateScenario.dataVersion ??
         request.climateScenario.snapshotDate ??
         request.climateScenario.fileName ??
         "unknown",
-      plants: request.selectedPlantIds.map((plantId) => {
-        const estimate = request.estimates.find((item) => item.id === plantId);
-        const mapping = request.study.mappings[plantId];
+      plants: Object.values(request.study.mappings).map((mapping) => {
+        const estimate = request.estimates.find((item) => item.id === mapping.plantId);
         return {
-          plantId,
-          onsId: estimate?.onsId ?? plantId,
-          estimatedGenerationMw: estimate?.estimatedGenerationMw,
+          plantId: mapping.allocationId,
+          onsId: estimate?.onsId ?? mapping.plantId,
+          generationMw: mapping.generationMw,
           mapping,
         };
       }),
@@ -150,7 +149,10 @@ async function exportPwf(request: PwfExportRequest): Promise<PwfExportResult> {
     blob: await response.blob(),
     filename: response.headers.get("x-filename") ?? "climagrid-cenario.pwf",
     generatedAt,
-    modelVersion: response.headers.get("x-model-version") ?? "informado-pela-api",
+    generationSource:
+      response.headers.get("x-generation-source") === "estimated"
+        ? "estimated"
+        : "observed",
     dataVersion: response.headers.get("x-data-version") ?? "informada-pela-api",
     isDemonstration: false,
   };
@@ -205,7 +207,11 @@ async function getCapabilities(): Promise<SystemCapabilities> {
       backend: { available: false },
       pwf: { upload: false, generationTargets: false, export: false },
       aiService: { available: false },
-      climate: { historicalEstimates: false, fileUpload: false },
+      climate: {
+        historicalReplay: false,
+        historicalEstimates: false,
+        fileUpload: false,
+      },
       model: null,
       data: null,
     };

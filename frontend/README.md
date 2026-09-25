@@ -1,13 +1,15 @@
 # ClimaGrid — frontend
 
-Interface do MVP para transformar um cenário de vento em estimativas de geração eólica, mapear usinas para barras elétricas e solicitar a geração de um arquivo PWF para estudo no ANAREDE.
+Interface do MVP para reproduzir a geração eólica observada em uma hora,
+mapear conjuntos ONS para barras elétricas e gerar um PWF para estudo no
+ANAREDE.
 
 O recorte implementado segue o documento técnico do projeto:
 
-1. entrada histórica ERA5/ONS ou upload de cenário climático;
-2. revisão e seleção das estimativas por usina eólica do Nordeste;
-3. mapeamento manual usina → barra e envio de um caso base PWF;
-4. leitura de risco e exportação, sem executar fluxo de potência no frontend.
+1. seleção de uma hora disponível no snapshot ONS + ERA5;
+2. revisão da geração ONS e do vento ERA5 por conjunto eólico do Nordeste;
+3. upload do caso PWF e validação das alocações sugeridas por CEG;
+4. exportação do PWF, sem executar fluxo de potência no frontend.
 
 ## Execução local
 
@@ -31,17 +33,20 @@ O navegador conversa somente com o NestJS; o FastAPI permanece um serviço inter
 | Método | Endpoint | Responsabilidade |
 | --- | --- | --- |
 | `GET` | `/system/capabilities` | Informar disponibilidade do NestJS, IA, ONS, ERA5 e modelo |
-| `POST` | `/climate-scenarios/historical` | Criar cenário e estimativas a partir do snapshot ONS + ERA5 |
+| `POST` | `/climate-scenarios/historical` | Reproduzir uma hora observada do snapshot ONS + ERA5 |
 | `POST` | `/pwf/reference-cases` | Armazenar e validar o caso base `.pwf` |
 | `GET` | `/pwf/reference-cases/:id/generation-targets` | Listar barras geradoras do caso base |
 | `POST` | `/pwf/exports` | Gerar o PWF e devolver o arquivo como `Blob` |
 
-Na exportação, a API pode devolver os cabeçalhos `x-filename`, `x-generated-at`, `x-model-version` e `x-data-version` para preencher o log de proveniência.
+Na exportação, a API devolve os cabeçalhos `x-filename`, `x-generated-at`,
+`x-generation-source`, `x-data-version` e `x-modified-buses` para preencher o
+log de proveniência.
 
 Os tipos compartilhados pelo frontend ficam em `src/types/climagrid.ts`. A regra de negócio permanece no backend; as validações locais existem para feedback rápido e não substituem a validação oficial dos dados ou do PWF.
 
-O upload de cenário climático e a classificação de curtailment permanecem
-desabilitados na integração real até existirem contratos de backend validados.
+O upload de cenário futuro, a estimativa por IA e a classificação de
+curtailment permanecem fora desta etapa. Não há queda silenciosa do replay real
+para dados previstos ou fictícios.
 
 ## Verificação
 

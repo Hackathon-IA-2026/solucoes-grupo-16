@@ -9,7 +9,7 @@ import { PwfStorageService } from '../storage/pwf-storage.service.js';
 export interface PwfExportPlant {
   plantId: string;
   onsId: string;
-  estimatedGenerationMw: number;
+  generationMw: number;
   mapping: {
     busNumber: string;
     busName: string;
@@ -22,7 +22,7 @@ export interface PwfExportRequest {
   referencePwfId: string;
   scenarioId: string;
   studyName: string;
-  modelVersion: string;
+  generationSource: 'observed' | 'estimated';
   dataVersion: string;
   plants: PwfExportPlant[];
 }
@@ -31,7 +31,7 @@ export interface PwfExportResult {
   buffer: Buffer;
   filename: string;
   generatedAt: string;
-  modelVersion: string;
+  generationSource: 'observed' | 'estimated';
   dataVersion: string;
   modifiedBuses: number[];
 }
@@ -50,8 +50,11 @@ export class PwfExportService {
     ]);
     const output = Buffer.from(original);
     const busesByNumber = new Map(index.buses.map((bus) => [bus.number, bus]));
-    const seenBuses = new Set<number>();
     const modifiedBuses: number[] = [];
+    const generationByBus = new Map<
+      number,
+      { generationMw: number; plantLabels: string[] }
+    >();
 
     for (const plant of payload.plants) {
       const busNumber = Number(plant.mapping.busNumber);
@@ -60,13 +63,16 @@ export class PwfExportService {
           `A barra informada para ${plant.onsId || plant.plantId} é inválida.`,
         );
       }
-      if (seenBuses.has(busNumber)) {
-        throw new BadRequestException(
-          `A barra ${busNumber} foi associada a mais de uma usina.`,
-        );
-      }
-      seenBuses.add(busNumber);
+      const accumulated = generationByBus.get(busNumber) ?? {
+        generationMw: 0,
+        plantLabels: [],
+      };
+      accumulated.generationMw += plant.generationMw;
+      accumulated.plantLabels.push(plant.onsId || plant.plantId);
+      generationByBus.set(busNumber, accumulated);
+    }
 
+    for (const [busNumber, allocation] of generationByBus) {
       const bus = busesByNumber.get(busNumber);
       if (!bus) {
         throw new UnprocessableEntityException(
@@ -80,16 +86,16 @@ export class PwfExportService {
       }
       if (
         bus.activeGenerationMaximumMw !== undefined &&
-        plant.estimatedGenerationMw > bus.activeGenerationMaximumMw + 1e-6
+        allocation.generationMw > bus.activeGenerationMaximumMw + 1e-6
       ) {
         throw new UnprocessableEntityException(
-          `A geração de ${plant.estimatedGenerationMw} MW excede o limite de ${bus.activeGenerationMaximumMw} MW da barra ${busNumber}.`,
+          `A geração agregada de ${allocation.generationMw} MW excede o limite de ${bus.activeGenerationMaximumMw} MW da barra ${busNumber}.`,
         );
       }
 
       const field = bus.activeGenerationField;
       const formatted = formatFixedWidthNumber(
-        plant.estimatedGenerationMw,
+        allocation.generationMw,
         field.width,
         field.rawValue,
       );
@@ -112,7 +118,7 @@ export class PwfExportService {
       buffer: output,
       filename: `${stem || 'cenario'}_climagrid${extension.toLowerCase()}`,
       generatedAt: new Date().toISOString(),
-      modelVersion: payload.modelVersion,
+      generationSource: payload.generationSource,
       dataVersion: payload.dataVersion,
       modifiedBuses,
     };
@@ -127,12 +133,16 @@ function validatePayload(payload: PwfExportRequest): void {
     'referencePwfId',
     'scenarioId',
     'studyName',
-    'modelVersion',
     'dataVersion',
   ] as const) {
     if (typeof payload[field] !== 'string' || !payload[field].trim()) {
       throw new BadRequestException(`O campo ${field} é obrigatório.`);
     }
+  }
+  if (!['observed', 'estimated'].includes(payload.generationSource)) {
+    throw new BadRequestException(
+      'O campo generationSource deve ser observed ou estimated.',
+    );
   }
   if (!Array.isArray(payload.plants) || payload.plants.length === 0) {
     throw new BadRequestException('Selecione ao menos uma usina para exportar.');
@@ -140,9 +150,9 @@ function validatePayload(payload: PwfExportRequest): void {
   for (const plant of payload.plants) {
     if (
       !plant ||
-      typeof plant.estimatedGenerationMw !== 'number' ||
-      !Number.isFinite(plant.estimatedGenerationMw) ||
-      plant.estimatedGenerationMw < 0 ||
+      typeof plant.generationMw !== 'number' ||
+      !Number.isFinite(plant.generationMw) ||
+      plant.generationMw < 0 ||
       !plant.mapping
     ) {
       throw new BadRequestException('Há uma usina com dados de exportação inválidos.');

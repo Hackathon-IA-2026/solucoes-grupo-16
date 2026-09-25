@@ -11,8 +11,9 @@ services:
         required: false
     environment:
       CLIMAGRID_ARTIFACT_DIR: /service/artifacts/global/v1
-      CLIMAGRID_TRAINING_SNAPSHOT: /service/data/processed/training/snapshot_unido.parquet
+      CLIMAGRID_HISTORICAL_SNAPSHOT: /service/data/processed/historical/observations.parquet
       CLIMAGRID_PLANT_CATALOG: /service/data/processed/reference/plant_locations.parquet
+      CLIMAGRID_PWF_MAPPING: /service/data/processed/reference/pwf_bus_mapping.parquet
       CLIMAGRID_DATA_ROOT: /service/data
     ports:
       - "${AI_SERVICE_PORT:-8000}:8000"

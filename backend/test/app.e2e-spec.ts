@@ -1,13 +1,15 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
 import { AppModule } from './../src/app.module.js';
+import { configureBodyParsers } from './../src/http-body-parser.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 describe('AppController (e2e)', () => {
-  let app: INestApplication;
+  let app: INestApplication & NestExpressApplication;
   let storageRoot: string;
 
   beforeAll(async () => {
@@ -17,7 +19,10 @@ describe('AppController (e2e)', () => {
       imports: [AppModule],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
+    app = moduleFixture.createNestApplication<NestExpressApplication>({
+      bodyParser: false,
+    });
+    configureBodyParsers(app);
     await app.init();
   });
 
@@ -29,9 +34,10 @@ describe('AppController (e2e)', () => {
   });
 
   it('uploads, interprets and exposes generation targets from a PWF', async () => {
+    const sourcePwf = createMinimalPwf();
     const upload = await request(app.getHttpServer())
       .post('/pwf/reference-cases')
-      .attach('file', createMinimalPwf(), 'caso-2029.pwf')
+      .attach('file', sourcePwf, 'caso-2029.pwf')
       .expect(201);
 
     expect(upload.body).toMatchObject({
@@ -41,7 +47,11 @@ describe('AppController (e2e)', () => {
       studyYear: 2029,
       busCount: 1,
       generatorBusCount: 1,
+      generatorGroupCount: 1,
     });
+    expect(upload.body.blocks).toEqual(
+      expect.arrayContaining(['DBAR', 'DGER', 'DGEI']),
+    );
     expect(upload.body.sha256).toMatch(/^[0-9a-f]{64}$/);
 
     const targets = await request(app.getHttpServer())
@@ -61,14 +71,16 @@ describe('AppController (e2e)', () => {
       .send({
         referencePwfId: upload.body.id,
         scenarioId: 'cenario-teste',
-        studyName: 'Teste integrado',
-        modelVersion: 'physical-curve-v1',
+        // O replay completo pode conter centenas de alocações e ultrapassar
+        // o limite padrão de 100 KB do parser JSON do Express.
+        studyName: `Teste integrado ${'x'.repeat(110_000)}`,
+        generationSource: 'observed',
         dataVersion: 'snapshot-teste',
         plants: [
           {
             plantId: 'usina-1',
             onsId: 'ONS_1',
-            estimatedGenerationMw: 87.5,
+            generationMw: 87.5,
             mapping: {
               busNumber: '123',
               busName: 'PARQUE EOL',
@@ -86,9 +98,13 @@ describe('AppController (e2e)', () => {
       })
       .expect(201);
 
-    expect(exported.headers['x-model-version']).toBe('physical-curve-v1');
+    expect(exported.headers['x-generation-source']).toBe('observed');
     expect(exported.headers['x-modified-buses']).toBe('123');
-    expect((exported.body as Buffer).toString('latin1')).toContain(' 87.5');
+    const exportedBuffer = exported.body as Buffer;
+    expect(exportedBuffer.toString('latin1')).toContain(' 87.5');
+    expect(exportedBuffer.length).toBe(sourcePwf.length);
+    expect(block(exportedBuffer, 'DGER')).toBe(block(sourcePwf, 'DGER'));
+    expect(block(exportedBuffer, 'DGEI')).toBe(block(sourcePwf, 'DGEI'));
   });
 
   afterAll(async () => {
@@ -107,6 +123,21 @@ function createMinimalPwf(): Buffer {
   put(record, 10, 22, 'PARQUE EOL');
   put(record, 32, 37, '100.0', true);
   put(record, 73, 76, '5', true);
+  const dger = Array<string>(27).fill(' ');
+  put(dger, 0, 5, '123', true);
+  put(dger, 8, 14, '10.0', true);
+  put(dger, 15, 21, '180.0', true);
+  const dgei = Array<string>(91).fill(' ');
+  put(dgei, 0, 5, '123', true);
+  put(dgei, 7, 8, 'N');
+  put(dgei, 9, 11, '1', true);
+  put(dgei, 12, 13, 'L');
+  put(dgei, 13, 16, '4', true);
+  put(dgei, 16, 19, '3', true);
+  put(dgei, 19, 22, '1', true);
+  put(dgei, 22, 27, '25.0', true);
+  put(dgei, 69, 74, '55.0', true);
+  put(dgei, 74, 80, '50.0', true);
 
   return Buffer.from(
     [
@@ -119,11 +150,24 @@ function createMinimalPwf(): Buffer {
       'DBAR',
       record.join(''),
       '99999',
+      'DGER',
+      dger.join(''),
+      '99999',
+      'DGEI',
+      dgei.join(''),
+      '99999',
       'FIM',
       '',
     ].join('\r\n'),
     'latin1',
   );
+}
+
+function block(buffer: Buffer, code: string): string {
+  const text = buffer.toString('latin1');
+  const start = text.indexOf(`${code}\r\n`);
+  const end = text.indexOf('99999', start);
+  return text.slice(start, end + 5);
 }
 
 function put(

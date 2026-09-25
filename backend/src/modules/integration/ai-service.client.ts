@@ -19,26 +19,29 @@ export interface AiCapabilities {
     era5_partition_count: number;
     joined_snapshot_available: boolean;
     joined_snapshot_date: string | null;
+    historical_first_timestamp: string | null;
+    historical_last_timestamp: string | null;
+    historical_latest_timestamp: string | null;
+    historical_instant_count: number;
   };
   features: {
+    historical_replay: boolean;
     historical_estimates: boolean;
     climate_file_upload: boolean;
     physical_fallback: boolean;
   };
 }
 
-export interface AiHistoricalResponse {
+export interface AiHistoricalReplayResponse {
   scenario_id: string;
   subsystem: 'NE';
-  start_at: string;
-  end_at: string;
+  timestamp: string;
   resolution_minutes: 60;
   snapshot_date: string;
   data_version: string;
-  model_version: string;
-  model_scope: string;
-  model_approved: boolean;
-  estimates: Array<{
+  generation_source: 'ONS_GERACAO_USINA_2_HO';
+  weather_source: 'ERA5';
+  observations: Array<{
     usina_id: string;
     ons_id: string;
     name: string;
@@ -46,13 +49,21 @@ export interface AiHistoricalResponse {
     latitude: number | null;
     longitude: number | null;
     installed_capacity_mw: number;
-    estimated_generation_mw: number;
-    confidence_low_mw: number | null;
-    confidence_high_mw: number | null;
-    confidence: 'alta' | 'media' | 'baixa';
-    historical_availability_percent: number;
-    historical_curtailment_percent: number | null;
-    sample_count: number;
+    observed_generation_mw: number;
+    capacity_factor_percent: number | null;
+    u100: number;
+    v100: number;
+    wind_speed_mps: number;
+    wind_direction_degrees: number;
+    generation_source: 'ONS_GERACAO_USINA_2_HO';
+    weather_source: 'ERA5';
+    suggested_bus_allocations: Array<{
+      bus_number: number;
+      bus_name: string;
+      allocation_factor: number;
+      allocated_generation_mw: number;
+    }>;
+    mapping_coverage_percent: number;
     warnings: string[];
   }>;
   warnings: string[];
@@ -68,14 +79,13 @@ export class AiServiceClient {
     return this.request<AiCapabilities>('/capabilities');
   }
 
-  async estimateHistorical(payload: {
+  async replayHistorical(payload: {
     subsystem: 'NE';
-    start_at: string;
-    end_at: string;
+    timestamp: string;
     resolution_minutes: 60;
-  }): Promise<AiHistoricalResponse> {
-    return this.request<AiHistoricalResponse>(
-      '/estimar-historico',
+  }): Promise<AiHistoricalReplayResponse> {
+    return this.request<AiHistoricalReplayResponse>(
+      '/replay-historico',
       {
         method: 'POST',
         body: JSON.stringify(payload),
