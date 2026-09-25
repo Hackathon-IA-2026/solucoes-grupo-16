@@ -208,7 +208,7 @@ para a pesquisa de estimativa e previsão das etapas 2 e 3.
 
 Você não precisa mudar hiperparâmetros para rodar os testes automatizados e não deve mudá-los aleatoriamente a cada treino. Comece com os padrões, compare poucas combinações na validação e consulte o teste apenas ao final. Use um diretório de artefatos diferente para cada experimento.
 
-Hoje os hiperparâmetros do LightGBM estão fixos em `training/train.py`:
+Os hiperparâmetros padrão do LightGBM estão declarados em `training/config.py`:
 
 ```text
 learning_rate=0.04, n_estimators=2500, num_leaves=31
@@ -216,9 +216,9 @@ min_child_samples=100, subsample=0.8
 colsample_bytree=0.8, reg_lambda=5.0
 ```
 
-O JSON configura dados, experimento e curva física; ainda não configura esses parâmetros do LightGBM. Não há grid search, random search ou Optuna. O único ajuste automático é o `early stopping`: 2.500 árvores é o teto, o treino para após 100 rodadas sem melhora na validação e grava `best_iteration`.
+O JSON também aceita uma seção `lightgbm` com esses campos. Cada campo omitido usa o valor padrão. Não há grid search, random search ou Optuna. O único ajuste automático é o `early stopping`: 2.500 árvores é o teto padrão, o treino para após 100 rodadas sem melhora na validação e grava `best_iteration`.
 
-Para experimentação frequente, a evolução correta é declarar uma seção `lightgbm` no JSON, validá-la em `TrainingConfig` e passá-la ao `LGBMRegressor`, preservando os valores em `metadata.json`.
+Para comparar experimentos, use um JSON e um diretório de artefatos por execução. Os valores efetivos ficam em `metadata.json`, em `lightgbm_params`.
 
 ## 6. O `.env.example` é utilizado? Preciso criar `.env`? O que são as URLs?
 

@@ -12,7 +12,7 @@ from app.main import create_app
 from app.predictor import Predictor
 from app.schemas import EstimationRequest
 from training.build_dataset import prepare_hourly_dataset
-from training.config import PhysicalCurveConfig, TrainingConfig
+from training.config import LightGBMConfig, PhysicalCurveConfig, TrainingConfig, load_config
 from training.evaluate import empirical_interval_table, evaluate_artifact, interval_bounds, regression_metrics
 from training.features import FEATURE_COLUMNS, feature_matrix
 from training.physical_curve import physical_power_mw
@@ -127,6 +127,20 @@ def test_configurable_curve_roundtrip(synthetic_frame, tmp_path):
     report = evaluate_artifact(synthetic_frame, tmp_path)
     assert report["baseline_test"]["overall"]["mae_mw"] == 0
     assert metadata["physical_curve"]["rated_ms"] == 10
+
+
+def test_lightgbm_config_roundtrip_and_training(synthetic_frame, tmp_path):
+    config_file = tmp_path / "experiment.json"
+    config_file.write_text(json.dumps({"target": "geracao_referencia_mw",
+        "lightgbm": {"min_child_samples": 50}}), encoding="utf-8")
+    config = load_config(config_file)
+    assert config.lightgbm == LightGBMConfig(min_child_samples=50)
+    metadata = train(synthetic_frame, config, tmp_path / "artifact")
+    assert metadata["lightgbm_params"]["min_child_samples"] == 50
+    assert metadata["training_config"]["lightgbm"]["min_child_samples"] == 50
+    assert TrainingConfig.from_dict(metadata["training_config"]).lightgbm == config.lightgbm
+    with pytest.raises(ValueError, match="LightGBM"):
+        LightGBMConfig(min_child_samples=0)
 
 
 def test_cli_roundtrip_custom_verified_target(synthetic_frame, tmp_path):

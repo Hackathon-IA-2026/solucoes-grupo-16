@@ -69,8 +69,7 @@ def train(dataset: pd.DataFrame, config: TrainingConfig, artifact_dir: Path) -> 
     prepared = _prepared(dataset, target_column, config)
     train_df, valid_df, test_df, periods = temporal_split(prepared)
     X_train, X_valid, X_test = (feature_matrix(part) for part in (train_df, valid_df, test_df))
-    params = dict(objective="regression_l1", learning_rate=0.04, n_estimators=2500, num_leaves=31,
-                  min_child_samples=100, subsample=0.8, colsample_bytree=0.8, reg_lambda=5.0,
+    params = dict(objective="regression_l1", **config.serializable()["lightgbm"],
                   random_state=config.random_state, n_jobs=config.n_jobs,
                   subsample_freq=1, deterministic=True, force_col_wise=True, verbosity=-1)
     model = lgb.LGBMRegressor(**params)

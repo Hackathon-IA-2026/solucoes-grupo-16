@@ -194,7 +194,8 @@ Use `training/config.example.json` como ponto de partida. O target inicia em `nu
   "experiment_days": 30,
   "source_timezone": null,
   "columns": {},
-  "physical_curve": {"cut_in_ms": 3, "rated_ms": 12, "cut_out_ms": 25}
+  "physical_curve": {"cut_in_ms": 3, "rated_ms": 12, "cut_out_ms": 25},
+  "lightgbm": {"min_child_samples": 100}
 }
 ```
 
@@ -230,7 +231,7 @@ O treino não sobrescreve um `model.txt` existente: escolha outro diretório par
 
 O treino registra em `artifacts/global/v1/`: `model.txt`, `metadata.json`, `residual_quantiles.json` e `validation_report.json`. O metadata contém configuração completa, ordem de features, versões das bibliotecas, melhor iteração, períodos do split 70/15/15, hash do dataset/teste, métricas geral/por faixa de vento/por usina, cobertura do intervalo e decisão de aprovação. A avaliação verifica o período e o conteúdo do teste pelo hash; não refaz o split com os dados novos.
 
-LightGBM aprende `(target_mw - baseline_mw) / capacidade_instalada_mw`. Os parâmetros do prompt são mantidos, com `subsample_freq=1` para ativar efetivamente a amostragem de 0,8, determinismo habilitado e uma thread por padrão para o pequeno experimento. `n_jobs` é configurável. Apenas validação entra no early stopping de 100 rodadas. O teste decide aprovação por MAE estritamente menor; empate implica fallback. A aprovação é experimental, não validação de produção.
+LightGBM aprende `(target_mw - baseline_mw) / capacidade_instalada_mw`. Os parâmetros padrão são mantidos quando `lightgbm` é omitido. Essa seção do JSON aceita `learning_rate`, `n_estimators`, `num_leaves`, `min_child_samples`, `subsample`, `colsample_bytree` e `reg_lambda`; o metadata registra os valores efetivos. `subsample_freq=1` ativa a amostragem, o determinismo é habilitado e uma thread é usada por padrão. `n_jobs` é configurável. Apenas validação entra no early stopping de 100 rodadas. O teste decide aprovação por MAE estritamente menor; empate implica fallback. A aprovação é experimental, não validação de produção.
 
 MAE/RMSE são em MW; `nmae_cf` é a média de `abs(erro_mw) / capacidade_mw`; WAPE é `sum(abs(erro)) / sum(abs(target))`, ou `null` quando a geração total é zero. O domínio de entrada é calculado somente no treino, sobre vento, temperatura, pressão, capacidade e disponibilidade. Como este primeiro artefato foi treinado com uma usina, outras usinas usam fallback, mesmo que o diretório seja `global/v1`.
 

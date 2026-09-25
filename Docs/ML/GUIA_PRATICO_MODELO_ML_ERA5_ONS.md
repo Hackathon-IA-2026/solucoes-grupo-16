@@ -258,7 +258,7 @@ O split é temporal: 70% treino, 15% validação e 15% teste. Não selecione hip
 
 ## 10. Alterar hiperparâmetros
 
-Os parâmetros estão fixos em `training/train.py`:
+Os valores padrão são definidos em `training/config.py`:
 
 ```python
 learning_rate=0.04
@@ -270,7 +270,7 @@ colsample_bytree=0.8
 reg_lambda=5.0
 ```
 
-Adicionar esses campos somente ao JSON ainda não funciona, pois `TrainingConfig` não os declara. Para uma prova rápida, altere `train.py` e use um artefato diferente por execução.
+Para variar um valor, adicione `lightgbm` ao JSON do experimento, por exemplo `"lightgbm": {"min_child_samples": 50}`. Os demais campos usam os padrões. Use um arquivo JSON e um diretório de artefatos diferente por execução.
 
 | Parâmetro | Valores iniciais |
 |---|---|
@@ -283,7 +283,7 @@ Adicionar esses campos somente ao JSON ainda não funciona, pois `TrainingConfig
 
 Altere poucas variáveis por vez e compare o MAE da validação. `n_estimators` pode continuar alto porque o early stopping encerra o treino após 100 iterações sem melhora.
 
-A evolução recomendada é criar uma seção `lightgbm` no JSON, validá-la em `TrainingConfig` e registrá-la em `metadata.json`.
+Os valores efetivamente usados são registrados em `metadata.json`, no campo `lightgbm_params`.
 
 ## 11. Como melhorar o modelo
 

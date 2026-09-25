@@ -126,14 +126,14 @@ O arquivo de avaliação dirá se o algoritmo de LightGBM "venceu" a conta bási
 
 Como você tem uma base com LightGBM e XGBoost, sabe que eles têm "botões" que podemos configurar para o algoritmo aprender melhor. Esses botões são os Hiperparâmetros.
 
-Atualmente, para este experimento rápido, eles estão fixos no arquivo `backend/ai-service/training/train.py`. Você pode abrir esse arquivo e alterar os seguintes valores antes de rodar o passo 4 novamente:
+Para este experimento, você pode definir esses valores na seção `lightgbm` do JSON antes de rodar o passo 4 novamente. Campos omitidos usam os padrões de `backend/ai-service/training/config.py`:
 
 * **`learning_rate` (Taxa de aprendizado):** Comece com `0.04`. Se quiser que ele aprenda mais rápido (com menos árvores, mas maior risco de errar o ajuste fino), suba para `0.08`. Se o erro estiver alto e o modelo não estiver aprendendo nuances, baixe para `0.02` ou `0.01`.
 * **`num_leaves` (Folhas da árvore):** O padrão é `31`. É o controle da profundidade/complexidade da árvore. Se o modelo estiver errando muito (underfitting), suba para `63`. Se ele decorar os dados de treino e for mal em dados novos (overfitting), diminua para `15`.
 * **`min_child_samples`:** Quantidade mínima de dados que uma folha precisa ter. Subir para `200` força o modelo a ser mais conservador e generalista.
 * **`colsample_bytree` / `subsample`:** O ideal é manter entre `0.7` e `1.0`. Eles sorteiam parte dos dados em cada árvore para impedir que o modelo vicie em uma única variável (ex: apenas depender do vento).
 
-**Dica Prática para Testes:** Mude apenas UM hiperparâmetro de cada vez. Mude no arquivo, rode o comando `train` (passando uma nova pasta `--artifacts artifacts/experiments/usina-01-exp-002` para não apagar a anterior), rode o `evaluate` e compare: o MAE (Erro Absoluto Médio) diminuiu? Se sim, você encontrou uma configuração melhor!
+**Dica Prática para Testes:** Mude apenas UM hiperparâmetro de cada vez. Por exemplo, no JSON, use `"lightgbm": {"min_child_samples": 50}`. Rode `train` com uma nova pasta `--artifacts artifacts/experiments/usina-01-exp-002` para preservar a anterior. Compare candidatos pela validação e reserve o teste para a avaliação final; repetir ajustes olhando o teste pode tornar sua estimativa de desempenho otimista.
 
 ---
 

@@ -66,6 +66,27 @@ class PhysicalCurveConfig:
 
 
 @dataclass(frozen=True)
+class LightGBMConfig:
+    learning_rate: float = 0.04
+    n_estimators: int = 2500
+    num_leaves: int = 31
+    min_child_samples: int = 100
+    subsample: float = 0.8
+    colsample_bytree: float = 0.8
+    reg_lambda: float = 5.0
+
+    def __post_init__(self) -> None:
+        if (not math.isfinite(self.learning_rate) or self.learning_rate <= 0
+                or type(self.n_estimators) is not int or self.n_estimators < 1
+                or type(self.num_leaves) is not int or self.num_leaves < 2
+                or type(self.min_child_samples) is not int or self.min_child_samples < 1
+                or not math.isfinite(self.subsample) or not 0 < self.subsample <= 1
+                or not math.isfinite(self.colsample_bytree) or not 0 < self.colsample_bytree <= 1
+                or not math.isfinite(self.reg_lambda) or self.reg_lambda < 0):
+            raise ValueError("Hiperparâmetros LightGBM inválidos.")
+
+
+@dataclass(frozen=True)
 class TrainingConfig:
     target: str | None = None
     model_version: str = "wind-power-global-v1"
@@ -79,6 +100,7 @@ class TrainingConfig:
     experiment_days: int = 30
     columns: ColumnConfig = field(default_factory=ColumnConfig)
     physical_curve: PhysicalCurveConfig = field(default_factory=PhysicalCurveConfig)
+    lightgbm: LightGBMConfig = field(default_factory=LightGBMConfig)
 
     def __post_init__(self) -> None:
         self.columns.target_name(self.target)
@@ -103,6 +125,7 @@ class TrainingConfig:
         values = dict(values)
         values["columns"] = ColumnConfig(**values.get("columns", {}))
         values["physical_curve"] = PhysicalCurveConfig(**values.get("physical_curve", {}))
+        values["lightgbm"] = LightGBMConfig(**values.get("lightgbm", {}))
         return cls(**values)
 
 
