@@ -101,6 +101,7 @@ def test_per_record_availability_and_calibrated_bounds(tmp_path, hybrid):
 
 
 def test_historical_routes_without_snapshot(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.historical.on_demand_configured", lambda: False)
     monkeypatch.setenv("CLIMAGRID_HISTORICAL_SNAPSHOT", str(tmp_path / "missing.parquet"))
     monkeypatch.setenv("CLIMAGRID_PLANT_CATALOG", str(tmp_path / "catalog.parquet"))
     monkeypatch.setenv("CLIMAGRID_DATA_ROOT", str(tmp_path / "data"))
@@ -112,4 +113,4 @@ def test_historical_routes_without_snapshot(tmp_path, monkeypatch):
             "timestamp": "2026-09-01T00:00:00Z",
         })
         assert response.status_code == 409
-        assert "snapshot" in response.json()["detail"]
+        assert "CDSAPI_KEY" in response.json()["detail"]

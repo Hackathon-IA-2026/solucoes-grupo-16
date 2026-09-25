@@ -26,6 +26,7 @@ export interface AiCapabilities {
   };
   features: {
     historical_replay: boolean;
+    historical_on_demand?: boolean;
     historical_estimates: boolean;
     climate_file_upload: boolean;
     physical_fallback: boolean;
@@ -67,6 +68,11 @@ export interface AiHistoricalReplayResponse {
     warnings: string[];
   }>;
   warnings: string[];
+}
+
+export interface AiHistoricalPreparationResponse {
+  status: 'preparing';
+  message: string;
 }
 
 export interface AiClimateFileInspection {
@@ -136,8 +142,8 @@ export class AiServiceClient {
     subsystem: 'NE';
     timestamp: string;
     resolution_minutes: 60;
-  }): Promise<AiHistoricalReplayResponse> {
-    return this.request<AiHistoricalReplayResponse>(
+  }): Promise<AiHistoricalReplayResponse | AiHistoricalPreparationResponse> {
+    return this.request<AiHistoricalReplayResponse | AiHistoricalPreparationResponse>(
       '/replay-historico',
       {
         method: 'POST',

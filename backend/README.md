@@ -56,9 +56,10 @@ GET /climate-scenarios/:id
 ```
 
 A rota de capacidades diferencia backend configurado, serviço de IA online,
-catálogo, ONS bruto, partições ERA5 e snapshot observado. O replay só é
-liberado quando `data/processed/historical/observations.parquet` existe; a API
-responde `409` com instrução objetiva enquanto o insumo estiver ausente.
+catálogo, ONS bruto, partições ERA5 e snapshot observado. Uma hora fora do cache
+inicia a coleta ONS/ERA5 no AI service quando a credencial CDS está configurada.
+O cliente recebe `status: preparing` enquanto a partição é construída e repete
+a consulta até obter o replay; falhas de fonte ou de conciliação retornam `409`.
 
 As rotas `file/inspect` e `file/estimate` aceitam o CSV climático normalizado
 `normalized-ons-hourly-v1`, não ERA5 NetCDF/GRIB nativo. A estimativa atual usa

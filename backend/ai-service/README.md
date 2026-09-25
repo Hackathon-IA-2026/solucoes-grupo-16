@@ -49,15 +49,33 @@ Com a API ativa, consulte `GET /health`, `GET /capabilities`,
 
 `requirements.txt` aplica `constraints.txt`, que registra as versões exercitadas no Windows com Python 3.13. Extras de plataforma podem diferir no Linux. O ambiente inclui `scikit-learn`, necessário ao `LGBMRegressor`. Use `python -m pip check` para verificar consistência das dependências.
 
-`POST /replay-historico` recebe uma hora com timezone, exige correspondência
-exata no snapshot configurado por `CLIMAGRID_HISTORICAL_SNAPSHOT` e devolve a
-geração observada, fator de capacidade, vento e alocações sugeridas de barras.
-Sem snapshot unido, responde `409`; o arquivo ONS bruto sozinho não habilita o
-replay porque ainda faltam as observações ERA5 alinhadas.
+`POST /replay-historico` recebe uma hora com timezone. Se ela já está em cache,
+devolve a geração observada, fator de capacidade, vento e alocações sugeridas
+de barras. Caso contrário, inicia a coleta e responde `202` com
+`{"status":"preparing"}`; repita a mesma chamada até receber o replay. A rotina
+`app/historical_ingestion.py` baixa o mês ONS da hora local, o mês ERA5 da hora
+UTC, reconstrói o catálogo por CEG, valida chaves e cobertura da hora e grava
+snapshot e relatório separados por mês. O cache legado indicado por
+`CLIMAGRID_HISTORICAL_SNAPSHOT` continua aceito.
+
+Configure `CDSAPI_KEY` no ambiente do AI service ou disponibilize `~/.cdsapirc`
+ao processo. No Docker Compose, coloque a variável em
+`backend/ai-service/.env` (não versionado); a credencial do host não é montada
+automaticamente no contêiner. O arquivo ONS mensal precisa existir na fonte.
+São aceitas horas encerradas desde janeiro de 2022, sujeitas à publicação dos
+arquivos pelas fontes. Uma hora sem geração e vento conciliados retorna `409`; nenhuma
+observação é simulada. O primeiro acesso pode levar minutos. Para executar a
+mesma coleta manualmente:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.historical_ingestion --timestamp 2024-08-15T12:00:00Z
+```
 
 ## Coleta oficial ONS, SIGA e ERA5
 
-A ingestão fica em `ingestion/` e é executada como job separado da API. O fluxo implementado:
+A ingestão base fica em `ingestion/`. Ela pode ser executada antecipadamente
+por CLI ou acionada pelo replay sob demanda em `app/historical_ingestion.py`.
+O fluxo implementado:
 
 1. baixa a geração horária oficial `GERACAO_USINA-2_HO`;
 2. filtra conjuntos eólicos do subsistema `NE`;

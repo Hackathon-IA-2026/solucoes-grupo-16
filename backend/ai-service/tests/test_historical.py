@@ -1,10 +1,13 @@
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import Event
 
 import pandas as pd
 from fastapi.testclient import TestClient
 
 from app.historical import HistoricalDataUnavailable, HistoricalScenarioService
+from app.historical_ingestion import replay_partition
+from app.historical_ingestion import validate_replay_date
 from app.main import create_app
 from app.predictor import Predictor
 from app.schemas import HistoricalReplayRequest
@@ -143,3 +146,58 @@ def test_historical_replay_api_contract(tmp_path: Path, monkeypatch):
         assert body["timestamp"] == "2024-01-01T03:00:00Z"
         assert body["observations"][0]["observed_generation_mw"] >= 0
         assert "estimated_generation_mw" not in body["observations"][0]
+
+
+def test_replay_api_reports_background_preparation(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(
+        HistoricalScenarioService, "request_replay",
+        lambda self, request: {"status": "preparing", "message": "Coleta em andamento."},
+    )
+    with TestClient(create_app(tmp_path)) as client:
+        response = client.post("/replay-historico", json={"timestamp": "2024-08-15T12:00:00Z"})
+    assert response.status_code == 202
+    assert response.json()["status"] == "preparing"
+
+
+def test_replay_partition_uses_local_ons_month_and_utc_era5_month(tmp_path: Path):
+    timestamp = pd.Timestamp("2024-09-01T01:00:00Z")
+    path = replay_partition(tmp_path, timestamp)
+    assert "year=2024" in str(path)
+    assert "month=08" in str(path)
+    assert path.name == "observations_utc_2024-09.parquet"
+
+
+def test_on_demand_rejects_future_and_pre_ons_dates():
+    import pytest
+
+    with pytest.raises(ValueError, match="janeiro de 2022"):
+        validate_replay_date(pd.Timestamp("2021-12-31T12:00:00Z"))
+    with pytest.raises(ValueError, match="hora histórica"):
+        validate_replay_date(pd.Timestamp.now(tz="UTC") + pd.Timedelta(days=1))
+
+
+def test_missing_hour_starts_collection_then_replays_cached_partition(tmp_path: Path, monkeypatch):
+    service = _service(tmp_path)
+    selected = pd.Timestamp("2024-08-15T12:00:00Z")
+    monkeypatch.setattr("app.historical.on_demand_configured", lambda: True)
+    release = Event()
+
+    def prepare(root: Path, timestamp: pd.Timestamp) -> Path:
+        assert release.wait(timeout=5)
+        path = replay_partition(root, timestamp)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        frame = pd.read_parquet(service.snapshot_path).iloc[:1].copy()
+        frame["timestamp_utc"] = selected
+        frame.to_parquet(path, index=False)
+        return path
+
+    monkeypatch.setattr("app.historical.prepare_replay_partition", prepare)
+    request = HistoricalReplayRequest(timestamp=selected.to_pydatetime())
+    first = service.request_replay(request)
+    assert isinstance(first, dict) and first["status"] == "preparing"
+    release.set()
+    future = next(iter(service._jobs.values()))
+    future.result(timeout=5)
+    result = service.request_replay(request)
+    assert result.timestamp == selected.to_pydatetime()
+    assert len(result.observations) == 1

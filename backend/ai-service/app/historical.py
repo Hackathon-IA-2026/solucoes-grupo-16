@@ -3,14 +3,20 @@ from __future__ import annotations
 
 import math
 import os
-from dataclasses import dataclass
+import json
+from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import Lock
 from uuid import uuid4
 
 import pandas as pd
+from ingestion.common.io import sha256_file
 
 from app.predictor import Predictor
+from app.historical_ingestion import (on_demand_configured, prepare_replay_partition,
+                                      replay_partition, validate_replay_date)
 from app.schemas import (
     HistoricalAvailabilityResponse,
     HistoricalBusAllocation,
@@ -41,9 +47,7 @@ def _configured_path(variable: str, default: str) -> Path:
 
 
 def _snapshot_path() -> Path:
-    configured = os.getenv("CLIMAGRID_HISTORICAL_SNAPSHOT") or os.getenv(
-        "CLIMAGRID_TRAINING_SNAPSHOT"
-    )
+    configured = os.getenv("CLIMAGRID_HISTORICAL_SNAPSHOT")
     if configured:
         path = Path(configured)
         return path if path.is_absolute() else SERVICE_ROOT / path
@@ -57,6 +61,9 @@ class HistoricalScenarioService:
     catalog_path: Path
     data_root: Path
     mapping_path: Path | None = None
+    _jobs: dict[str, Future] = field(default_factory=dict, init=False, repr=False)
+    _jobs_lock: Lock = field(default_factory=Lock, init=False, repr=False)
+    _executor: ThreadPoolExecutor = field(default_factory=lambda: ThreadPoolExecutor(max_workers=1), init=False, repr=False)
 
     @classmethod
     def from_environment(cls, predictor: Predictor) -> "HistoricalScenarioService":
@@ -100,7 +107,8 @@ class HistoricalScenarioService:
                 "historical_instant_count": availability.instant_count,
             },
             "features": {
-                "historical_replay": availability.available,
+                "historical_replay": availability.available or on_demand_configured(),
+                "historical_on_demand": on_demand_configured(),
                 "historical_estimates": False,
                 "climate_file_upload": self.catalog_path.is_file(),
                 "physical_fallback": True,
@@ -108,15 +116,21 @@ class HistoricalScenarioService:
         }
 
     def availability(self) -> HistoricalAvailabilityResponse:
-        if not self.snapshot_path.is_file():
+        paths = [self.snapshot_path, *(self.data_root / "processed" / "historical").glob(
+            "year=*/month=*/observations_utc_*.parquet"
+        )]
+        paths = [path for path in paths if path.is_file()]
+        if not paths:
             return HistoricalAvailabilityResponse(available=False)
-        try:
-            timestamps = pd.read_parquet(
-                self.snapshot_path, columns=["timestamp_utc"]
-            )["timestamp_utc"]
-        except (KeyError, OSError, ValueError):
+        series = []
+        for path in paths:
+            try:
+                series.append(pd.read_parquet(path, columns=sorted(REQUIRED_SNAPSHOT_COLUMNS))["timestamp_utc"])
+            except (KeyError, OSError, ValueError):
+                continue
+        if not series:
             return HistoricalAvailabilityResponse(available=False)
-        timestamps = pd.to_datetime(timestamps, utc=True, errors="coerce").dropna()
+        timestamps = pd.to_datetime(pd.concat(series, ignore_index=True), utc=True, errors="coerce").dropna()
         unique = timestamps.drop_duplicates().sort_values()
         if unique.empty:
             return HistoricalAvailabilityResponse(available=False)
@@ -130,9 +144,60 @@ class HistoricalScenarioService:
             instant_count=int(len(unique)),
         )
 
+    def request_replay(self, request: HistoricalReplayRequest) -> HistoricalReplayResponse | dict:
+        selected = pd.Timestamp(request.timestamp).tz_convert("UTC").floor("h")
+        if self._find_snapshot(selected) is not None:
+            return self.replay(request)
+        try:
+            validate_replay_date(selected)
+        except ValueError as exc:
+            raise HistoricalDataUnavailable(str(exc)) from exc
+        if not on_demand_configured():
+            raise HistoricalDataUnavailable(
+                "Esta hora não está no cache. Configure CDSAPI_KEY ou ~/.cdsapirc no AI service "
+                "para baixar o ERA5 histórico sob demanda."
+            )
+        partition = replay_partition(self.data_root, selected)
+        if partition.is_file():
+            raise HistoricalDataUnavailable("A hora solicitada não consta na partição ONS–ERA5 processada.")
+        key = str(partition)
+        with self._jobs_lock:
+            future = self._jobs.get(key)
+            if future is None:
+                if sum(not job.done() for job in self._jobs.values()) >= 2:
+                    raise HistoricalDataUnavailable(
+                        "Já há duas coletas históricas em andamento. Aguarde e tente novamente."
+                    )
+                future = self._executor.submit(prepare_replay_partition, self.data_root, selected)
+                self._jobs[key] = future
+        if not future.done():
+            return {"status": "preparing", "message": "Baixando e conciliando a geração ONS e o ERA5. O primeiro acesso ao mês pode levar alguns minutos."}
+        with self._jobs_lock:
+            self._jobs.pop(key, None)
+        try:
+            future.result()
+        except Exception as exc:
+            raise HistoricalDataUnavailable(f"Falha na coleta histórica: {exc}") from exc
+        return self.replay(request)
+
+    def _find_snapshot(self, selected: pd.Timestamp) -> Path | None:
+        for path in (self.snapshot_path, replay_partition(self.data_root, selected)):
+            if not path.is_file():
+                continue
+            try:
+                hours = pd.to_datetime(
+                    pd.read_parquet(path, columns=sorted(REQUIRED_SNAPSHOT_COLUMNS))["timestamp_utc"], utc=True
+                )
+            except (OSError, KeyError, ValueError):
+                continue
+            if hours.eq(selected).any():
+                return path
+        return None
+
     def replay(self, request: HistoricalReplayRequest) -> HistoricalReplayResponse:
-        snapshot = self._load_snapshot()
         selected_timestamp = pd.Timestamp(request.timestamp).tz_convert("UTC").floor("h")
+        selected_path = self._find_snapshot(selected_timestamp) or self.snapshot_path
+        snapshot = self._load_snapshot(selected_path)
         snapshot = snapshot[snapshot["timestamp_utc"].eq(selected_timestamp)].copy()
         if snapshot.empty:
             availability = self.availability()
@@ -147,10 +212,23 @@ class HistoricalScenarioService:
                 + period
             )
 
-        catalog = self._catalog_by_plant()
+        monthly_catalog = selected_path.parent / "catalog.parquet"
+        catalog = self._catalog_by_plant(monthly_catalog if monthly_catalog.is_file() else None)
         bus_allocations = self._bus_allocations(selected_timestamp)
         observations: list[HistoricalPlantObservation] = []
         global_warnings: set[str] = set()
+        if selected_path != self.snapshot_path:
+            report_path = selected_path.with_name(
+                f"join_report_utc={selected_timestamp.year:04d}-{selected_timestamp.month:02d}.json"
+            )
+            if report_path.is_file():
+                report = json.loads(report_path.read_text(encoding="utf-8"))
+                global_warnings.update(report.get("warnings", []))
+            catalog_report_path = selected_path.parent / "catalog_report.json"
+            if catalog_report_path.is_file():
+                catalog_report = json.loads(catalog_report_path.read_text(encoding="utf-8"))
+                if catalog_report.get("plant_coverage", 1) < 1:
+                    global_warnings.add("ha_conjuntos_sem_localizacao_completa")
         numeric_columns = [
             "capacidade_instalada_mw",
             "geracao_verificada_mw",
@@ -226,27 +304,28 @@ class HistoricalScenarioService:
                 "Não há observações válidas de usinas no instante solicitado."
             )
 
-        snapshot_date = self._snapshot_date()
+        snapshot_date = self._snapshot_date(selected_path)
         return HistoricalReplayResponse(
             scenario_id=str(uuid4()),
             subsystem="NE",
             timestamp=selected_timestamp.to_pydatetime(),
             resolution_minutes=60,
             snapshot_date=snapshot_date,
-            data_version=f"ons-era5-observed-{snapshot_date}",
+            data_version=f"ons-era5-observed-{snapshot_date}-{sha256_file(selected_path)[:12]}",
             generation_source="ONS_GERACAO_USINA_2_HO",
             weather_source="ERA5",
             observations=observations,
             warnings=sorted(global_warnings),
         )
 
-    def _load_snapshot(self) -> pd.DataFrame:
-        if not self.snapshot_path.is_file():
+    def _load_snapshot(self, path: Path | None = None) -> pd.DataFrame:
+        path = path or self.snapshot_path
+        if not path.is_file():
             raise HistoricalDataUnavailable(
                 "O snapshot histórico ONS + ERA5 ainda não existe. Execute o download "
                 "da geração ONS, processe o ERA5 e rode o comando join-ons."
             )
-        snapshot = pd.read_parquet(self.snapshot_path)
+        snapshot = pd.read_parquet(path)
         missing = sorted(REQUIRED_SNAPSHOT_COLUMNS - set(snapshot.columns))
         if missing:
             raise HistoricalDataUnavailable(
@@ -263,16 +342,24 @@ class HistoricalScenarioService:
             )
         return snapshot
 
-    def _snapshot_date(self) -> str:
+    def _snapshot_date(self, path: Path | None = None) -> str:
+        if path is None and not self.snapshot_path.is_file():
+            candidates = list((self.data_root / "processed" / "historical").glob(
+                "year=*/month=*/observations_utc_*.parquet"
+            ))
+            if not candidates:
+                raise HistoricalDataUnavailable("Nenhum snapshot histórico está disponível.")
+            path = max(candidates, key=lambda item: item.stat().st_mtime)
         modified = datetime.fromtimestamp(
-            self.snapshot_path.stat().st_mtime, tz=timezone.utc
+            (path or self.snapshot_path).stat().st_mtime, tz=timezone.utc
         )
         return modified.date().isoformat()
 
-    def _catalog_by_plant(self) -> dict[str, dict]:
-        if not self.catalog_path.is_file():
+    def _catalog_by_plant(self, path: Path | None = None) -> dict[str, dict]:
+        path = path or self.catalog_path
+        if not path.is_file():
             return {}
-        catalog = pd.read_parquet(self.catalog_path)
+        catalog = pd.read_parquet(path)
         required = {"usina_id", "capacidade_instalada_mw"}
         if not required.issubset(catalog.columns):
             return {}

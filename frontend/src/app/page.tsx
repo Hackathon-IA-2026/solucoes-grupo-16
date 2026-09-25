@@ -85,7 +85,13 @@ export default function HistoricalReplayPage() {
 
         {!runtimeConfig.isDemoMode && capabilities && !replayAvailable ? (
           <Notice tone="warning" title="Base histórica ainda indisponível">
-            O snapshot observado ONS + ERA5 ainda não foi publicado. Conclua a ingestão e a união dos dados para liberar o replay.
+            Não há horas em cache nem credenciais CDS configuradas para buscar o ERA5 histórico.
+          </Notice>
+        ) : null}
+
+        {!runtimeConfig.isDemoMode && capabilities && replayAvailable && !capabilities.climate.historicalOnDemand ? (
+          <Notice tone="warning" title="Coleta sob demanda indisponível">
+            As horas já armazenadas podem ser reproduzidas. Para outras datas, configure a credencial CDS no AI service.
           </Notice>
         ) : null}
 
@@ -101,19 +107,17 @@ export default function HistoricalReplayPage() {
                 id="historical-timestamp"
                 type="datetime-local"
                 step={3600}
-                min={toLocalDateTime(data?.historicalFirstTimestamp)}
-                max={toLocalDateTime(data?.historicalLastTimestamp)}
                 className="field-input"
                 value={timestamp}
                 onChange={(event) => setSelectedTimestamp(event.target.value)}
               />
               <p className="mt-2 text-xs text-on-surface-variant">
-                Horário local do navegador. A consulta é convertida para UTC e deve coincidir com uma hora disponível no snapshot.
+                Horário local do navegador. A consulta é convertida para UTC. Se a hora ainda não estiver no cache, o sistema baixa os meses ONS e ERA5 necessários e concilia os dados; o primeiro acesso pode levar alguns minutos.
               </p>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row">
               <button type="button" disabled={!canProcess || isProcessing} onClick={() => void handleReplay()} className="button-primary">
-                <Icon name="database" /> {isProcessing ? "Carregando observações…" : "Reproduzir esta hora"}
+                <Icon name="database" /> {isProcessing ? "Coletando e cruzando dados…" : "Reproduzir esta hora"}
               </button>
               <button type="button" onClick={handleReset} className="button-secondary">Limpar estudo</button>
             </div>
@@ -121,14 +125,14 @@ export default function HistoricalReplayPage() {
 
           <div className="rounded-xl border border-outline-variant/40 bg-surface-container-lowest p-5">
             <Icon name="database" className="h-6 w-6 text-secondary" />
-            <h2 className="mt-3 font-semibold text-on-surface">Cobertura disponível</h2>
+            <h2 className="mt-3 font-semibold text-on-surface">Horas já armazenadas</h2>
             <dl className="mt-4 space-y-3 text-sm">
               <Trace label="Geração" value="ONS · valor verificado" />
               <Trace label="Vento" value="ERA5 · 100 metros" />
               <Trace label="Resolução" value="1 hora" />
-              <Trace label="Primeira hora" value={formatTimestamp(data?.historicalFirstTimestamp)} />
-              <Trace label="Última hora" value={formatTimestamp(data?.historicalLastTimestamp)} />
-              <Trace label="Horas disponíveis" value={data?.historicalInstantCount?.toLocaleString("pt-BR") ?? (runtimeConfig.isDemoMode ? "demonstração" : "—")} />
+              <Trace label="Primeira em cache" value={formatTimestamp(data?.historicalFirstTimestamp)} />
+              <Trace label="Última em cache" value={formatTimestamp(data?.historicalLastTimestamp)} />
+              <Trace label="Horas em cache" value={data?.historicalInstantCount?.toLocaleString("pt-BR") ?? (runtimeConfig.isDemoMode ? "demonstração" : "—")} />
             </dl>
           </div>
         </section>

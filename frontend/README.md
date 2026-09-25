@@ -12,7 +12,8 @@ ANAREDE.
 
 O recorte implementado segue o documento técnico do projeto:
 
-1. seleção de uma hora disponível no snapshot ONS + ERA5;
+1. seleção de uma hora histórica; se ela não estiver em cache, o sistema coleta
+   e concilia ONS + ERA5 antes de seguir;
 2. revisão da geração ONS e do vento ERA5 por conjunto eólico do Nordeste;
 3. upload do caso PWF e validação das alocações sugeridas por CEG;
 4. exportação do PWF, sem executar fluxo de potência no frontend.

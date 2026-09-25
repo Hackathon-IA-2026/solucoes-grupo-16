@@ -46,6 +46,7 @@ export class IntegrationController {
         aiService: { available: true },
         climate: {
           historicalReplay: capabilities.features.historical_replay,
+          historicalOnDemand: capabilities.features.historical_on_demand ?? false,
           historicalEstimates: false,
           fileUpload: capabilities.features.climate_file_upload,
         },
@@ -79,6 +80,7 @@ export class IntegrationController {
         aiService: { available: false },
         climate: {
           historicalReplay: false,
+          historicalOnDemand: false,
           historicalEstimates: false,
           fileUpload: false,
         },
@@ -106,6 +108,10 @@ export class IntegrationController {
       timestamp: timestamp.toISOString(),
       resolution_minutes: 60,
     });
+
+    if ('status' in result) {
+      return result;
+    }
 
     return {
       scenario: {

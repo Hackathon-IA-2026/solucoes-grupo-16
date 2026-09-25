@@ -179,6 +179,7 @@ export interface SystemCapabilities {
   aiService: { available: boolean };
   climate: {
     historicalReplay: boolean;
+    historicalOnDemand?: boolean;
     historicalEstimates: boolean;
     fileUpload: boolean;
   };

@@ -1,8 +1,14 @@
 # Operação do histórico mensal ONS + ERA5
 
-Este guia explica o que significa “ampliar além de janeiro de 2024”. O processo
-não acontece automaticamente: os arquivos mensais precisam ser baixados,
-validados, unidos e publicados num novo snapshot consolidado.
+O botão **Reproduzir esta hora** prepara automaticamente uma partição quando a
+hora ainda não está em cache. O AI service baixa a geração ONS do mês no horário
+de São Paulo e o ERA5 do mês em UTC, reconstrói o catálogo e só publica o
+snapshot após verificar a junção. A primeira consulta pode levar minutos;
+novas consultas à partição reutilizam o cache. Os relatórios ficam em
+`backend/ai-service/data/processed/historical/year=AAAA/month=MM/`.
+
+O procedimento manual abaixo continua útil para preparar antecipadamente
+períodos maiores ou publicar um snapshot consolidado.
 
 ## O que muda ao adicionar um mês
 
@@ -11,10 +17,11 @@ Para cada mês são necessários dois insumos com horas sobrepostas:
 - geração horária `GERACAO_USINA-2_HO` da ONS;
 - clima horário ERA5 para as localizações do catálogo.
 
-Baixar apenas um deles não amplia a interface. Depois do download é obrigatório
-recriar `data/processed/historical/observations.parquet` incluindo **todos** os
-meses que devem continuar disponíveis. Se o join for executado apenas com
-fevereiro, janeiro deixa de aparecer no snapshot publicado.
+Baixar apenas um deles não cria um replay. O fluxo sob demanda grava partições
+separadas e preserva os meses já processados. No procedimento manual de snapshot
+consolidado, inclua **todos** os meses desejados ao reconstruir
+`data/processed/historical/observations.parquet`; executar o join só com fevereiro
+substituiria janeiro nesse arquivo consolidado.
 
 ## Pré-requisitos
 
@@ -25,8 +32,9 @@ fevereiro, janeiro deixa de aparecer no snapshot publicado.
    [documentação oficial da API do CDS](https://cds.climate.copernicus.eu/how-to-api).
 5. Espaço em disco; os dados são locais e não entram no Git.
 
-Ao usar Docker, monte a credencial apenas como leitura em `/home/app/.cdsapirc`.
-Nunca copie o token para o repositório, imagem ou logs.
+Ao usar Docker, informe `CDSAPI_KEY` no arquivo local
+`backend/ai-service/.env` ignorado pelo Git ou monte a credencial como leitura
+em `/home/app/.cdsapirc`. Nunca versione o token nem o inclua na imagem ou logs.
 
 ## Exemplo: acrescentar fevereiro de 2024
 

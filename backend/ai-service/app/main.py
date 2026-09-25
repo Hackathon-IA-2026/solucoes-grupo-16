@@ -2,6 +2,7 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.climate_file import ClimateFileError, ClimateFileService
@@ -50,9 +51,12 @@ def create_app(artifact_dir: Path | None = None) -> FastAPI:
         return request.app.state.historical.availability()
 
     @application.post("/replay-historico", response_model=HistoricalReplayResponse)
-    def replay_historical(payload: HistoricalReplayRequest, request: Request) -> HistoricalReplayResponse:
+    def replay_historical(payload: HistoricalReplayRequest, request: Request) -> HistoricalReplayResponse | JSONResponse:
         try:
-            return request.app.state.historical.replay(payload)
+            result = request.app.state.historical.request_replay(payload)
+            if isinstance(result, dict):
+                return JSONResponse(status_code=202, content=result)
+            return result
         except HistoricalDataUnavailable as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 

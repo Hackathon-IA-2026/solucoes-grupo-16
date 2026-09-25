@@ -275,11 +275,12 @@ cd ../backend/ai-service && python -m pytest -q
 
 ## Estado atual dos dados
 
-`GET /system/capabilities` informa o que está realmente disponível. Nesta cópia
-de trabalho, o snapshot de janeiro de 2024 está em
-`backend/ai-service/data/processed/historical/observations.parquet`; ele contém
-741 horas disponíveis entre 1 e 31 de janeiro. Os dados brutos e processados são
-ignorados pelo Git e precisam ser preservados ou republicados separadamente.
+`GET /system/capabilities` informa o que está realmente disponível. O replay
+busca automaticamente o mês ONS e o mês ERA5 necessários quando uma hora ainda
+não está em cache. Nesta cópia de trabalho, julho e agosto de 2024 foram
+materializados em `backend/ai-service/data/processed/historical/`.
+Dados brutos e processados são ignorados pelo Git e precisam ser preservados
+ou republicados separadamente. A coleta nova exige credencial CDS no AI service.
 
 O CSV da etapa 2 é descrito em [`Docs/ML/CENARIO_CLIMATICO_FASE_2.md`](Docs/ML/CENARIO_CLIMATICO_FASE_2.md). Ele usa uma curva física genérica e não um modelo treinado de potencial. A previsão meteorológica futura e o classificador de curtailment permanecem fora deste recorte. A interface distingue o replay observado do cenário estimado.
 

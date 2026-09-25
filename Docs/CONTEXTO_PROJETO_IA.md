@@ -35,17 +35,25 @@ Fluxo implementado:
 6. relação CEG → uma ou mais barras da planilha PWF;
 7. exportação de uma cópia do PWF alterando somente o `Pg`.
 
-Estado dos dados locais:
+Estado dos dados locais nesta cópia: julho e agosto de 2024 foram preparados
+sob demanda, com 1.485 horas distintas em cache. Agosto está completo nas
+duas partições UTC; julho ainda requer o ERA5 de agosto para as últimas três
+horas locais. A prova real de 15 de
+agosto encontrou 150 conjuntos ONS com capacidade cadastrada e 150 registros unidos ao ERA5; a virada
+de mês usou ONS de agosto e ERA5 de setembro, também com 150/150. Uma chamada
+HTTP para julho, antes sem cache, passou de `202 preparing` a `200` e devolveu
+149 conjuntos com cobertura ONS–ERA5 de 100% entre os registros válidos. O piloto
+anterior de janeiro de 2024 registrou 741 horas e 91.092 linhas, mas seu
+arquivo não está presente nesta cópia de trabalho.
 
-- janeiro de 2024;
-- 741 instantes disponíveis;
-- 91.092 linhas usina–hora;
-- até 124 conjuntos numa hora;
-- cobertura ONS→ERA5 de aproximadamente 99,59% depois do filtro do catálogo.
-
-Isso significa que o produto está operacional para o período carregado. Não
-significa que todos os meses históricos já estejam disponíveis. Consulte
-[`OPERACAO_HISTORICO_MENSAL.md`](OPERACAO_HISTORICO_MENSAL.md) para ampliar.
+Ao escolher uma hora fora do cache, a API inicia em segundo plano a coleta do
+mês ONS no horário de São Paulo e do mês ERA5 em UTC, reconstrói o catálogo,
+valida a junção e publica uma partição. A interface aguarda o processamento.
+Isso depende da credencial CDS e da disponibilidade dos arquivos na ONS/CDS;
+somente horas encerradas desde janeiro de 2022 são aceitas; a disponibilidade
+efetiva das horas recentes depende do atraso de publicação das fontes. Nenhuma geração é inventada quando a hora não possui dados
+conciliados. Consulte [`OPERACAO_HISTORICO_MENSAL.md`](OPERACAO_HISTORICO_MENSAL.md)
+para a carga planejada de períodos maiores.
 
 ### Etapa 2 — arquivo climático do usuário
 
@@ -145,7 +153,8 @@ Endpoints operacionais dos fluxos atuais:
 
 ## Limitações conhecidas
 
-- O histórico materializado contém somente janeiro de 2024.
+- Meses ainda não solicitados não estão materializados; a primeira consulta
+  pode levar minutos e depende das fontes externas e da credencial CDS.
 - A fonte ONS mensal inclui categorias agregadas de pequenas usinas sem CEG
   individual; elas não podem ser inventadas no mapa PWF.
 - Há associações parciais/revisões de CEG e coordenadas que devem permanecer

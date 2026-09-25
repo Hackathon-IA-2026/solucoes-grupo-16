@@ -82,18 +82,25 @@ async function processScenario(input: ProcessScenarioInput): Promise<ProcessScen
     };
   }
 
-  const result = await requestJson<{
+  type HistoricalResult = {
     scenario: ClimateScenario;
     observations: ProcessScenarioResult["estimates"];
-  }>("/climate-scenarios/historical", {
-    method: "POST",
-    body: JSON.stringify({
-      subsystem: "NE",
-      timestamp: new Date(input.timestamp).toISOString(),
-      resolutionMinutes: input.resolutionMinutes,
-    }),
+  } | { status: "preparing"; message: string };
+  const payload = JSON.stringify({
+    subsystem: "NE",
+    timestamp: new Date(input.timestamp).toISOString(),
+    resolutionMinutes: input.resolutionMinutes,
   });
-  return { scenario: result.scenario, estimates: result.observations };
+  for (let attempt = 0; attempt < 240; attempt += 1) {
+    const result = await requestJson<HistoricalResult>("/climate-scenarios/historical", {
+      method: "POST", body: payload,
+    });
+    if (!("status" in result)) {
+      return { scenario: result.scenario, estimates: result.observations };
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 5000));
+  }
+  throw new Error("A coleta histórica demorou mais de 20 minutos. Tente novamente; os arquivos já baixados serão reutilizados.");
 }
 
 async function inspectClimateFile(file: File): Promise<ClimateFileInspection> {
@@ -230,6 +237,7 @@ async function getCapabilities(): Promise<SystemCapabilities> {
       aiService: { available: false },
       climate: {
         historicalReplay: false,
+        historicalOnDemand: false,
         historicalEstimates: false,
         fileUpload: false,
       },
