@@ -36,6 +36,7 @@ services:
       PORT: "3333"
       AI_SERVICE_URL: http://ai-service:8000
       PWF_STORAGE_ROOT: /app/data/pwf
+      SCENARIO_STORAGE_ROOT: /app/data/scenarios
     ports:
       - "${BACKEND_PORT:-3333}:3333"
     volumes:

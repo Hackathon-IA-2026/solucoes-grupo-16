@@ -19,7 +19,7 @@ de fluxo de potência nem afirma que o caso converge.
 | Etapa | Estado | Entrega | Limite |
 | --- | --- | --- | --- |
 | 1. Replay histórico | **Implementada** | Escolher uma hora existente, recuperar geração ONS observada e vento ERA5, mapear barras e exportar PWF | Não há previsão de IA |
-| 2. Arquivo climático do usuário | **Protótipo ponta a ponta em validação** | Upload CSV, escolha da hora, curva física de potencial e fluxo até PWF | Smoke test real passou; ainda faltam contrato de entrada, cobertura segura, rastreabilidade no servidor e aceite no ANAREDE |
+| 2. Arquivo climático do usuário | **Protótipo ponta a ponta em validação** | Upload CSV, escolha da hora, curva física de potencial e fluxo até PWF | CSV normalizado e rastreabilidade persistida; ainda faltam aprovação de cobertura/domínio e aceite no ANAREDE |
 | 3. Hora futura | **Pós-MVP** | Escolher uma hora futura, estimar geração com um modelo e exportar um PWF daquele instante | Exige fonte/hipótese meteorológica futura explícita |
 | 4. Curtailment | **Por último — fora do MVP** | Estimar risco, montante e causa provável de restrição | Não se confunde com potencial eólico ou geração bruta |
 
@@ -58,11 +58,13 @@ Fluxo:
 1. usuário envia um arquivo climático;
 2. backend valida formato, unidades, timezone e duplicatas;
 3. usuário seleciona uma hora presente no arquivo;
-4. serviço valida cadastro/capacidade para a hora e calcula a geração esperada
-   de cada conjunto/usina;
+4. serviço valida cadastro/capacidade para a hora, calcula a geração esperada
+   de cada conjunto/usina e persiste CSV, proveniência e observações;
 5. usuário revisa usinas e alocações de barras;
-6. backend gera um PWF para aquela hora;
-7. especialista abre o arquivo no ANAREDE.
+6. backend recupera a estimativa persistida, valida seleção/fatores e gera um
+   PWF para aquela hora;
+7. backend persiste o PWF e seu manifesto de exportação;
+8. especialista abre o arquivo no ANAREDE.
 
 O contrato implementado está em [`ML/CENARIO_CLIMATICO_FASE_2.md`](ML/CENARIO_CLIMATICO_FASE_2.md). O mínimo aceito é:
 
@@ -74,8 +76,9 @@ O contrato implementado está em [`ML/CENARIO_CLIMATICO_FASE_2.md`](ML/CENARIO_C
 - uma linha por usina e hora, sem duplicatas.
 
 Somente CSV está implementado para esta etapa. Parquet e NetCDF ainda não são
-aceitos. O CSV é um formato **normalizado por conjunto ONS**, não um arquivo
-ERA5 nativo: `u100` e `v100` podem vir do ERA5, mas `usina_id` e disponibilidade
+aceitos. O contrato do MVP é **CSV normalizado por conjunto ONS**, schema
+`normalized-ons-hourly-v1`, não um arquivo ERA5 nativo: `u100` e `v100` podem
+vir do ERA5, mas `usina_id` e disponibilidade
 precisam vir da preparação/cadastro. A série ONS de geração verificada não
 valida um modelo de potencial; por isso a curva física é identificada
 explicitamente como estimativa genérica.
@@ -135,6 +138,7 @@ Endpoints operacionais dos fluxos atuais:
 - `GET /system/capabilities`;
 - `POST /climate-scenarios/historical`;
 - `POST /climate-scenarios/file/inspect` e `POST /climate-scenarios/file/estimate`;
+- `GET /climate-scenarios/:id`;
 - `POST /pwf/reference-cases`;
 - `GET /pwf/reference-cases/:id/generation-targets`;
 - `POST /pwf/exports`.
@@ -153,11 +157,12 @@ Endpoints operacionais dos fluxos atuais:
   ANAREDE com um caso representativo.
 - A entrada da etapa 2 é CSV normalizado; upload direto de ERA5 NetCDF/GRIB não
   está implementado.
-- O cenário climático não é persistido: a exportação ainda confia nos valores
-  enviados pelo navegador e não recompõe as estimativas pelo `scenarioId`.
-- Mapeamento PWF parcial gera aviso, mas hoje normaliza a geração entre as
-  barras conhecidas e não oferece uma parcela adicional para completar a
-  cobertura. Não tratar esse aviso como aceite.
+- Cenários estimados e seus PWFs são persistidos no disco/volume local com
+  manifestos e hashes. Ainda não há réplica em Supabase, política de retenção ou
+  backup para um ambiente distribuído.
+- Mapeamento PWF parcial é bloqueado. Cobertura 0% permite uma alocação manual
+  completa; essa decisão e a permanência do `Pg` do caso base para conjuntos
+  ausentes/desmarcados ainda precisam de aprovação do domínio.
 - Os experimentos multiusina 3 a 6 estão documentados, mas seus dados,
   relatórios e artefatos são locais e não estão presentes neste checkout.
 

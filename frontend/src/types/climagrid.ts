@@ -16,6 +16,13 @@ export interface ClimateScenario {
   weatherSource: "ERA5" | "USER";
   warnings?: string[];
   createdAt: string;
+  traceability?: {
+    schemaVersion: string;
+    inputSha256: string;
+    catalogSha256: string;
+    mappingSha256: string | null;
+    estimatorVersion: string;
+  };
 }
 
 export interface WindPlantEstimate {
@@ -160,6 +167,9 @@ export interface PwfExportResult {
   generatedAt: string;
   generationSource: "observed" | "estimated";
   dataVersion: string;
+  exportId?: string;
+  outputSha256?: string;
+  referenceSha256?: string;
   isDemonstration: boolean;
 }
 

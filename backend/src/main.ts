@@ -31,6 +31,9 @@ async function bootstrap() {
       'X-Data-Version',
       'X-Generation-Source',
       'X-Modified-Buses',
+      'X-Export-Id',
+      'X-Output-SHA256',
+      'X-Reference-SHA256',
     ],
     credentials: true,
   });

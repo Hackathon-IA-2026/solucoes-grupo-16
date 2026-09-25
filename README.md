@@ -15,13 +15,14 @@ possui quatro etapas:
 
 O protótipo ponta a ponta da etapa 2 e as pendências para encerrá-la estão em
 [`Docs/ML/AUDITORIA_FASE_2.md`](Docs/ML/AUDITORIA_FASE_2.md). A entrada atual é
-um CSV normalizado por conjunto ONS; upload direto de ERA5 NetCDF/GRIB ainda
-não é suportado.
+um CSV normalizado por conjunto ONS, schema `normalized-ons-hourly-v1`; upload
+direto de ERA5 NetCDF/GRIB ainda não é suportado. O backend persiste o CSV, a
+estimativa e cada PWF exportado em manifestos verificáveis por hash.
 
 ## Arquitetura local
 
 - `frontend/`: Next.js, sempre conectado ao NestJS;
-- `backend/`: NestJS, fachada da aplicação, parser e writer PWF;
+- `backend/`: NestJS, fachada, persistência de cenários, parser e writer PWF;
 - `backend/ai-service/`: FastAPI, ingestão ERA5/ONS e replay histórico.
 
 ## Execução recomendada com Docker
@@ -122,7 +123,8 @@ docker compose up --build -d
 ```
 
 O comando `docker compose down -v` também apaga o volume local do backend.
-Use-o somente quando quiser descartar deliberadamente os casos PWF armazenados.
+Use-o somente quando quiser descartar deliberadamente os casos PWF, cenários
+climáticos e exportações armazenados.
 
 ### Rede, dados e variáveis
 
@@ -133,7 +135,8 @@ Use-o somente quando quiser descartar deliberadamente os casos PWF armazenados.
   reconstrua o frontend, pois variáveis `NEXT_PUBLIC_*` entram no bundle.
 - Dados e artefatos da IA ficam nos diretórios
   `backend/ai-service/data` e `backend/ai-service/artifacts` do host.
-- Casos PWF do fallback local ficam no volume Docker `backend-data`.
+- Casos PWF, cenários climáticos e exportações do armazenamento local ficam no
+  volume Docker `backend-data`.
 
 ### Solução de problemas
 

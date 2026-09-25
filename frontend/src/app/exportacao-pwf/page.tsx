@@ -26,6 +26,11 @@ export default function PwfExportPage() {
   );
   const readiness = useMemo(() => {
     const pendingMappings = allocationMappings.filter((mapping) => !mapping.busNumber);
+    const allocatedPlantIds = new Set(allocationMappings.map((mapping) => mapping.plantId));
+    const plantsWithoutAllocations = selectedPlants.filter((plant) => !allocatedPlantIds.has(plant.id));
+    const partialMappings = selectedPlants.filter(
+      (plant) => plant.mappingCoveragePercent > 0 && plant.mappingCoveragePercent < 100,
+    );
     const invalidGeneration = selectedPlants.filter((plant) => plant.observedGenerationMw === null && plant.estimatedGenerationMw === null);
     const blockers = [
       ...(!state.climateScenario ? ["Cenário ausente."] : []),
@@ -34,6 +39,8 @@ export default function PwfExportPage() {
       ...(!state.study.referencePwf ? ["Caso base PWF ausente."] : []),
       ...(allocationMappings.length === 0 ? ["Distribuição por barras ausente."] : []),
       ...(pendingMappings.length > 0 ? [`${pendingMappings.length} alocação(ões) com mapeamento incompleto.`] : []),
+      ...(plantsWithoutAllocations.length > 0 ? [`${plantsWithoutAllocations.length} usina(s) selecionada(s) sem alocação.`] : []),
+      ...(partialMappings.length > 0 ? [`${partialMappings.length} usina(s) com cobertura PWF parcial.`] : []),
       ...(invalidGeneration.length > 0 ? [`${invalidGeneration.length} usina(s) sem geração válida.`] : []),
     ];
     return { blockers, isReady: blockers.length === 0 };
@@ -125,6 +132,11 @@ export default function PwfExportPage() {
               <dl className="mt-4 space-y-3 text-xs">
                 <TraceRow label="Cenário" value={state.study.name || "—"} />
                 <TraceRow label="Dados" value={state.climateScenario?.dataVersion ?? "—"} />
+                <TraceRow label="Cenário persistido" value={state.climateScenario?.id ?? "—"} />
+                <TraceRow label="Schema" value={state.climateScenario?.traceability?.schemaVersion ?? "—"} />
+                <TraceRow label="CSV SHA-256" value={state.climateScenario?.traceability?.inputSha256 ?? "—"} />
+                <TraceRow label="Catálogo SHA-256" value={state.climateScenario?.traceability?.catalogSha256 ?? "—"} />
+                <TraceRow label="Estimador" value={state.climateScenario?.traceability?.estimatorVersion ?? "—"} />
                 <TraceRow label="Geração" value={isScenario ? "Potencial físico estimado" : "ONS observada"} />
                 <TraceRow label="Vento" value={isScenario ? "Arquivo do usuário" : "ERA5"} />
                 <TraceRow label="Caso base" value={state.study.referencePwf?.name ?? "—"} />
@@ -134,7 +146,7 @@ export default function PwfExportPage() {
         </div>
 
         {exportError ? <Notice tone="error" title="Falha na exportação">{exportError}</Notice> : null}
-        {exportResult ? <Notice tone="success" title="Arquivo gerado"><strong>{exportResult.filename}</strong> foi baixado em {new Date(exportResult.generatedAt).toLocaleString("pt-BR")}. Origem: geração {exportResult.generationSource === "observed" ? "observada" : "estimada"}; dados: {exportResult.dataVersion}.</Notice> : null}
+        {exportResult ? <Notice tone="success" title="Arquivo gerado"><strong>{exportResult.filename}</strong> foi baixado em {new Date(exportResult.generatedAt).toLocaleString("pt-BR")}. Origem: geração {exportResult.generationSource === "observed" ? "observada" : "estimada"}; dados: {exportResult.dataVersion}.{exportResult.exportId ? ` Manifesto: ${exportResult.exportId}.` : ""}{exportResult.outputSha256 ? ` SHA-256: ${exportResult.outputSha256}.` : ""}</Notice> : null}
 
         <section className="flex flex-col gap-4 rounded-2xl border border-outline-variant/50 bg-surface-container-low p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-6">
           <div><h2 className="font-semibold text-on-surface">{runtimeConfig.isDemoMode ? "Gerar artefato de demonstração" : "Gerar arquivo PWF"}</h2><p className="mt-1 text-sm text-on-surface-variant">{runtimeConfig.isDemoMode ? "Permite testar o download sem se passar por um PWF válido." : "A API preservará o caso base e alterará somente as barras mapeadas."}</p></div>

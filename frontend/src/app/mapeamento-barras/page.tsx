@@ -39,10 +39,19 @@ export default function BusMappingPage() {
     [targets],
   );
   const mappedCount = allocations.filter((mapping) => mapping.busNumber).length;
+  const allocatedPlantIds = new Set(allocations.map((mapping) => mapping.plantId));
+  const missingSelectedAllocations = selectedPlants.filter(
+    (plant) => !allocatedPlantIds.has(plant.id),
+  );
+  const blockedPartialCoverage = selectedPlants.filter(
+    (plant) => plant.mappingCoveragePercent > 0 && plant.mappingCoveragePercent < 100,
+  );
   const isReady = Boolean(
     selectedPlants.length > 0
     && allocations.length > 0
     && mappedCount === allocations.length
+    && missingSelectedAllocations.length === 0
+    && blockedPartialCoverage.length === 0
     && state.study.name.trim()
     && state.study.referencePwf,
   );
@@ -138,6 +147,8 @@ export default function BusMappingPage() {
           Um conjunto ONS pode alimentar várias barras. Quando existe um mapeamento cadastral, a geração é dividida conforme a capacidade conectada. Sem mapeamento, escolha a barra manualmente e confirme a distribuição com o especialista. Se vários conjuntos chegarem à mesma barra, o backend somará os valores antes de escrever o Pg.
         </Notice>
         {partialCoverage.length > 0 ? <Notice tone="warning" title="Mapeamento ausente ou parcial">{partialCoverage.length} conjunto(s) não têm todas as barras confirmadas pelo cadastro. Revise as alocações com o especialista antes do uso no ANAREDE.</Notice> : null}
+        {blockedPartialCoverage.length > 0 ? <Notice tone="error" title="Exportação bloqueada por cobertura parcial">Complete o cadastro de barras de {blockedPartialCoverage.length} conjunto(s). O sistema não redistribui 100% da geração apenas entre as barras conhecidas.</Notice> : null}
+        {missingSelectedAllocations.length > 0 ? <Notice tone="error" title="Seleção alterada após o PWF">{missingSelectedAllocations.length} conjunto(s) selecionado(s) não possuem alocação. Remova e envie novamente o caso base para reconstruir o mapeamento.</Notice> : null}
 
         <section className="grid gap-5 rounded-2xl border border-outline-variant/50 bg-surface-container-low p-5 shadow-sm lg:grid-cols-2 lg:p-6">
           <div>

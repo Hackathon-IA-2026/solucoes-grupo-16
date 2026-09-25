@@ -51,6 +51,7 @@ lerna-debug.log*
 
 # Runtime data
 /data/pwf
+/data/scenarios
 pids
 *.pid
 *.seed

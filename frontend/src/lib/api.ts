@@ -145,10 +145,11 @@ async function exportPwf(request: PwfExportRequest): Promise<PwfExportResult> {
         request.climateScenario.snapshotDate ??
         request.climateScenario.fileName ??
         "unknown",
+      selectedPlantIds: request.selectedPlantIds,
       plants: Object.values(request.study.mappings).map((mapping) => {
         const estimate = request.estimates.find((item) => item.id === mapping.plantId);
         return {
-          plantId: mapping.allocationId,
+          plantId: mapping.plantId,
           onsId: estimate?.onsId ?? mapping.plantId,
           generationMw: mapping.generationMw,
           mapping,
@@ -171,6 +172,9 @@ async function exportPwf(request: PwfExportRequest): Promise<PwfExportResult> {
         ? "estimated"
         : "observed",
     dataVersion: response.headers.get("x-data-version") ?? "informada-pela-api",
+    exportId: response.headers.get("x-export-id") ?? undefined,
+    outputSha256: response.headers.get("x-output-sha256") ?? undefined,
+    referenceSha256: response.headers.get("x-reference-sha256") ?? undefined,
     isDemonstration: false,
   };
 }

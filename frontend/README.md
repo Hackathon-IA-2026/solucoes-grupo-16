@@ -42,13 +42,15 @@ O navegador conversa somente com o NestJS; o FastAPI permanece um serviço inter
 | `POST` | `/climate-scenarios/historical` | Reproduzir uma hora observada do snapshot ONS + ERA5 |
 | `POST` | `/climate-scenarios/file/inspect` | Validar CSV climático e listar horas |
 | `POST` | `/climate-scenarios/file/estimate` | Estimar potencial físico para uma hora do CSV |
+| `GET` | `/climate-scenarios/:id` | Consultar manifesto e exportações persistidas |
 | `POST` | `/pwf/reference-cases` | Armazenar e validar o caso base `.pwf` |
 | `GET` | `/pwf/reference-cases/:id/generation-targets` | Listar barras geradoras do caso base |
 | `POST` | `/pwf/exports` | Gerar o PWF e devolver o arquivo como `Blob` |
 
 Na exportação, a API devolve os cabeçalhos `x-filename`, `x-generated-at`,
-`x-generation-source`, `x-data-version` e `x-modified-buses` para preencher o
-log de proveniência.
+`x-generation-source`, `x-data-version`, `x-modified-buses`, `x-export-id`,
+`x-output-sha256` e `x-reference-sha256`. A tela exibe os identificadores e
+hashes principais; a trilha completa pode ser consultada pelo ID do cenário.
 
 Os tipos compartilhados pelo frontend ficam em `src/types/climagrid.ts`. A regra de negócio permanece no backend; as validações locais existem para feedback rápido e não substituem a validação oficial dos dados ou do PWF.
 

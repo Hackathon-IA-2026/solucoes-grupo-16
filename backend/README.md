@@ -52,6 +52,7 @@ GET /system/capabilities
 POST /climate-scenarios/historical
 POST /climate-scenarios/file/inspect
 POST /climate-scenarios/file/estimate
+GET /climate-scenarios/:id
 ```
 
 A rota de capacidades diferencia backend configurado, serviço de IA online,
@@ -59,10 +60,18 @@ catálogo, ONS bruto, partições ERA5 e snapshot observado. O replay só é
 liberado quando `data/processed/historical/observations.parquet` existe; a API
 responde `409` com instrução objetiva enquanto o insumo estiver ausente.
 
-As rotas `file/inspect` e `file/estimate` aceitam um CSV climático normalizado,
-não ERA5 NetCDF/GRIB nativo. A estimativa atual usa a curva física genérica. O
-cenário ainda não é persistido; até essa pendência ser resolvida, a exportação
-confia nos valores enviados pelo navegador.
+As rotas `file/inspect` e `file/estimate` aceitam o CSV climático normalizado
+`normalized-ons-hourly-v1`, não ERA5 NetCDF/GRIB nativo. A estimativa atual usa
+a curva física genérica. Cada estimativa persiste o CSV e um manifesto com
+hashes, versões, observações e avisos. Na exportação estimada, o backend busca o
+cenário pelo `scenarioId`, recalcula a geração por barra e rejeita dados
+adulterados, alocações incompletas e cobertura cadastral parcial.
+
+Cada exportação persiste o PWF final e outro manifesto com o PWF base, seleção,
+alocações, barras modificadas e hashes. `GET /climate-scenarios/:id` recupera a
+trilha e verifica os arquivos armazenados. Por padrão, esses dados ficam em
+`data/scenarios`; `SCENARIO_STORAGE_ROOT` permite trocar o diretório. No
+Compose, `/app/data/scenarios` pertence ao volume `backend-data`.
 
 O corpo JSON de exportação aceita até 2 MB para comportar centenas de parcelas
 usina–barra em um único replay.

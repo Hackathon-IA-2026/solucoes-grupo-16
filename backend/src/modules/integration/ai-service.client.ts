@@ -86,6 +86,18 @@ export interface AiClimateFileEstimate {
   weather_source: 'USER';
   row_count: number;
   warnings: string[];
+  provenance: {
+    input_schema_version: 'normalized-ons-hourly-v1';
+    input_sha256: string;
+    catalog_sha256: string;
+    mapping_sha256: string | null;
+    estimator_version: string;
+    physical_curve: {
+      cut_in_ms: number;
+      rated_ms: number;
+      cut_out_ms: number;
+    };
+  };
   observations: Array<{
     usina_id: string;
     ons_id: string;

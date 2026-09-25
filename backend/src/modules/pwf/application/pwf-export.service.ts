@@ -1,10 +1,18 @@
 import {
   BadRequestException,
   Injectable,
+  InternalServerErrorException,
+  Optional,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { createHash, randomUUID } from 'node:crypto';
 import { basename, extname } from 'node:path';
 import { PwfStorageService } from '../storage/pwf-storage.service.js';
+import { ClimateScenarioStorageService } from '../../climate-scenario/climate-scenario-storage.service.js';
+import type {
+  ClimateScenarioManifest,
+  PersistedClimateObservation,
+} from '../../climate-scenario/climate-scenario.types.js';
 
 export interface PwfExportPlant {
   plantId: string;
@@ -15,6 +23,7 @@ export interface PwfExportPlant {
     busName: string;
     nominalVoltageKv: string;
     area: string;
+    allocationFactor?: number;
   };
 }
 
@@ -24,6 +33,7 @@ export interface PwfExportRequest {
   studyName: string;
   generationSource: 'observed' | 'estimated';
   dataVersion: string;
+  selectedPlantIds?: string[];
   plants: PwfExportPlant[];
 }
 
@@ -34,14 +44,37 @@ export interface PwfExportResult {
   generationSource: 'observed' | 'estimated';
   dataVersion: string;
   modifiedBuses: number[];
+  exportId?: string;
+  outputSha256?: string;
+  referenceSha256?: string;
 }
 
 @Injectable()
 export class PwfExportService {
-  constructor(private readonly storage: PwfStorageService) {}
+  constructor(
+    private readonly storage: PwfStorageService,
+    @Optional()
+    private readonly scenarios?: ClimateScenarioStorageService,
+  ) {}
 
   async export(payload: PwfExportRequest): Promise<PwfExportResult> {
     validatePayload(payload);
+
+    let plants = payload.plants;
+    let scenario: ClimateScenarioManifest | undefined;
+    let selectedPlantIds: string[] = [];
+    if (payload.generationSource === 'estimated') {
+      if (!this.scenarios) {
+        throw new InternalServerErrorException(
+          'O armazenamento de cenários climáticos não está disponível.',
+        );
+      }
+      scenario = await this.scenarios.getScenario(payload.scenarioId);
+      ({ plants, selectedPlantIds } = authoritativeEstimatedPlants(
+        payload,
+        scenario,
+      ));
+    }
 
     const [metadata, index, original] = await Promise.all([
       this.storage.getMetadata(payload.referencePwfId),
@@ -56,7 +89,7 @@ export class PwfExportService {
       { generationMw: number; plantLabels: string[] }
     >();
 
-    for (const plant of payload.plants) {
+    for (const plant of plants) {
       const busNumber = Number(plant.mapping.busNumber);
       if (!Number.isSafeInteger(busNumber) || busNumber <= 0) {
         throw new BadRequestException(
@@ -113,16 +146,156 @@ export class PwfExportService {
     const stem = basename(metadata.name, extension)
       .replace(/[^a-zA-Z0-9._-]+/g, '_')
       .slice(0, 120);
+    const filename = `${stem || 'cenario'}_climagrid${extension.toLowerCase()}`;
+    const generatedAt = new Date().toISOString();
+    const outputSha256 = createHash('sha256').update(output).digest('hex');
+
+    let exportId: string | undefined;
+    if (scenario && this.scenarios) {
+      exportId = randomUUID();
+      const selected = new Set(selectedPlantIds);
+      await this.scenarios.saveExport({
+        schemaVersion: 'climagrid-pwf-export-v1',
+        id: exportId,
+        scenarioId: scenario.id,
+        createdAt: generatedAt,
+        studyName: payload.studyName,
+        referencePwf: {
+          id: metadata.id,
+          name: metadata.name,
+          sha256: metadata.sha256,
+        },
+        output: {
+          filename,
+          sizeBytes: output.length,
+          sha256: outputSha256,
+          modifiedBuses,
+        },
+        selection: {
+          selectedPlantIds,
+          unselectedPlantIds: scenario.observations
+            .map((observation) => observation.id)
+            .filter((id) => !selected.has(id)),
+          unselectedPlantBehavior: 'preserve_reference_pwf_pg',
+        },
+        allocations: plants.map((plant) => ({
+          plantId: plant.plantId,
+          onsId: plant.onsId,
+          busNumber: Number(plant.mapping.busNumber),
+          allocationFactor: plant.mapping.allocationFactor!,
+          generationMw: plant.generationMw,
+        })),
+      }, output);
+    }
 
     return {
       buffer: output,
-      filename: `${stem || 'cenario'}_climagrid${extension.toLowerCase()}`,
-      generatedAt: new Date().toISOString(),
+      filename,
+      generatedAt,
       generationSource: payload.generationSource,
       dataVersion: payload.dataVersion,
       modifiedBuses,
+      exportId,
+      outputSha256,
+      referenceSha256: metadata.sha256,
     };
   }
+}
+
+function authoritativeEstimatedPlants(
+  payload: PwfExportRequest,
+  scenario: ClimateScenarioManifest,
+): { plants: PwfExportPlant[]; selectedPlantIds: string[] } {
+  if (
+    payload.dataVersion !== scenario.dataVersion ||
+    scenario.generationSource !== 'PHYSICAL_CURVE'
+  ) {
+    throw new BadRequestException(
+      'A proveniência informada não corresponde ao cenário climático persistido.',
+    );
+  }
+  if (!Array.isArray(payload.selectedPlantIds) || payload.selectedPlantIds.length === 0) {
+    throw new BadRequestException(
+      'A exportação estimada deve informar os conjuntos selecionados.',
+    );
+  }
+  const selectedPlantIds = [...new Set(payload.selectedPlantIds)];
+  if (selectedPlantIds.length !== payload.selectedPlantIds.length) {
+    throw new BadRequestException('A seleção de conjuntos possui IDs duplicados.');
+  }
+
+  const observations = new Map(
+    scenario.observations.map((observation) => [observation.id, observation]),
+  );
+  const factors = new Map<string, number>();
+  const plants = payload.plants.map((plant) => {
+    const observation = observations.get(plant.plantId);
+    if (!observation || observation.onsId !== plant.onsId) {
+      throw new BadRequestException(
+        `O conjunto ${plant.plantId} não pertence ao cenário climático persistido.`,
+      );
+    }
+    assertSafeMappingCoverage(observation);
+    const factor = plant.mapping.allocationFactor;
+    if (
+      typeof factor !== 'number' ||
+      !Number.isFinite(factor) ||
+      factor <= 0 ||
+      factor > 1
+    ) {
+      throw new BadRequestException(
+        `O fator de alocação de ${plant.onsId} é inválido.`,
+      );
+    }
+    const authoritativeGeneration = roundMw(
+      observation.estimatedGenerationMw * factor,
+    );
+    if (Math.abs(plant.generationMw - authoritativeGeneration) > 1e-5) {
+      throw new BadRequestException(
+        `A geração enviada para ${plant.onsId} não corresponde à estimativa persistida.`,
+      );
+    }
+    factors.set(plant.plantId, (factors.get(plant.plantId) ?? 0) + factor);
+    return {
+      ...plant,
+      generationMw: authoritativeGeneration,
+      mapping: { ...plant.mapping, allocationFactor: factor },
+    };
+  });
+
+  const allocatedPlantIds = [...factors.keys()].sort();
+  const expectedPlantIds = [...selectedPlantIds].sort();
+  if (
+    allocatedPlantIds.length !== expectedPlantIds.length ||
+    allocatedPlantIds.some((id, index) => id !== expectedPlantIds[index])
+  ) {
+    throw new BadRequestException(
+      'Cada conjunto selecionado deve possuir ao menos uma alocação.',
+    );
+  }
+  for (const [plantId, total] of factors) {
+    if (Math.abs(total - 1) > 1e-6) {
+      throw new BadRequestException(
+        `Os fatores de alocação de ${plantId} devem somar 100%.`,
+      );
+    }
+  }
+  return { plants, selectedPlantIds };
+}
+
+function assertSafeMappingCoverage(observation: PersistedClimateObservation): void {
+  if (
+    observation.mappingCoveragePercent > 0 &&
+    observation.mappingCoveragePercent < 100
+  ) {
+    throw new UnprocessableEntityException(
+      `O conjunto ${observation.onsId} possui mapeamento PWF parcial e não pode ser exportado até completar o cadastro.`,
+    );
+  }
+}
+
+function roundMw(value: number): number {
+  return Number(value.toFixed(6));
 }
 
 function validatePayload(payload: PwfExportRequest): void {

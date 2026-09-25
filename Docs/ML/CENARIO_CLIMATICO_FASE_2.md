@@ -14,7 +14,8 @@ timestamp_utc,usina_id,u100,v100,disponibilidade
 2026-09-15T12:00:00Z,CEECVA,7.2,-3.1,0.95
 ```
 
-Este é um **CSV normalizado pelo ClimaGrid**, e não o NetCDF/GRIB nativo
+Este é o contrato `normalized-ons-hourly-v1`, um **CSV normalizado pelo
+ClimaGrid**, e não o NetCDF/GRIB nativo
 baixado do ERA5. O ERA5 fornece clima em grade; ele não fornece o identificador
 do conjunto ONS nem disponibilidade eletromecânica. Quem preparar o arquivo
 precisa associar as coordenadas aos membros do catálogo, agregar o vento do
@@ -36,20 +37,34 @@ Uma linha representa um conjunto em uma hora. O mesmo conjunto e hora não pode 
 3. Escolha a hora e clique em **Estimar e revisar usinas**.
 4. Revise capacidades, estimativas e avisos. Selecione os conjuntos que entram no estudo.
 5. Envie um caso base `.pwf` e confira as barras propostas. Se não houver mapeamento cadastral, indique a barra no caso base e confirme a escolha com um especialista.
-6. Exporte o PWF. O writer altera apenas `Pg` das barras escolhidas. Abra e valide o resultado no ANAREDE; o ClimaGrid não executa o fluxo de potência.
+6. Exporte o PWF. O writer altera apenas `Pg` das barras escolhidas. A tela
+   mostra os IDs e hashes do cenário e da exportação.
+7. Abra e valide o resultado no ANAREDE; o ClimaGrid não executa o fluxo de
+   potência.
 
 No comportamento atual, conjuntos ausentes do CSV ou desmarcados pelo usuário
 não são recalculados: suas barras mantêm o `Pg` do PWF base. Essa semântica
 precisa ser aprovada antes de declarar que o arquivo representa um cenário
 eólico completo.
 
-O serviço registra o hash SHA-256 do CSV em `dataVersion`, a hora escolhida e as fontes `PHYSICAL_CURVE` e `USER`. A interface indica que se trata de estimativa física ainda sem validação como modelo de potencial. Avisos de mapeamento ausente ou parcial permanecem visíveis.
+O serviço persiste o CSV original e um manifesto imutável com UUID, schema,
+hora, fontes `PHYSICAL_CURVE` e `USER`, observações, avisos, parâmetros do
+estimador e hashes SHA-256 do CSV, catálogo e mapa PWF. A exportação recupera a
+estimativa pelo `scenarioId`, recalcula as parcelas e rejeita divergências
+enviadas pelo navegador.
 
-Esse registro ainda não é durável: o cenário não é persistido e a exportação
-recebe geração e proveniência novamente do navegador. Além disso, cobertura
-PWF parcial apenas gera aviso; os fatores das barras conhecidas são
-renormalizados para 100%. Não aceitar um caso parcial como concluído até
-completar ou bloquear a alocação conforme a decisão registrada na auditoria.
+O PWF final e seu manifesto também são persistidos. O manifesto contém o hash
+do PWF base e do resultado, barras modificadas, seleção e alocações. A trilha é
+consultável por `GET /climate-scenarios/:id`; a leitura confere os hashes dos
+arquivos armazenados. Mapeamento cadastral parcial é bloqueado no frontend e no
+backend. Conjuntos ausentes ou desmarcados preservam o `Pg` do caso base, e essa
+semântica fica registrada como `preserve_reference_pwf_pg`.
+
+No Compose, cenários e exportações ficam no volume `backend-data`, em
+`/app/data/scenarios`. Fora do contêiner, o padrão é
+`backend/data/scenarios`; `SCENARIO_STORAGE_ROOT` permite alterar o diretório.
+Ainda é necessário definir retenção, backup e armazenamento compartilhado para
+produção.
 
 ## Próximo passo para um modelo treinado de potencial
 

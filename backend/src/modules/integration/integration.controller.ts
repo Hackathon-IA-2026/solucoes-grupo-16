@@ -1,4 +1,5 @@
 import {
+  BadGatewayException,
   BadRequestException,
   Body,
   Controller,
@@ -9,7 +10,10 @@ import {
 } from '@nestjs/common';
 import { ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { createHash, randomUUID } from 'node:crypto';
 import { AiServiceClient } from './ai-service.client.js';
+import { ClimateScenarioStorageService } from '../climate-scenario/climate-scenario-storage.service.js';
+import type { ClimateScenarioManifest } from '../climate-scenario/climate-scenario.types.js';
 
 interface UploadedClimateFile {
   originalname: string;
@@ -26,7 +30,10 @@ interface HistoricalScenarioBody {
 @ApiTags('Integration')
 @Controller()
 export class IntegrationController {
-  constructor(private readonly ai: AiServiceClient) {}
+  constructor(
+    private readonly ai: AiServiceClient,
+    private readonly scenarios: ClimateScenarioStorageService,
+  ) {}
 
   @Get('system/capabilities')
   @ApiOperation({ summary: 'Estado das integrações e insumos do ClimaGrid' })
@@ -176,39 +183,95 @@ export class IntegrationController {
     const csvText = validatedCsv(file);
     const selected = parseTimestamp(timestamp, 'timestamp');
     const result = await this.ai.estimateClimateFile(csvText, selected.toISOString());
-    return {
-      scenario: {
-        id: result.scenario_id,
-        source: 'upload', mode: 'scenario', subsystem: result.subsystem,
-        timestamp: result.timestamp, resolutionMinutes: result.resolution_minutes,
-        fileName: file!.originalname, fileSizeBytes: file!.size,
-        rowCount: result.row_count, dataVersion: result.data_version,
-        generationSource: result.generation_source, weatherSource: result.weather_source,
-        warnings: result.warnings, createdAt: new Date().toISOString(),
-      },
-      observations: result.observations.map((observation) => ({
-        id: observation.usina_id, onsId: observation.ons_id,
-        name: observation.name, state: observation.state,
-        latitude: observation.latitude, longitude: observation.longitude,
-        installedCapacityMw: observation.installed_capacity_mw,
-        observedGenerationMw: null,
-        estimatedGenerationMw: observation.estimated_generation_mw,
-        capacityFactorPercent: observation.capacity_factor_percent,
-        u100: observation.u100, v100: observation.v100,
-        windSpeedMps: observation.wind_speed_mps,
-        windDirectionDegrees: observation.wind_direction_degrees,
-        availability: observation.availability,
-        generationSource: observation.generation_source,
-        weatherSource: observation.weather_source,
-        suggestedBusAllocations: observation.suggested_bus_allocations.map((allocation) => ({
+    const inputSha256 = createHash('sha256').update(file!.buffer).digest('hex');
+    if (
+      inputSha256 !== result.provenance.input_sha256 ||
+      result.data_version !== `user-csv-sha256-${inputSha256}`
+    ) {
+      throw new BadGatewayException(
+        'O serviço de estimativa devolveu uma proveniência incompatível com o CSV recebido.',
+      );
+    }
+    const id = randomUUID();
+    const createdAt = new Date().toISOString();
+    const observations = result.observations.map((observation) => ({
+      id: observation.usina_id, onsId: observation.ons_id,
+      name: observation.name, state: observation.state,
+      latitude: observation.latitude, longitude: observation.longitude,
+      installedCapacityMw: observation.installed_capacity_mw,
+      observedGenerationMw: null,
+      estimatedGenerationMw: observation.estimated_generation_mw,
+      capacityFactorPercent: observation.capacity_factor_percent,
+      u100: observation.u100, v100: observation.v100,
+      windSpeedMps: observation.wind_speed_mps,
+      windDirectionDegrees: observation.wind_direction_degrees,
+      availability: observation.availability,
+      generationSource: observation.generation_source,
+      weatherSource: observation.weather_source,
+      suggestedBusAllocations: observation.suggested_bus_allocations.map((allocation) => ({
           busNumber: String(allocation.bus_number), busName: allocation.bus_name,
           allocationFactor: allocation.allocation_factor,
           allocatedGenerationMw: allocation.allocated_generation_mw,
-        })),
-        mappingCoveragePercent: observation.mapping_coverage_percent,
-        warnings: observation.warnings,
       })),
+      mappingCoveragePercent: observation.mapping_coverage_percent,
+      warnings: observation.warnings,
+    }));
+    const scenario = {
+      id,
+      source: 'upload' as const,
+      mode: 'scenario' as const,
+      subsystem: result.subsystem,
+      timestamp: result.timestamp,
+      resolutionMinutes: result.resolution_minutes,
+      fileName: file!.originalname,
+      fileSizeBytes: file!.size,
+      rowCount: result.row_count,
+      dataVersion: result.data_version,
+      generationSource: result.generation_source,
+      weatherSource: result.weather_source,
+      warnings: result.warnings,
+      createdAt,
+      traceability: {
+        schemaVersion: result.provenance.input_schema_version,
+        inputSha256,
+        catalogSha256: result.provenance.catalog_sha256,
+        mappingSha256: result.provenance.mapping_sha256,
+        estimatorVersion: result.provenance.estimator_version,
+      },
     };
+    const manifest: ClimateScenarioManifest = {
+      schemaVersion: 'climagrid-climate-scenario-v1',
+      id,
+      createdAt,
+      subsystem: result.subsystem,
+      timestamp: result.timestamp,
+      resolutionMinutes: result.resolution_minutes,
+      generationSource: result.generation_source,
+      weatherSource: result.weather_source,
+      dataVersion: result.data_version,
+      input: {
+        schemaVersion: result.provenance.input_schema_version,
+        name: file!.originalname,
+        sizeBytes: file!.size,
+        sha256: inputSha256,
+        mediaType: 'text/csv',
+        rowCount: result.row_count,
+      },
+      provenance: {
+        catalogSha256: result.provenance.catalog_sha256,
+        mappingSha256: result.provenance.mapping_sha256,
+        estimatorVersion: result.provenance.estimator_version,
+        physicalCurve: {
+          cutInMs: result.provenance.physical_curve.cut_in_ms,
+          ratedMs: result.provenance.physical_curve.rated_ms,
+          cutOutMs: result.provenance.physical_curve.cut_out_ms,
+        },
+      },
+      observations,
+      warnings: result.warnings,
+    };
+    await this.scenarios.saveScenario(manifest, file!.buffer);
+    return { scenario, observations };
   }
 }
 

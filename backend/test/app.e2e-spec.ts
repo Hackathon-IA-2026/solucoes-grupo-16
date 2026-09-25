@@ -7,6 +7,9 @@ import { configureBodyParsers } from './../src/http-body-parser.js';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { ClimateScenarioStorageService } from '../src/modules/climate-scenario/climate-scenario-storage.service.js';
+import type { ClimateScenarioManifest } from '../src/modules/climate-scenario/climate-scenario.types.js';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication & NestExpressApplication;
@@ -15,6 +18,7 @@ describe('AppController (e2e)', () => {
   beforeAll(async () => {
     storageRoot = await mkdtemp(join(tmpdir(), 'climagrid-pwf-e2e-'));
     process.env.PWF_STORAGE_ROOT = storageRoot;
+    process.env.SCENARIO_STORAGE_ROOT = join(storageRoot, 'scenarios');
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -115,18 +119,27 @@ describe('AppController (e2e)', () => {
     expect(block(exportedBuffer, 'DGER')).toBe(block(sourcePwf, 'DGER'));
     expect(block(exportedBuffer, 'DGEI')).toBe(block(sourcePwf, 'DGEI'));
 
+    const scenarioId = '11111111-1111-4111-8111-111111111111';
+    await persistScenario(
+      app.get(ClimateScenarioStorageService),
+      scenarioId,
+      'user-csv-sha256-teste',
+      'ONS_1',
+      7.11,
+    );
     const scenarioExport = await request(app.getHttpServer())
       .post('/pwf/exports')
       .send({
         referencePwfId: upload.body.id,
-        scenarioId: 'cenario-climatico-teste',
+        scenarioId,
         studyName: 'Potencial pelo vento',
         generationSource: 'estimated',
         dataVersion: 'user-csv-sha256-teste',
+        selectedPlantIds: ['ONS_1'],
         plants: [{
           plantId: 'ONS_1', onsId: 'ONS_1', generationMw: 7.11,
           mapping: { busNumber: '123', busName: 'PARQUE EOL',
-            nominalVoltageKv: '230', area: '5' },
+            nominalVoltageKv: '230', area: '5', allocationFactor: 1 },
         }],
       })
       .buffer(true)
@@ -138,11 +151,30 @@ describe('AppController (e2e)', () => {
       .expect(201);
     expect(scenarioExport.headers['x-generation-source']).toBe('estimated');
     expect(scenarioExport.headers['x-data-version']).toBe('user-csv-sha256-teste');
+    expect(scenarioExport.headers['x-export-id']).toMatch(/^[0-9a-f-]{36}$/);
+    expect(scenarioExport.headers['x-output-sha256']).toMatch(/^[0-9a-f]{64}$/);
     const scenarioPwf = scenarioExport.body as Buffer;
     expect(scenarioPwf.toString('latin1')).toContain('  7.1');
     expect(scenarioPwf.length).toBe(sourcePwf.length);
     expect(block(scenarioPwf, 'DGER')).toBe(block(sourcePwf, 'DGER'));
     expect(block(scenarioPwf, 'DGEI')).toBe(block(sourcePwf, 'DGEI'));
+
+    const trace = await request(app.getHttpServer())
+      .get(`/climate-scenarios/${scenarioId}`)
+      .expect(200);
+    expect(trace.body.input.sha256).toBe(
+      createHash('sha256').update('csv').digest('hex'),
+    );
+    expect(trace.body.exports).toHaveLength(1);
+    expect(trace.body.exports[0]).toMatchObject({
+      id: scenarioExport.headers['x-export-id'],
+      scenarioId,
+      selection: {
+        selectedPlantIds: ['ONS_1'],
+        unselectedPlantIds: [],
+        unselectedPlantBehavior: 'preserve_reference_pwf_pg',
+      },
+    });
   });
 
   it('exports an estimated scenario into a real 2040 PWF', async () => {
@@ -160,20 +192,29 @@ describe('AppController (e2e)', () => {
     const target = targets.body.items.find((item: { editable: boolean }) => item.editable);
     expect(target).toBeDefined();
 
+    const scenarioId = '22222222-2222-4222-8222-222222222222';
+    await persistScenario(
+      app.get(ClimateScenarioStorageService),
+      scenarioId,
+      'user-csv-sha256-teste-real',
+      'CEECVA',
+      7.110642,
+    );
     const exported = await request(app.getHttpServer())
       .post('/pwf/exports')
       .send({
         referencePwfId: upload.body.id,
-        scenarioId: 'cenario-climatico-real',
+        scenarioId,
         studyName: 'Potencial físico',
         generationSource: 'estimated',
         dataVersion: 'user-csv-sha256-teste-real',
+        selectedPlantIds: ['CEECVA'],
         plants: [{
           plantId: 'CEECVA', onsId: 'CEECVA', generationMw: 7.110642,
           mapping: {
             busNumber: String(target.busNumber), busName: target.busName,
             nominalVoltageKv: String(target.baseVoltageKv ?? ''),
-            area: String(target.area ?? ''),
+            area: String(target.area ?? ''), allocationFactor: 1,
           },
         }],
       })
@@ -196,8 +237,51 @@ describe('AppController (e2e)', () => {
     await app.close();
     await rm(storageRoot, { recursive: true, force: true });
     delete process.env.PWF_STORAGE_ROOT;
+    delete process.env.SCENARIO_STORAGE_ROOT;
   });
 });
+
+async function persistScenario(
+  storage: ClimateScenarioStorageService,
+  id: string,
+  dataVersion: string,
+  plantId: string,
+  estimatedGenerationMw: number,
+): Promise<void> {
+  const manifest: ClimateScenarioManifest = {
+    schemaVersion: 'climagrid-climate-scenario-v1',
+    id,
+    createdAt: new Date().toISOString(),
+    subsystem: 'NE',
+    timestamp: '2024-01-15T12:00:00+00:00',
+    resolutionMinutes: 60,
+    generationSource: 'PHYSICAL_CURVE',
+    weatherSource: 'USER',
+    dataVersion,
+    input: {
+      schemaVersion: 'normalized-ons-hourly-v1',
+      name: 'cenario.csv',
+      sizeBytes: 3,
+      sha256: createHash('sha256').update('csv').digest('hex'),
+      mediaType: 'text/csv',
+      rowCount: 1,
+    },
+    provenance: {
+      catalogSha256: 'd'.repeat(64),
+      mappingSha256: 'e'.repeat(64),
+      estimatorVersion: 'physical-curve-v1',
+      physicalCurve: { cutInMs: 3, ratedMs: 12, cutOutMs: 25 },
+    },
+    observations: [{
+      id: plantId,
+      onsId: plantId,
+      estimatedGenerationMw,
+      mappingCoveragePercent: 100,
+    }],
+    warnings: [],
+  };
+  await storage.saveScenario(manifest, Buffer.from('csv'));
+}
 
 function createMinimalPwf(): Buffer {
   const record = Array<string>(111).fill(' ');

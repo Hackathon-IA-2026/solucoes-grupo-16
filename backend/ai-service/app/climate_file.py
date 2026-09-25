@@ -5,6 +5,7 @@ import csv
 import hashlib
 import io
 import math
+from dataclasses import asdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -13,15 +14,24 @@ import pandas as pd
 
 from app.historical import HistoricalScenarioService
 from ingestion.ons.hourly import _capacity_by_hour
+from training.config import PhysicalCurveConfig
 from training.physical_curve import physical_power_mw
 
 
 REQUIRED_COLUMNS = {"timestamp_utc", "usina_id", "u100", "v100", "disponibilidade"}
 MAX_ROWS = 50_000
+INPUT_SCHEMA_VERSION = "normalized-ons-hourly-v1"
+ESTIMATOR_VERSION = "physical-curve-v1"
 
 
 class ClimateFileError(ValueError):
     pass
+
+
+def _sha256_file(path) -> str | None:
+    if path is None or not path.is_file():
+        return None
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def parse_timestamp(value: str) -> datetime:
@@ -129,9 +139,12 @@ class ClimateFileService:
         allocations = self.historical._bus_allocations(pd.Timestamp(timestamp))
         observations = []
         global_warnings: set[str] = set()
+        curve = PhysicalCurveConfig()
         for row in selected.sort_values("usina_id").itertuples(index=False):
             speed = math.hypot(row.u100, row.v100)
-            generation = float(physical_power_mw(speed, row.capacidade_instalada_mw, row.disponibilidade))
+            generation = float(physical_power_mw(
+                speed, row.capacidade_instalada_mw, row.disponibilidade, curve
+            ))
             direction = (math.degrees(math.atan2(-row.u100, -row.v100)) + 360) % 360
             plant = metadata.get(row.usina_id, {})
             allocation = allocations.get(row.usina_id, {})
@@ -161,4 +174,9 @@ class ClimateFileService:
         return {"scenario_id": str(uuid4()), "subsystem": "NE", "timestamp": timestamp.isoformat(),
             "resolution_minutes": 60, "data_version": f"user-csv-sha256-{digest}",
             "generation_source": "PHYSICAL_CURVE", "weather_source": "USER",
-            "row_count": len(frame), "observations": observations, "warnings": sorted(global_warnings)}
+            "row_count": len(frame), "observations": observations, "warnings": sorted(global_warnings),
+            "provenance": {"input_schema_version": INPUT_SCHEMA_VERSION,
+                "input_sha256": digest, "catalog_sha256": _sha256_file(catalog_path),
+                "mapping_sha256": _sha256_file(self.historical.mapping_path),
+                "estimator_version": ESTIMATOR_VERSION,
+                "physical_curve": asdict(curve)}}

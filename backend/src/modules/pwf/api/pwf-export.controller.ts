@@ -35,6 +35,13 @@ export class PwfExportController {
       'X-Generation-Source': result.generationSource,
       'X-Data-Version': result.dataVersion,
       'X-Modified-Buses': result.modifiedBuses.join(','),
+      ...(result.exportId ? { 'X-Export-Id': result.exportId } : {}),
+      ...(result.outputSha256
+        ? { 'X-Output-SHA256': result.outputSha256 }
+        : {}),
+      ...(result.referenceSha256
+        ? { 'X-Reference-SHA256': result.referenceSha256 }
+        : {}),
     });
     return new StreamableFile(result.buffer);
   }

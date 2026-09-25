@@ -27,7 +27,7 @@ COPY --from=production-dependencies --chown=node:node /app/node_modules ./node_m
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --chown=node:node package.json ./package.json
 
-RUN mkdir -p /app/data/pwf && chown -R node:node /app/data
+RUN mkdir -p /app/data/pwf /app/data/scenarios && chown -R node:node /app/data
 
 USER node
 EXPOSE 3333

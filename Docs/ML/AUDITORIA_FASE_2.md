@@ -1,7 +1,8 @@
 # Auditoria da fase 2 — cenário climático do usuário
 
 **Data:** 25 de setembro de 2026  
-**Branch auditada:** `feature/traindois` no commit `11286a6`  
+**Branch auditada:** `feature/traindois`, a partir do commit `11286a6`
+
 **Base da comparação:** `develop` no commit `ea81006`
 
 ## Conclusão
@@ -15,9 +16,12 @@ A branch contém um **protótipo ponta a ponta executável** da fase 2:
 5. recebe um PWF real;
 6. altera o `Pg` das barras escolhidas e devolve outro PWF.
 
-Isso ainda não encerra a fase 2. Faltam decisões de domínio, garantias de
-integridade do cenário, tratamento seguro de cobertura parcial e o aceite
-técnico com um caso completo no ANAREDE. Os experimentos multiusina também não
+Nesta rodada, o CSV normalizado foi confirmado como contrato do MVP, o cenário
+e seus PWFs passaram a ser persistidos com hashes e a exportação deixou de
+confiar na geração enviada pelo navegador. Mapeamentos cadastrais parciais agora
+bloqueiam a exportação. Isso ainda não encerra a fase 2: faltam aprovação de
+domínio para a curva física e a semântica de cobertura, um cenário
+representativo e o aceite no ANAREDE. Os experimentos multiusina também não
 estão publicados como modelo aprovado e não participam do endpoint do cenário
 climático.
 
@@ -33,7 +37,9 @@ climático.
 - validação de vento, disponibilidade, temperatura e pressão;
 - capacidade instalada obtida do catálogo para a hora escolhida;
 - curva física com *cut-in*, potência nominal e *cut-out*;
-- proveniência `PHYSICAL_CURVE` + `USER` e hash SHA-256 do CSV;
+- proveniência `PHYSICAL_CURVE` + `USER`, schema
+  `normalized-ons-hourly-v1`, hashes do CSV, catálogo e mapa PWF e parâmetros
+  da curva física;
 - avisos para mapeamento PWF ausente ou parcial.
 
 ### Backend NestJS
@@ -41,7 +47,12 @@ climático.
 - fachada multipart para inspeção e estimativa do CSV;
 - tradução dos contratos Python para o frontend;
 - capacidade `climate.fileUpload` em `GET /system/capabilities`;
-- exportação marcada como `estimated` com `dataVersion` do cenário;
+- persistência imutável do CSV e do manifesto de cenário no servidor;
+- exportação marcada como `estimated`, recalculada com a estimativa persistida;
+- manifesto de exportação com seleção, alocações e hashes do PWF base e final;
+- consulta da trilha por `GET /climate-scenarios/:id`;
+- bloqueio de geração adulterada, fatores que não somam 100%, conjunto sem
+  alocação e mapeamento cadastral parcial;
 - teste E2E de exportação estimada em PWF sintético e em PWF real de 2040.
 
 ### Frontend
@@ -51,6 +62,8 @@ climático.
 - revisão do potencial estimado e seleção de conjuntos;
 - reaproveitamento do fluxo de mapeamento e exportação PWF;
 - distinção visual entre geração ONS observada e potencial físico estimado;
+- exibição do ID do cenário, schema, hashes e versão do estimador;
+- exibição do ID e hash da exportação concluída;
 - bloqueio do fluxo real quando a API ou o catálogo não estão disponíveis.
 
 ### Treino e pesquisa
@@ -70,89 +83,78 @@ sozinho e nenhum modelo está habilitado na aplicação.
 | Verificação | Resultado |
 | --- | --- |
 | Python 3.13 em contêiner, `python -m pytest -q` | 73 testes passaram; 38 avisos de depreciação/compatibilidade |
-| NestJS, `npm run lint && npm test` | lint passou; 13 testes passaram |
+| NestJS, `npm run lint && npm test` | lint passou; 16 testes passaram |
 | NestJS, `npm run test:e2e && npm run build` | 4 testes E2E passaram; build passou |
 | Next.js, `npm run lint && npm run build` | passou; 6 rotas de aplicação geradas |
 | Pilha Docker construída da branch | três serviços ficaram saudáveis |
 | `GET /system/capabilities` | upload climático disponível; `physical-curve-v1`; nenhum modelo aprovado |
 | CSV real de uma hora para `CEECVA` | 7,110642 MW, cobertura de mapeamento de 100%, sem avisos |
-| Exportação com PWF real de 2040 | barra 80808 alterada; 3.757.518 bytes antes e depois; fonte e hash preservados nos cabeçalhos |
+| Exportação persistida com PWF real de 2040 | barra 80808 alterada; 3.757.518 bytes antes e depois; hashes conferidos no arquivo, cabeçalhos e manifesto |
+| Integridade da exportação estimada | alteração de `generationMw` pelo cliente rejeitada com HTTP 400 |
+| `GET /climate-scenarios/:id` | CSV, estimativa, seleção e alocação recuperados; PWF base referenciado e PWF final verificado por IDs e hashes |
 | Página `/cenario-climatico` na imagem de produção | HTTP 200 |
 
 O teste confirma a integração técnica de uma linha e uma barra. Não substitui
 um aceite com a cobertura esperada de conjuntos, revisão elétrica e abertura
 do caso no ANAREDE.
 
+## Decisões e correções concluídas nesta rodada
+
+### Contrato de entrada do MVP
+
+O contrato escolhido é **CSV normalizado**, versionado como
+`normalized-ons-hourly-v1`. Ele não é um arquivo ERA5 nativo: é normalizado
+por conjunto ONS, com `u100`/`v100` derivados do ERA5 e disponibilidade de
+outra fonte. ERA5 NetCDF/GRIB não possui `usina_id` do ClimaGrid nem
+disponibilidade eletromecânica.
+
+Ainda faltam um arquivo-modelo gerado pela aplicação e um procedimento
+operacional de conversão do ERA5 nativo. Até isso existir, a interface e a
+documentação devem prometer somente o CSV normalizado.
+
+### Persistência e autoridade do servidor
+
+Cada estimativa gera um UUID no NestJS e grava, de forma imutável, o CSV
+original e `manifest.json`. O manifesto contém schema, hora, fontes, hashes,
+catálogo, mapa, versão/parâmetros do estimador, observações e avisos. Na
+exportação, o servidor recupera esse cenário, valida a seleção e os fatores e
+recalcula cada parcela a partir da estimativa persistida.
+
+Cada PWF estimado recebe outro UUID e um manifesto com PWF base, PWF final,
+seleção, comportamento das usinas não selecionadas, alocações e hashes. A rota
+`GET /climate-scenarios/:id` verifica os arquivos contra os manifestos antes de
+devolver a trilha. No Compose, os dados ficam no volume `backend-data`; fora
+dele, o diretório padrão é `backend/data/scenarios` e pode ser alterado por
+`SCENARIO_STORAGE_ROOT`.
+
+### Cobertura parcial
+
+Mapeamento cadastral maior que 0% e menor que 100% agora é bloqueado na
+interface e no backend. Cada conjunto selecionado precisa de alocação, e seus
+fatores precisam somar 100%. Um conjunto com cobertura 0% ainda pode receber
+uma alocação manual completa em uma barra validada do caso base.
+
 ## Lacunas para concluir a fase 2
 
-### P0 — decisões e correções bloqueantes
+### P0 — decisões de domínio e aceite bloqueantes
 
-#### 1. Fechar o contrato de entrada
+#### 1. Aprovar cobertura e efeito sobre o PWF
 
-O arquivo atual **não é um arquivo ERA5 nativo**. Ele é um CSV já normalizado
-por conjunto ONS, com `u100`/`v100` derivados do ERA5 e uma disponibilidade
-informada por outra fonte. ERA5 NetCDF/GRIB não possui `usina_id` do ClimaGrid
-nem disponibilidade eletromecânica.
-
-É preciso escolher e declarar uma opção:
-
-- manter o CSV normalizado como contrato do MVP e fornecer modelo de arquivo,
-  validador e procedimento de conversão do ERA5; ou
-- aceitar ERA5 nativo e implementar extração por coordenadas, agregação dos
-  membros por capacidade e uma política explícita para disponibilidade.
-
-Sem essa decisão, a frase “upload de ERA5” promete mais do que o código aceita.
-
-#### 2. Definir cobertura e efeito sobre o PWF
-
-Hoje o CSV pode conter qualquer subconjunto de conjuntos, o usuário pode
-desmarcar conjuntos e a exportação altera somente as barras mapeadas. O `Pg`
-das outras eólicas permanece com o valor original do caso base. É necessário
-definir se uma execução representa:
+O CSV pode conter qualquer subconjunto de conjuntos e o usuário pode desmarcar
+conjuntos. O comportamento agora é explícito no manifesto: a exportação altera
+somente as barras dos conjuntos selecionados, e o `Pg` das outras barras
+permanece igual ao caso base. É necessário o especialista aprovar se uma
+execução representa:
 
 - todo o cenário eólico do Nordeste, exigindo uma cobertura mínima/completa;
 - somente um subconjunto deliberado, mantendo o restante do caso base; ou
 - um cenário completo no qual conjuntos ausentes recebem tratamento explícito.
 
-A escolha deve aparecer na interface e na proveniência. Ausência não pode ser
-interpretada silenciosamente como zero ou como permanência do caso base.
+A permanência do caso base já aparece na proveniência e não é interpretada
+como zero. Falta tornar essa escolha ainda mais destacada antes do download e
+obter a aprovação do domínio sobre cobertura mínima ou completa.
 
-#### 3. Impedir exportação enganosa com mapeamento parcial
-
-Quando apenas parte dos membros/barras está mapeada, o serviço normaliza os
-fatores das barras conhecidas para somarem 100%. Assim, todo o potencial do
-conjunto pode ser colocado nas barras conhecidas, embora a cobertura declarada
-seja menor que 100%. A interface mostra um aviso, mas ainda permite prosseguir
-e não oferece uma linha para cadastrar a parcela ausente.
-
-Antes do aceite, implementar uma das alternativas:
-
-- bloquear o conjunto parcial até completar o cadastro;
-- permitir completar manualmente barras, capacidades e fatores, validando que
-  a soma seja 100%; ou
-- aplicar apenas a fração coberta, deixando explícito o destino da parcela não
-  alocada.
-
-#### 4. Vincular cálculo e exportação no servidor
-
-O `scenarioId` é criado pelo Python, mas não é persistido. Na exportação, o
-NestJS confia nos valores enviados pelo navegador para `generationMw`, fonte,
-versão e barras. Não existe registro durável que permita recuperar o CSV, a
-estimativa ou confirmar que o PWF veio daquele cálculo.
-
-Persistir um manifesto de cenário com, no mínimo:
-
-- ID, hash e nome do arquivo;
-- hora e contrato/schema usado;
-- catálogo, curva/modelo e versões;
-- estimativas por conjunto;
-- avisos, seleção e alocações confirmadas;
-- hash do PWF base e do PWF exportado.
-
-O endpoint de exportação deve buscar ou validar esses dados pelo `scenarioId`,
-em vez de aceitar a geração calculada como autoridade do cliente.
-
-#### 5. Aceite de domínio e ANAREDE
+#### 2. Aceite de domínio e ANAREDE
 
 A curva física usa parâmetros genéricos e não foi aprovada como estimador de
 potencial das usinas reais. O critério de conclusão precisa incluir:
@@ -174,19 +176,20 @@ sem executar o ANAREDE.
 - Validar membros ativos na hora escolhida. A checagem atual exige que todas as
   linhas históricas do conjunto estejam conciliadas, mesmo quando uma relação
   não está ativa naquele instante.
-- Versionar o schema do CSV e oferecer um arquivo de exemplo gerado pelo
-  sistema.
+- Oferecer um arquivo de exemplo gerado pelo sistema e documentar a conversão
+  do ERA5 nativo para o schema `normalized-ons-hourly-v1`.
 - Preservar temperatura e pressão no cenário. Hoje são validadas e descartadas;
   isso impede reutilizá-las por um futuro modelo sem reler o arquivo.
 - Corrigir a navegação de volta: se a seleção de conjuntos mudar depois do
-  upload do PWF, os mapeamentos não são reconstruídos e a prontidão não exige
-  ao menos uma alocação para cada conjunto selecionado.
+  upload do PWF, os mapeamentos precisam ser reconstruídos. A prontidão já
+  exige ao menos uma alocação para cada conjunto selecionado.
 - Criar teste E2E do frontend para o percurso upload → hora → usinas → PWF →
   download, além dos testes HTTP isolados.
 - Tornar o status de capacidade mais rigoroso: a simples existência do arquivo
   de catálogo não garante schema válido, cobertura ou mapeamento utilizável.
-- Definir retenção, tamanho e privacidade dos arquivos enviados e dos
-  manifestos de cenário.
+- Definir retenção, privacidade, backup e armazenamento compartilhado dos
+  arquivos e manifestos. A implementação atual é durável no disco/volume local,
+  mas não replica cenários no Supabase e não possui política de expurgo.
 
 ### P2 — modelo treinado, depois do contrato operacional
 
@@ -203,14 +206,12 @@ sem executar o ANAREDE.
 
 ## Sequência recomendada de implementação
 
-1. Aprovar o contrato do MVP: CSV normalizado ou ERA5 nativo, fonte da
-   disponibilidade e regra de cobertura.
-2. Corrigir cobertura parcial e garantir uma alocação completa para cada
-   conjunto selecionado.
-3. Persistir o cenário e fazer a exportação confiar no cálculo do servidor.
-4. Melhorar inspeção, relatório de cobertura, template e testes do frontend.
-5. Executar um aceite completo com CSV representativo, PWF real e ANAREDE.
-6. Só então decidir se a curva física aprovada encerra o MVP ou se um modelo
+1. Aprovar a fonte da disponibilidade e a regra de cobertura do cenário.
+2. Fornecer template/conversão, melhorar inspeção e relatório de cobertura e
+   criar o teste E2E do frontend.
+3. Definir retenção, backup e armazenamento para o ambiente de implantação.
+4. Executar um aceite completo com CSV representativo, PWF real e ANAREDE.
+5. Só então decidir se a curva física aprovada encerra o MVP ou se um modelo
    multiusina aprovado é requisito de liberação.
 
 ## Critério objetivo de encerramento

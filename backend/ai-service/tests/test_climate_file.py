@@ -42,6 +42,14 @@ def test_climate_file_estimates_only_selected_hour_and_tracks_provenance(tmp_pat
         assert body["generation_source"] == "PHYSICAL_CURVE"
         assert body["weather_source"] == "USER"
         assert body["data_version"].endswith(inspection.json()["sha256"])
+        assert body["provenance"]["input_schema_version"] == "normalized-ons-hourly-v1"
+        assert body["provenance"]["input_sha256"] == inspection.json()["sha256"]
+        assert body["provenance"]["catalog_sha256"]
+        assert body["provenance"]["mapping_sha256"] is None
+        assert body["provenance"]["estimator_version"] == "physical-curve-v1"
+        assert body["provenance"]["physical_curve"] == {
+            "cut_in_ms": 3.0, "rated_ms": 12.0, "cut_out_ms": 25.0,
+        }
         assert len(body["observations"]) == 1
         observation = body["observations"][0]
         assert observation["observed_generation_mw"] is None
