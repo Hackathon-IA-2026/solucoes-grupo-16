@@ -1,6 +1,7 @@
 """Extract ERA5 hourly values at the nearest grid point for each plant."""
 from __future__ import annotations
 
+import json
 import math
 from pathlib import Path
 from typing import Any
@@ -266,7 +267,7 @@ def extract_file(
         "request_hash": request_hash,
         "catalog_hash": catalog_hash,
         "quality": report,
-        "grid_mapping": mapping.to_dict("records"),
+        "grid_mapping": json.loads(mapping.to_json(orient="records", date_format="iso")),
     }
     write_manifest(manifest_path, manifest)
     return manifest
