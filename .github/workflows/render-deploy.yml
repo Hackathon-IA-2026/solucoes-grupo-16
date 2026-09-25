@@ -3,12 +3,70 @@ name: Build, push and deploy to Render
 on:
   workflow_dispatch:
 
+concurrency:
+  group: render-production
+  cancel-in-progress: false
+
 env:
   DOCKER_REPO: ${{ secrets.DOCKER_REPO }} # ex: victorszcruzpoli
   RENDER_API_URL: https://api.render.com/v1
 
 jobs:
+  quality:
+    name: Validate application
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Validate backend
+        working-directory: backend
+        run: |
+          npm ci
+          npm run lint
+          npm test
+          npm run test:e2e
+          npm run build
+
+      - name: Validate frontend
+        working-directory: frontend
+        env:
+          NEXT_PUBLIC_API_BASE_URL: http://localhost:3333
+        run: |
+          npm ci
+          npm run lint
+          npm run build
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            backend/ai-service/requirements.txt
+            backend/ai-service/requirements-dev.txt
+            backend/ai-service/constraints.txt
+
+      - name: Validate AI service
+        working-directory: backend/ai-service
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+          python -m pytest -q
+
   build-push-and-deploy:
+    needs: quality
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -83,7 +141,9 @@ jobs:
         run: |
           TAG=sha-${{ steps.tags.outputs.SHORT }}
           docker build -t "${DOCKER_REPO}/climagrid-ai-service:${TAG}" -f backend/ai-service/Dockerfile backend/ai-service
+          docker tag "${DOCKER_REPO}/climagrid-ai-service:${TAG}" "${DOCKER_REPO}/climagrid-ai-service:latest"
           docker push "${DOCKER_REPO}/climagrid-ai-service:${TAG}"
+          docker push "${DOCKER_REPO}/climagrid-ai-service:latest"
 
       - name: Trigger Deploy on Render (AI service)
         id: deploy_ai
@@ -130,7 +190,9 @@ jobs:
         run: |
           TAG=sha-${{ steps.tags.outputs.SHORT }}
           docker build -t "${DOCKER_REPO}/climagrid-backend:${TAG}" -f backend/Dockerfile backend
+          docker tag "${DOCKER_REPO}/climagrid-backend:${TAG}" "${DOCKER_REPO}/climagrid-backend:latest"
           docker push "${DOCKER_REPO}/climagrid-backend:${TAG}"
+          docker push "${DOCKER_REPO}/climagrid-backend:latest"
 
       - name: Trigger Deploy on Render (Backend)
         id: deploy_backend
@@ -190,7 +252,9 @@ jobs:
           BACKEND_URL="${{ steps.backend_url.outputs.backend_url }}"
           echo "Using backend URL: $BACKEND_URL"
           docker build --build-arg NEXT_PUBLIC_API_BASE_URL="$BACKEND_URL" -t "${DOCKER_REPO}/climagrid-frontend:${TAG}" -f frontend/Dockerfile frontend
+          docker tag "${DOCKER_REPO}/climagrid-frontend:${TAG}" "${DOCKER_REPO}/climagrid-frontend:latest"
           docker push "${DOCKER_REPO}/climagrid-frontend:${TAG}"
+          docker push "${DOCKER_REPO}/climagrid-frontend:latest"
 
       - name: Trigger Deploy on Render (Frontend)
         id: deploy_frontend

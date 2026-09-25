@@ -143,7 +143,8 @@ export class AiServiceClient {
   ).replace(/\/$/, '');
 
   async capabilities(): Promise<AiCapabilities> {
-    return this.request<AiCapabilities>('/capabilities');
+    // Web Services Free podem precisar acordar antes de responder.
+    return this.request<AiCapabilities>('/capabilities', undefined, 60_000);
   }
 
   async replayHistorical(payload: {

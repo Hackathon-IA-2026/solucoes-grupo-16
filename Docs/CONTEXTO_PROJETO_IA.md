@@ -171,8 +171,9 @@ Endpoints operacionais dos fluxos atuais:
   NetCDF/GRIB não está implementado, mas o servidor pode buscar e normalizar
   ERA5 histórico sob demanda.
 - Cenários estimados e seus PWFs são persistidos no disco/volume local com
-  manifestos e hashes. Ainda não há réplica em Supabase, política de retenção ou
-  backup para um ambiente distribuído.
+  manifestos e hashes e, quando configurado, replicados no Supabase Storage.
+  Isso mantém a trilha após reinícios do Render Free; política de retenção e
+  expurgo ainda não foi definida.
 - Mapeamento PWF parcial é bloqueado. Cobertura 0% permite uma alocação manual
   completa; essa decisão e a permanência do `Pg` do caso base para conjuntos
   ausentes/desmarcados ainda precisam de aprovação do domínio.

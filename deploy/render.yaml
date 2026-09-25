@@ -1,32 +1,72 @@
 services:
-  # Frontend Next.js — usa a imagem publicada no Docker Hub
+  # As imagens são construídas pelo GitHub Actions com uma tag sha-* e o
+  # workflow aciona os três deploys pelo Render API. O :latest serve apenas
+  # para a criação inicial das instâncias.
   - type: web
     name: climagrid-frontend
-    image: docker.io/victorszcruzpoli/climagrid-frontend:latest
-    env: docker
+    runtime: image
+    plan: free
+    image:
+      url: docker.io/victorszcruzpoli/climagrid-frontend:latest
+    healthCheckPath: /
     envVars:
-      - key: NEXT_PUBLIC_API_BASE_URL
-        value: https://<backend-url>
+      - key: PORT
+        value: "3000"
+      - key: HOSTNAME
+        value: 0.0.0.0
 
-  # Backend NestJS — aponta para a imagem do backend
   - type: web
     name: climagrid-backend
-    image: docker.io/victorszcruzpoli/climagrid-backend:latest
-    env: docker
+    runtime: image
+    plan: free
+    image:
+      url: docker.io/victorszcruzpoli/climagrid-backend:latest
+    healthCheckPath: /
     envVars:
-      - key: AI_SERVICE_URL
-        value: http://climagrid-ai-service:8000
+      - key: PORT
+        value: "3333"
       - key: NODE_ENV
         value: production
+      # URL pública do AI service no plano gratuito do Render.
+      - key: AI_SERVICE_URL
+        sync: false
+      # Origem pública exata do frontend, sem barra final.
+      - key: FRONTEND_ORIGIN
+        sync: false
+      - key: PWF_STORAGE_ROOT
+        value: /app/data/pwf
+      - key: SCENARIO_STORAGE_ROOT
+        value: /app/data/scenarios
+      - key: SUPABASE_URL
+        sync: false
+      # Use a service_role key somente neste backend; nunca no frontend.
+      - key: SUPABASE_KEY
+        sync: false
+      - key: SUPABASE_BUCKET
+        value: pwf
 
-  # AI service (FastAPI) — marque como privado no painel do Render se desejar
+  # Web service público porque Private Services não existem no plano Free.
   - type: web
     name: climagrid-ai-service
-    image: docker.io/victorszcruzpoli/climagrid-ai-service:sha-7bb0172
-    env: docker
-    plan: starter
+    runtime: image
+    plan: free
+    image:
+      url: docker.io/victorszcruzpoli/climagrid-ai-service:latest
+    healthCheckPath: /health
     envVars:
-      - key: DATA_PATH
+      - key: PORT
+        value: "8000"
+      - key: CDSAPI_URL
+        value: https://cds.climate.copernicus.eu/api
+      - key: CDSAPI_KEY
+        sync: false
+      - key: CLIMAGRID_DATA_ROOT
         value: /service/data
-      - key: ARTIFACTS_PATH
-        value: /service/artifacts
+      - key: CLIMAGRID_HISTORICAL_SNAPSHOT
+        value: /service/data/processed/historical/observations.parquet
+      - key: CLIMAGRID_PLANT_CATALOG
+        value: /service/data/processed/reference/plant_locations.parquet
+      - key: CLIMAGRID_PWF_MAPPING
+        value: /service/data/processed/reference/pwf_bus_mapping.parquet
+      - key: CLIMAGRID_ARTIFACT_DIR
+        value: /service/artifacts/global/v1
