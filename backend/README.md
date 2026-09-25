@@ -1,9 +1,10 @@
 # ClimaGrid — backend
 
 > Contexto e prioridades: [`../Docs/CONTEXTO_PROJETO_IA.md`](../Docs/CONTEXTO_PROJETO_IA.md).
-> O backend concluiu a integração da etapa 1. A próxima entrega do MVP é o
-> upload climático da etapa 2; previsão futura e curtailment não devem ser
-> misturados a esse contrato.
+> O backend concluiu a integração da etapa 1. A etapa 2 possui um protótipo
+> ponta a ponta em validação; previsão futura e curtailment não devem ser
+> misturados a esse contrato. Consulte
+> [`../Docs/ML/AUDITORIA_FASE_2.md`](../Docs/ML/AUDITORIA_FASE_2.md).
 
 API NestJS do ClimaGrid. O primeiro módulo funcional recebe casos de referência
 PWF, preserva o arquivo original, interpreta os blocos elétricos necessários e
@@ -49,12 +50,19 @@ Configure `AI_SERVICE_URL` (padrão `http://127.0.0.1:8000`) e use:
 ```http
 GET /system/capabilities
 POST /climate-scenarios/historical
+POST /climate-scenarios/file/inspect
+POST /climate-scenarios/file/estimate
 ```
 
 A rota de capacidades diferencia backend configurado, serviço de IA online,
 catálogo, ONS bruto, partições ERA5 e snapshot observado. O replay só é
 liberado quando `data/processed/historical/observations.parquet` existe; a API
 responde `409` com instrução objetiva enquanto o insumo estiver ausente.
+
+As rotas `file/inspect` e `file/estimate` aceitam um CSV climático normalizado,
+não ERA5 NetCDF/GRIB nativo. A estimativa atual usa a curva física genérica. O
+cenário ainda não é persistido; até essa pendência ser resolvida, a exportação
+confia nos valores enviados pelo navegador.
 
 O corpo JSON de exportação aceita até 2 MB para comportar centenas de parcelas
 usina–barra em um único replay.

@@ -9,9 +9,14 @@ O contexto canônico para pessoas e agentes de IA está em
 possui quatro etapas:
 
 1. replay histórico — **implementado**;
-2. upload climático do usuário → potencial estimado → PWF — **implementação inicial em validação e limite do MVP**;
+2. upload climático do usuário → potencial estimado → PWF — **protótipo ponta a ponta em validação e limite do MVP**;
 3. escolha de hora futura → previsão de geração → PWF — pós-MVP;
 4. curtailment — por último e fora do MVP.
+
+O protótipo ponta a ponta da etapa 2 e as pendências para encerrá-la estão em
+[`Docs/ML/AUDITORIA_FASE_2.md`](Docs/ML/AUDITORIA_FASE_2.md). A entrada atual é
+um CSV normalizado por conjunto ONS; upload direto de ERA5 NetCDF/GRIB ainda
+não é suportado.
 
 ## Arquitetura local
 

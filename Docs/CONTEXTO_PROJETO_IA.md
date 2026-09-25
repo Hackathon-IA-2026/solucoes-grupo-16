@@ -19,7 +19,7 @@ de fluxo de potência nem afirma que o caso converge.
 | Etapa | Estado | Entrega | Limite |
 | --- | --- | --- | --- |
 | 1. Replay histórico | **Implementada** | Escolher uma hora existente, recuperar geração ONS observada e vento ERA5, mapear barras e exportar PWF | Não há previsão de IA |
-| 2. Arquivo climático do usuário | **Implementação inicial em validação** | Upload CSV, escolha da hora, curva física de potencial e fluxo até PWF | Ainda sem modelo de potencial treinado e aprovado; exige aceite ponta a ponta com caso real |
+| 2. Arquivo climático do usuário | **Protótipo ponta a ponta em validação** | Upload CSV, escolha da hora, curva física de potencial e fluxo até PWF | Smoke test real passou; ainda faltam contrato de entrada, cobertura segura, rastreabilidade no servidor e aceite no ANAREDE |
 | 3. Hora futura | **Pós-MVP** | Escolher uma hora futura, estimar geração com um modelo e exportar um PWF daquele instante | Exige fonte/hipótese meteorológica futura explícita |
 | 4. Curtailment | **Por último — fora do MVP** | Estimar risco, montante e causa provável de restrição | Não se confunde com potencial eólico ou geração bruta |
 
@@ -49,12 +49,17 @@ significa que todos os meses históricos já estejam disponíveis. Consulte
 
 ### Etapa 2 — arquivo climático do usuário
 
-Esta etapa encerra o MVP. O fluxo CSV e a estimativa física inicial estão implementados; ainda é necessária validação ponta a ponta com um caso real e aprovação do significado/qualidade do potencial. Fluxo:
+Esta etapa encerra o MVP. O fluxo CSV e a estimativa física inicial estão
+implementados. Um smoke test com `CEECVA` e um PWF real de 2040 percorreu os
+três serviços, preservou o tamanho do arquivo e alterou a barra esperada. Isso
+valida a integração técnica mínima, mas ainda não constitui aceite da fase.
+Fluxo:
 
 1. usuário envia um arquivo climático;
-2. backend valida formato, unidades, timezone, cobertura e duplicatas;
+2. backend valida formato, unidades, timezone e duplicatas;
 3. usuário seleciona uma hora presente no arquivo;
-4. serviço calcula a geração esperada de cada conjunto/usina;
+4. serviço valida cadastro/capacidade para a hora e calcula a geração esperada
+   de cada conjunto/usina;
 5. usuário revisa usinas e alocações de barras;
 6. backend gera um PWF para aquela hora;
 7. especialista abre o arquivo no ANAREDE.
@@ -69,12 +74,18 @@ O contrato implementado está em [`ML/CENARIO_CLIMATICO_FASE_2.md`](ML/CENARIO_C
 - uma linha por usina e hora, sem duplicatas.
 
 Somente CSV está implementado para esta etapa. Parquet e NetCDF ainda não são
-aceitos. A série ONS de geração verificada não valida um modelo de potencial;
-por isso a curva física é identificada explicitamente como estimativa genérica.
+aceitos. O CSV é um formato **normalizado por conjunto ONS**, não um arquivo
+ERA5 nativo: `u100` e `v100` podem vir do ERA5, mas `usina_id` e disponibilidade
+precisam vir da preparação/cadastro. A série ONS de geração verificada não
+valida um modelo de potencial; por isso a curva física é identificada
+explicitamente como estimativa genérica.
 
-Critério de conclusão do MVP: um arquivo climático válido, uma hora escolhida e
-um PWF real devem percorrer toda a interface sem mocks; geração e proveniência
-devem ser registradas; o arquivo deve preservar todos os campos não editados.
+Critério de conclusão do MVP: um arquivo climático representativo, uma hora
+escolhida e um PWF real devem percorrer toda a interface sem mocks; geração e
+proveniência devem ser registradas no servidor; cobertura ausente ou parcial
+precisa ter regra aprovada; o arquivo deve preservar todos os campos não
+editados e ser validado no ANAREDE. O mapa detalhado de pendências está em
+[`ML/AUDITORIA_FASE_2.md`](ML/AUDITORIA_FASE_2.md).
 
 ### Etapa 3 — hora futura
 
@@ -119,7 +130,7 @@ geração observada. Os documentos `GUIA_ESTUDANTE_SINAL.md` e
 - `Docs/Casos de Referência/Lista_de_Usinas.xlsx`: CEG, barra e potência do
   horizonte 2040.
 
-Endpoints operacionais da etapa 1:
+Endpoints operacionais dos fluxos atuais:
 
 - `GET /system/capabilities`;
 - `POST /climate-scenarios/historical`;
@@ -140,6 +151,15 @@ Endpoints operacionais da etapa 1:
 - Os casos PWF reais disponíveis não contêm `DGEI`/`DGER`; a preservação desses
   blocos foi coberta por teste sintético, mas o aceite final deve ocorrer no
   ANAREDE com um caso representativo.
+- A entrada da etapa 2 é CSV normalizado; upload direto de ERA5 NetCDF/GRIB não
+  está implementado.
+- O cenário climático não é persistido: a exportação ainda confia nos valores
+  enviados pelo navegador e não recompõe as estimativas pelo `scenarioId`.
+- Mapeamento PWF parcial gera aviso, mas hoje normaliza a geração entre as
+  barras conhecidas e não oferece uma parcela adicional para completar a
+  cobertura. Não tratar esse aviso como aceite.
+- Os experimentos multiusina 3 a 6 estão documentados, mas seus dados,
+  relatórios e artefatos são locais e não estão presentes neste checkout.
 
 ## Orientação para futuras IAs
 

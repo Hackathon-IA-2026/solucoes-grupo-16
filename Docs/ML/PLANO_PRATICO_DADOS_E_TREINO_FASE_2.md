@@ -35,12 +35,13 @@ não está pronto para o `training.train` atual.
 
 ## 2. Fazer uma prova de um mês completo
 
-**Piloto atual de potencial:** agosto de 2024, com o Parquet mensal ONS
+**Piloto documentado de potencial:** agosto de 2024, com o Parquet mensal ONS
 `RESTRICAO_COFF_EOLICA_2024_08.parquet` para `geracao_referencia_mw` e
 `disponibilidade`, mais `GERACAO_USINA-2_2024_08.parquet` para conferência da
 geração verificada. O catálogo separado do piloto contém 147 conjuntos, dos
 quais 146 estão totalmente localizados; um requer revisão. O ERA5 de agosto e o
-complemento das três primeiras horas de setembro em UTC foram baixados. A geração de referência é uma estimativa ONS de produção
+complemento das três primeiras horas de setembro em UTC foram baixados no
+ambiente em que os experimentos foram executados. A geração de referência é uma estimativa ONS de produção
 sem limitação, não uma medição direta do potencial físico. Antes de treinar,
 auditar as linhas em que a referência excede a disponibilidade e o relatório
 de junção ONS–ERA5. O snapshot `data/processed/training/pilot_2024_08.parquet`
@@ -56,8 +57,13 @@ snapshot, a geração de referência supera a disponibilidade em 17.709 linhas
 e a capacidade instalada em 109. É preciso decidir com critério de domínio
 como tratar esses casos antes de treinar e comparar hiperparâmetros.
 
+O snapshot, os relatórios e os artefatos desse piloto são locais/ignorados e
+não estão presentes no checkout auditado em 25 de setembro de 2026. Para
+reproduzir os resultados, eles precisam ser reconstruídos a partir das fontes
+e dos manifests; não presumir que os caminhos citados abaixo já existam.
+
 O procedimento abaixo documenta o piloto anterior de janeiro de 2024 com
-geração verificada. Para o piloto atual de potencial, usar agosto de 2024 e
+geração verificada. Para reconstruir o piloto de potencial, usar agosto de 2024 e
 `--ons-format restriction` na junção. Executar os comandos dentro de
 `backend/ai-service`. A [ONS publica a geração horária por mês](https://dados.ons.org.br/dataset/geracao-usina-2);
 o [ERA5 fornece clima horário histórico](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels?tab=overview).
@@ -134,22 +140,25 @@ capturar mais variação sazonal, mantendo a consistência cadastral.
 **Concluído quando:** cada linha do snapshot anual tem uma usina, uma hora UTC,
 clima e geração do mesmo instante, com a origem verificável.
 
-## 4. Adaptar o treino para várias usinas
+## 4. Consolidar o treino para várias usinas
 
-Hoje `training/build_dataset.py` rejeita mais de uma usina e o artefato
-experimental só atende a usina treinada. Implementar:
+`training/build_dataset.py` já aceita explicitamente várias usinas com
+`allow_multiple_plants: true`, usa chave única `usina_id + timestamp_utc` e os
+experimentos 3 a 6 executaram um split temporal comum. O metadata também
+registra métricas de validação/teste por usina e faixa de vento. Ainda falta:
 
-1. Dataset com chave única `usina_id + timestamp_utc`, cobertura e exclusões
-   por usina e por mês.
-2. Features disponíveis também quando o usuário enviar o clima. Evitar campos
-   conhecidos somente depois da hora estimada.
-3. Split temporal comum: dados mais antigos para treino, período seguinte
-   para validação e período final **intocado** para teste. Criar também uma
-   avaliação com usinas não vistas se o modelo precisar generalizar para elas.
-4. Métricas da curva física e do híbrido por usina, mês e faixa de vento, além
-   da média geral. A aprovação não deve esconder usinas com erros altos.
-5. Artefato versionado e carregamento explícito pela API. Registrar o snapshot,
-   o alvo, os parâmetros, as métricas e as usinas cobertas.
+1. Medir e registrar cobertura/exclusões por usina **e por mês**, não apenas no
+   agregado do experimento.
+2. Garantir que todas as features estejam disponíveis no upload climático. A
+   implementação atual do cenário valida, mas descarta temperatura e pressão.
+3. Criar avaliação explícita com usinas não vistas se o modelo precisar
+   generalizar além dos IDs usados no treino.
+4. Definir critérios de aprovação que não escondam conjuntos com erro alto,
+   mesmo quando a métrica geral melhora.
+5. Versionar e publicar o snapshot, os relatórios e o artefato aprovado de modo
+   reproduzível; os resultados atuais existem apenas como documentação.
+6. Integrar o cenário climático ao `Predictor`. Hoje ele chama diretamente a
+   curva física, independentemente de haver um artefato experimental.
 
 **Concluído quando:** o mesmo código treina e avalia várias usinas sem vazamento
 temporal, e a API identifica claramente quando usa o modelo ou a curva física.
@@ -172,11 +181,11 @@ Depois de validar os dados e o treino multiusina:
    MAE geral. Se falhar, manter fallback e revisar dados/abordagem antes de
    iniciar outra rodada com um teste ainda intocado.
 
-O pipeline atual registra sobretudo métricas de **teste** no metadata e usa o
-teste para `approved`. Para fazer a seleção acima corretamente, primeiro
-registrar métricas de validação dos candidatos e reservar o teste final para
-aceite. Os experimentos 1 e 2 já consultaram o mesmo teste; eles permanecem
-como provas do pipeline, não como seleção definitiva de hiperparâmetros.
+O pipeline já registra métricas de validação e teste no metadata, mas ainda usa
+o teste para preencher `approved`. Os experimentos 3 a 6 escolheram o candidato
+pela validação e só depois compararam o teste; como esse teste já foi consultado
+nas quatro rodadas, ele não deve orientar novas alterações. Uma rodada de
+produção precisa reservar outro período final ainda intocado.
 
 **Não é preciso mudar parâmetros fixos no código após escolher um candidato.**
 `TrainingConfig` já aceita a seção `lightgbm` no JSON. Preserve os padrões como
@@ -185,7 +194,7 @@ explicitamente para esse artefato e registrar sua versão.
 
 ## 6. Entregar o fluxo da fase 2
 
-Definir e implementar o contrato do arquivo climático do usuário: identificação
+Fechar e implementar o contrato do arquivo climático do usuário: identificação
 por CEG/usina, hora com timezone, `u100` e `v100` em m/s, temperatura e pressão
 nas unidades esperadas, além da disponibilidade ou hipótese escolhida na etapa
 1. Validar cobertura, duplicatas e correspondência com o cadastro. Para a hora
@@ -194,7 +203,8 @@ geração pelas barras e exportar **um PWF para essa hora**. Testar a interface 
 ponta a ponta com um arquivo e um PWF reais.
 
 **Concluído quando:** upload, escolha da hora, estimativas, revisão das barras e
-exportação funcionam sem mocks e preservam os campos não editados do PWF.
+exportação funcionam sem mocks, preservam os campos não editados do PWF e
+atendem aos critérios de [Auditoria da fase 2](AUDITORIA_FASE_2.md).
 
 ## Depois: fase 3
 

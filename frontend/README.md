@@ -1,8 +1,10 @@
 # ClimaGrid — frontend
 
 > Leia [`../Docs/CONTEXTO_PROJETO_IA.md`](../Docs/CONTEXTO_PROJETO_IA.md) antes de
-> alterar o fluxo. A etapa 1 está implementada; o fluxo inicial da etapa 2
-> aceita CSV e calcula potencial eólico com curva física genérica.
+> alterar o fluxo. A etapa 1 está implementada; o protótipo da etapa 2 aceita
+> CSV normalizado e calcula potencial eólico com curva física genérica. As
+> pendências estão em
+> [`../Docs/ML/AUDITORIA_FASE_2.md`](../Docs/ML/AUDITORIA_FASE_2.md).
 
 Interface do MVP para reproduzir a geração eólica observada em uma hora,
 mapear conjuntos ONS para barras elétricas e gerar um PWF para estudo no
@@ -55,7 +57,7 @@ O formato e as limitações do CSV estão em [`Docs/ML/CENARIO_CLIMATICO_FASE_2.
 Roadmap da interface:
 
 1. replay histórico observado — implementado;
-2. arquivo climático do usuário e PWF de uma hora — implementação inicial em validação;
+2. arquivo climático do usuário e PWF de uma hora — protótipo ponta a ponta em validação;
 3. hora futura prevista — pós-MVP;
 4. curtailment — fora do MVP.
 
