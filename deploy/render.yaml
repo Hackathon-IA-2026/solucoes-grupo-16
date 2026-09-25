@@ -1,0 +1,32 @@
+services:
+  # Frontend Next.js — usa a imagem publicada no Docker Hub
+  - type: web
+    name: climagrid-frontend
+    image: docker.io/victorszcruzpoli/climagrid-frontend:latest
+    env: docker
+    envVars:
+      - key: NEXT_PUBLIC_API_BASE_URL
+        value: https://<backend-url>
+
+  # Backend NestJS — aponta para a imagem do backend
+  - type: web
+    name: climagrid-backend
+    image: docker.io/victorszcruzpoli/climagrid-backend:latest
+    env: docker
+    envVars:
+      - key: AI_SERVICE_URL
+        value: http://climagrid-ai-service:8000
+      - key: NODE_ENV
+        value: production
+
+  # AI service (FastAPI) — marque como privado no painel do Render se desejar
+  - type: web
+    name: climagrid-ai-service
+    image: docker.io/victorszcruzpoli/climagrid-ai-service:sha-7bb0172
+    env: docker
+    plan: starter
+    envVars:
+      - key: DATA_PATH
+        value: /service/data
+      - key: ARTIFACTS_PATH
+        value: /service/artifacts

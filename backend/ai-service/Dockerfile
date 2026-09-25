@@ -13,6 +13,7 @@ RUN apt-get update \
 COPY requirements.txt constraints.txt ./
 RUN python -m pip install --no-cache-dir -r requirements.txt
 COPY --chown=app:app . .
+COPY --chown=app:app .runtime-data/ /service/data/
 
 RUN mkdir -p /service/data /service/artifacts \
     && chown -R app:app /service

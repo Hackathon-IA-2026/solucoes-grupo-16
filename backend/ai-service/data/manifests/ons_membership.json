@@ -1,7 +1,7 @@
 {
   "source_url": "https://ons-aws-prod-opendata.s3.amazonaws.com/dataset/usina_conjunto/RELACIONAMENTO_USINA_CONJUNTO.parquet",
-  "downloaded_at": "2026-09-24T02:30:20.777055+00:00",
-  "path": "C:\\Code\\hackathon\\solucoes-grupo-16\\backend\\ai-service\\data\\raw\\ons\\relacionamento_usina_conjunto.parquet",
-  "size_bytes": 69712,
-  "sha256": "c6b7581333ebd5fd1e771ca871c5a8b3f66ddbf32b946d2e1a10643fc3842fe8"
+  "downloaded_at": "2026-09-25T07:01:31.568460+00:00",
+  "path": "/service/data/raw/ons/relacionamento_usina_conjunto.parquet",
+  "size_bytes": 69707,
+  "sha256": "9d1ac6c30981c7d1ba005855532948b395c2e0a1da536a8a64263d220c31fbf2"
 }

@@ -16,3 +16,5 @@ data/**/*.parquet
 data/**/*.json
 artifacts/**/*.txt
 artifacts/**/*.json
+.runtime-data/*
+!.runtime-data/.gitkeep
