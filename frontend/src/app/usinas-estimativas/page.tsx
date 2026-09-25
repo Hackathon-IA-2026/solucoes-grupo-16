@@ -121,7 +121,6 @@ export default function HistoricalObservationsPage() {
                         : "Indisponível"}
                     </td>
                     <td className="px-3 py-4 text-right font-mono text-sm text-on-surface-variant">{plant.historicalAvailabilityPercent.toLocaleString("pt-BR")}%</td>
-                    <td className="px-4 py-4"><RiskBadge level={plant.riskLevel} reason={plant.probableReason} /></td>
                   </tr>
                 ))}
               </tbody>
