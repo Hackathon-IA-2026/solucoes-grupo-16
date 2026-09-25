@@ -7,6 +7,12 @@
 
 ## Conclusão
 
+**Incremento posterior à auditoria:** a interface também permite escolher uma
+hora histórica e buscar o vento diretamente no Copernicus ERA5. O serviço
+reutiliza ou prepara a partição mensal sem usar geração ONS no cálculo, exige
+confirmação de uma disponibilidade global e persiste o CSV normalizado gerado,
+seus hashes e a origem ERA5. O upload CSV original continua disponível.
+
 A branch contém um **protótipo ponta a ponta executável** da fase 2:
 
 1. recebe um CSV climático normalizado;
@@ -108,9 +114,10 @@ por conjunto ONS, com `u100`/`v100` derivados do ERA5 e disponibilidade de
 outra fonte. ERA5 NetCDF/GRIB não possui `usina_id` do ClimaGrid nem
 disponibilidade eletromecânica.
 
-Ainda faltam um arquivo-modelo gerado pela aplicação e um procedimento
-operacional de conversão do ERA5 nativo. Até isso existir, a interface e a
-documentação devem prometer somente o CSV normalizado.
+A busca direta no CDS passou a gerar e persistir o CSV normalizado sem exigir
+conversão manual do usuário. Ainda falta um arquivo-modelo gerado pela aplicação
+para quem optar pelo upload próprio; upload de NetCDF/GRIB continua fora do
+contrato.
 
 ### Persistência e autoridade do servidor
 

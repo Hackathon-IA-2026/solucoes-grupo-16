@@ -1,4 +1,4 @@
-export type ClimateSource = "historical" | "upload";
+export type ClimateSource = "historical" | "upload" | "era5";
 
 export interface ClimateScenario {
   id: string;
@@ -22,6 +22,12 @@ export interface ClimateScenario {
     catalogSha256: string;
     mappingSha256: string | null;
     estimatorVersion: string;
+    weatherDataVersion?: string;
+    era5Sha256?: string;
+    availabilitySource?: "USER_FILE" | "USER_GLOBAL_ASSUMPTION";
+    availabilityValue?: number;
+    excludedPlantIds?: string[];
+    catalogCoveragePercent?: number;
   };
 }
 
@@ -182,6 +188,7 @@ export interface SystemCapabilities {
     historicalOnDemand?: boolean;
     historicalEstimates: boolean;
     fileUpload: boolean;
+    era5Scenario?: boolean;
   };
   model: {
     version: string;

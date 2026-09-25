@@ -24,6 +24,7 @@ interface ProcessScenarioInput {
   resolutionMinutes: 30 | 60;
   file?: File;
   rowCount?: number;
+  availability?: number;
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
@@ -55,6 +56,30 @@ async function processScenario(input: ProcessScenarioInput): Promise<ProcessScen
       "/climate-scenarios/file/estimate", { method: "POST", body: formData },
     );
     return { scenario: result.scenario, estimates: result.observations };
+  }
+  if (input.source === "era5") {
+    if (!apiBaseUrl) throw new Error("O cenário ERA5 exige a API do ClimaGrid.");
+    if (input.availability === undefined || input.availability < 0 || input.availability > 1) {
+      throw new Error("Informe uma disponibilidade entre 0 e 1.");
+    }
+    type Era5Result = {
+      scenario: ClimateScenario;
+      observations: ProcessScenarioResult["estimates"];
+    } | { status: "preparing"; message: string };
+    const payload = JSON.stringify({
+      timestamp: new Date(input.timestamp).toISOString(),
+      availability: input.availability,
+    });
+    for (let attempt = 0; attempt < 240; attempt += 1) {
+      const result = await requestJson<Era5Result>("/climate-scenarios/era5/estimate", {
+        method: "POST", body: payload,
+      });
+      if (!("status" in result)) {
+        return { scenario: result.scenario, estimates: result.observations };
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 5000));
+    }
+    throw new Error("A coleta do ERA5 demorou mais de 20 minutos. Tente novamente; os arquivos já baixados serão reutilizados.");
   }
   if (!apiBaseUrl) {
     await new Promise((resolve) => window.setTimeout(resolve, 650));
@@ -240,6 +265,7 @@ async function getCapabilities(): Promise<SystemCapabilities> {
         historicalOnDemand: false,
         historicalEstimates: false,
         fileUpload: false,
+        era5Scenario: false,
       },
       model: null,
       data: null,

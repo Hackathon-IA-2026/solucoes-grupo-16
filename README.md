@@ -14,10 +14,12 @@ possui quatro etapas:
 4. curtailment — por último e fora do MVP.
 
 O protótipo ponta a ponta da etapa 2 e as pendências para encerrá-la estão em
-[`Docs/ML/AUDITORIA_FASE_2.md`](Docs/ML/AUDITORIA_FASE_2.md). A entrada atual é
-um CSV normalizado por conjunto ONS, schema `normalized-ons-hourly-v1`; upload
-direto de ERA5 NetCDF/GRIB ainda não é suportado. O backend persiste o CSV, a
-estimativa e cada PWF exportado em manifestos verificáveis por hash.
+[`Docs/ML/AUDITORIA_FASE_2.md`](Docs/ML/AUDITORIA_FASE_2.md). O usuário pode
+enviar um CSV ou escolher uma hora histórica para busca direta no Copernicus
+ERA5. Nos dois caminhos, o servidor produz e persiste um CSV normalizado por
+conjunto ONS, schema `normalized-ons-hourly-v1`; upload de NetCDF/GRIB ainda não
+é suportado. O backend persiste o CSV, a estimativa e cada PWF exportado em
+manifestos verificáveis por hash.
 
 ## Arquitetura local
 
@@ -70,6 +72,17 @@ cp backend/.env.example backend/.env
 O arquivo `backend/ai-service/.env` só é necessário para sobrescrever caminhos
 ou configurar opções específicas da IA. Nunca faça commit de arquivos `.env`
 ou de chaves do Supabase/CDS.
+
+Para permitir a busca ERA5 sob demanda dentro do Docker, configure nesse
+arquivo as credenciais fornecidas pelo Copernicus CDS:
+
+```dotenv
+CDSAPI_URL=https://cds.climate.copernicus.eu/api
+CDSAPI_KEY=seu-token
+```
+
+O `~/.cdsapirc` do host não é montado automaticamente no contêiner. Em execução
+nativa, o `cdsapi` também pode usar esse arquivo normalmente.
 
 ### 3. Construir e iniciar
 

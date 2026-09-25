@@ -11,6 +11,7 @@ import pandas as pd
 
 from ingestion.common.io import atomic_write_json, atomic_write_parquet, read_tabular, sha256_file
 from ingestion.era5.cds_client import download_month
+from ingestion.era5.config import ERA5Paths
 from ingestion.era5.extract_points import extract_file
 from ingestion.era5.request_planner import build_monthly_request
 from ingestion.ons.hourly import join_ons_era5, prepare_ons_generation_hourly
@@ -32,6 +33,13 @@ def replay_partition(data_root: Path, timestamp: pd.Timestamp) -> Path:
             / f"month={local.month:02d}" / f"observations_utc_{timestamp.year:04d}-{timestamp.month:02d}.parquet")
 
 
+def weather_partition(data_root: Path, timestamp: pd.Timestamp) -> Path:
+    """Return the processed ERA5 partition used by an on-demand replay month."""
+    output = replay_partition(data_root, timestamp)
+    return (output.parent / f"utc={timestamp.year:04d}-{timestamp.month:02d}"
+            / "weather_hourly.parquet")
+
+
 def on_demand_configured() -> bool:
     return bool(os.getenv("CDSAPI_KEY") or (Path.home() / ".cdsapirc").is_file())
 
@@ -42,6 +50,45 @@ def validate_replay_date(timestamp: pd.Timestamp) -> None:
         raise ValueError("A coleta mensal de geração ONS está disponível a partir de janeiro de 2022.")
     if timestamp >= pd.Timestamp.now(tz="UTC").floor("h"):
         raise ValueError("Escolha uma hora histórica já encerrada; o replay não prevê datas futuras.")
+
+
+def validate_era5_scenario_date(timestamp: pd.Timestamp) -> None:
+    if (timestamp.year, timestamp.month) < EARLIEST_ONS_MONTH:
+        raise ValueError("O cenário ERA5 do MVP aceita horas a partir de janeiro de 2022.")
+    if timestamp >= pd.Timestamp.now(tz="UTC").floor("h"):
+        raise ValueError("Escolha uma hora histórica já encerrada; ERA5 não prevê datas futuras.")
+
+
+def prepare_era5_partition(
+    data_root: Path, catalog_path: Path, timestamp: pd.Timestamp
+) -> Path:
+    """Download and extract ERA5 with the existing catalog, without requiring ONS generation."""
+    timestamp = timestamp.tz_convert("UTC").floor("h")
+    validate_era5_scenario_date(timestamp)
+    if not on_demand_configured():
+        raise RuntimeError("Configure CDSAPI_KEY ou ~/.cdsapirc no AI service para baixar o ERA5 histórico.")
+    if not catalog_path.is_file():
+        raise RuntimeError("O catálogo de usinas não está disponível para extrair o ERA5.")
+    catalog = read_tabular(catalog_path)
+    request = build_monthly_request(
+        timestamp.year, timestamp.month, calculate_bounds(catalog)
+    )
+    paths = ERA5Paths(data_root)
+    raw = paths.raw_month(timestamp.year, timestamp.month)
+    raw_manifest = paths.raw_manifest(timestamp.year, timestamp.month)
+    weather = paths.weather_month(timestamp.year, timestamp.month)
+    processed_manifest = paths.processed_manifest(timestamp.year, timestamp.month)
+    download_month(request, raw, raw_manifest)
+    if not weather.is_file():
+        extract_file(
+            raw,
+            catalog,
+            weather,
+            processed_manifest,
+            request_hash=request.request_hash,
+            catalog_hash=sha256_file(catalog_path),
+        )
+    return weather
 
 
 def prepare_replay_partition(data_root: Path, timestamp: pd.Timestamp) -> Path:
@@ -92,7 +139,7 @@ def prepare_replay_partition(data_root: Path, timestamp: pd.Timestamp) -> Path:
     suffix = f"utc={request.label}"
     raw = output.parent / suffix / "era5.nc"
     raw_manifest = output.parent / suffix / "era5_download.json"
-    weather = output.parent / suffix / "weather_hourly.parquet"
+    weather = weather_partition(data_root, timestamp)
     weather_manifest = output.parent / suffix / "weather_processed.json"
     download_month(request, raw, raw_manifest)
     catalog_hash = sha256_file(catalog_path)

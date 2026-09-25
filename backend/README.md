@@ -52,6 +52,7 @@ GET /system/capabilities
 POST /climate-scenarios/historical
 POST /climate-scenarios/file/inspect
 POST /climate-scenarios/file/estimate
+POST /climate-scenarios/era5/estimate
 GET /climate-scenarios/:id
 ```
 

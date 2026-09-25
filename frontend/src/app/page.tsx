@@ -143,8 +143,8 @@ export default function HistoricalReplayPage() {
           Após selecionar as usinas e associá-las às barras, o sistema escreverá no campo Pg exatamente a geração observada nesta hora, preservando os demais blocos do caso base.
         </Notice>
         <section className="rounded-2xl border border-outline-variant/50 bg-surface-container-low p-5">
-          <h2 className="font-semibold">Tem um arquivo de vento próprio?</h2>
-          <p className="mt-2 text-sm text-on-surface-variant">Envie o clima e a disponibilidade de cada conjunto para estimar o potencial eólico de uma hora do arquivo.</p>
+          <h2 className="font-semibold">Quer estimar um cenário climático?</h2>
+          <p className="mt-2 text-sm text-on-surface-variant">Busque uma hora histórica diretamente no Copernicus ERA5 ou envie seu próprio clima e informe a disponibilidade para estimar o potencial eólico.</p>
           <Link href="/cenario-climatico" className="button-secondary mt-4">Criar cenário climático</Link>
         </section>
       </div>

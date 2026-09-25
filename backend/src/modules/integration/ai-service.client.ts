@@ -29,6 +29,7 @@ export interface AiCapabilities {
     historical_on_demand?: boolean;
     historical_estimates: boolean;
     climate_file_upload: boolean;
+    climate_era5_scenario?: boolean;
     physical_fallback: boolean;
   };
 }
@@ -89,8 +90,9 @@ export interface AiClimateFileEstimate {
   resolution_minutes: 60;
   data_version: string;
   generation_source: 'PHYSICAL_CURVE';
-  weather_source: 'USER';
+  weather_source: 'USER' | 'ERA5';
   row_count: number;
+  normalized_csv?: string;
   warnings: string[];
   provenance: {
     input_schema_version: 'normalized-ons-hourly-v1';
@@ -98,6 +100,12 @@ export interface AiClimateFileEstimate {
     catalog_sha256: string;
     mapping_sha256: string | null;
     estimator_version: string;
+    availability_source?: 'USER_FILE' | 'USER_GLOBAL_ASSUMPTION';
+    availability_value?: number;
+    weather_data_version?: string;
+    era5_sha256?: string;
+    excluded_usina_ids?: string[];
+    catalog_coverage_percent?: number;
     physical_curve: {
       cut_in_ms: number;
       rated_ms: number;
@@ -121,7 +129,7 @@ export interface AiClimateFileEstimate {
     wind_direction_degrees: number;
     availability: number;
     generation_source: 'PHYSICAL_CURVE';
-    weather_source: 'USER';
+    weather_source: 'USER' | 'ERA5';
     suggested_bus_allocations: AiHistoricalReplayResponse['observations'][number]['suggested_bus_allocations'];
     mapping_coverage_percent: number;
     warnings: string[];
@@ -163,6 +171,23 @@ export class AiServiceClient {
     return this.request<AiClimateFileEstimate>('/cenario-climatico/estimar', {
       method: 'POST', body: JSON.stringify({ csv_text: csvText, timestamp_utc: timestampUtc }),
     }, 120_000);
+  }
+
+  async estimateClimateEra5(
+    timestampUtc: string,
+    availability: number,
+  ): Promise<AiClimateFileEstimate | AiHistoricalPreparationResponse> {
+    return this.request<AiClimateFileEstimate | AiHistoricalPreparationResponse>(
+      '/cenario-climatico/era5/estimar',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          timestamp_utc: timestampUtc,
+          availability,
+        }),
+      },
+      120_000,
+    );
   }
 
   private async request<T>(

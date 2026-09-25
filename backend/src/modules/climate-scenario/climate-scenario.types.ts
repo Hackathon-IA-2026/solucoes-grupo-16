@@ -14,7 +14,7 @@ export interface ClimateScenarioManifest {
   timestamp: string;
   resolutionMinutes: 60;
   generationSource: 'PHYSICAL_CURVE';
-  weatherSource: 'USER';
+  weatherSource: 'USER' | 'ERA5';
   dataVersion: string;
   input: {
     schemaVersion: 'normalized-ons-hourly-v1';
@@ -23,11 +23,18 @@ export interface ClimateScenarioManifest {
     sha256: string;
     mediaType: 'text/csv';
     rowCount: number;
+    source?: 'user_upload' | 'era5_cds_generated';
   };
   provenance: {
     catalogSha256: string;
     mappingSha256: string | null;
     estimatorVersion: string;
+    weatherDataVersion?: string;
+    era5Sha256?: string;
+    availabilitySource?: 'USER_FILE' | 'USER_GLOBAL_ASSUMPTION';
+    availabilityValue?: number;
+    excludedPlantIds?: string[];
+    catalogCoveragePercent?: number;
     physicalCurve: {
       cutInMs: number;
       ratedMs: number;

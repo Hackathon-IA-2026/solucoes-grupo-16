@@ -15,8 +15,10 @@ import pandas as pd
 from ingestion.common.io import sha256_file
 
 from app.predictor import Predictor
-from app.historical_ingestion import (on_demand_configured, prepare_replay_partition,
-                                      replay_partition, validate_replay_date)
+from app.historical_ingestion import (on_demand_configured, prepare_era5_partition,
+                                      prepare_replay_partition, replay_partition,
+                                      validate_era5_scenario_date, validate_replay_date,
+                                      weather_partition)
 from app.schemas import (
     HistoricalAvailabilityResponse,
     HistoricalBusAllocation,
@@ -87,6 +89,11 @@ class HistoricalScenarioService:
                 "year=*/month=*/weather_hourly.parquet"
             )
         )
+        era5_partitions.extend(
+            (self.data_root / "processed" / "historical").glob(
+                "year=*/month=*/utc=*/weather_hourly.parquet"
+            )
+        )
         ons_snapshots = list((self.data_root / "raw" / "ons").glob("**/*.parquet"))
         availability = self.availability()
         return {
@@ -111,6 +118,8 @@ class HistoricalScenarioService:
                 "historical_on_demand": on_demand_configured(),
                 "historical_estimates": False,
                 "climate_file_upload": self.catalog_path.is_file(),
+                "climate_era5_scenario": self.catalog_path.is_file()
+                and (bool(era5_partitions) or on_demand_configured()),
                 "physical_fallback": True,
             },
         }
@@ -149,7 +158,7 @@ class HistoricalScenarioService:
         if self._find_snapshot(selected) is not None:
             return self.replay(request)
         try:
-            validate_replay_date(selected)
+            validate_era5_scenario_date(selected)
         except ValueError as exc:
             raise HistoricalDataUnavailable(str(exc)) from exc
         if not on_demand_configured():
@@ -179,6 +188,112 @@ class HistoricalScenarioService:
         except Exception as exc:
             raise HistoricalDataUnavailable(f"Falha na coleta histórica: {exc}") from exc
         return self.replay(request)
+
+    def request_era5_weather(self, timestamp: datetime) -> Path | dict:
+        """Return plant-level ERA5 weather, preparing the monthly cache when needed."""
+        selected = pd.Timestamp(timestamp).tz_convert("UTC").floor("h")
+        cached_weather = (self.data_root / "processed" / "era5"
+                          / f"year={selected.year:04d}" / f"month={selected.month:02d}"
+                          / "weather_hourly.parquet")
+        weather = weather_partition(self.data_root, selected)
+        for candidate in (weather, cached_weather):
+            if self._weather_contains(candidate, selected):
+                return candidate
+        try:
+            validate_replay_date(selected)
+        except ValueError as exc:
+            raise HistoricalDataUnavailable(str(exc)) from exc
+        if not on_demand_configured():
+            raise HistoricalDataUnavailable(
+                "Esta hora não está no cache. Configure CDSAPI_KEY ou ~/.cdsapirc no AI service "
+                "para baixar o ERA5 histórico sob demanda."
+            )
+        key = str(cached_weather)
+        with self._jobs_lock:
+            future = self._jobs.get(key)
+            if future is None:
+                if sum(not job.done() for job in self._jobs.values()) >= 2:
+                    raise HistoricalDataUnavailable(
+                        "Já há duas coletas históricas em andamento. Aguarde e tente novamente."
+                    )
+                future = self._executor.submit(
+                    prepare_era5_partition,
+                    self.data_root,
+                    self.catalog_path,
+                    selected,
+                )
+                self._jobs[key] = future
+        if not future.done():
+            return {
+                "status": "preparing",
+                "message": (
+                    "Baixando e processando o ERA5. O primeiro acesso ao mês "
+                    "pode levar alguns minutos."
+                ),
+            }
+        with self._jobs_lock:
+            self._jobs.pop(key, None)
+        try:
+            future.result()
+        except Exception as exc:
+            raise HistoricalDataUnavailable(f"Falha na coleta do ERA5: {exc}") from exc
+        if not self._weather_contains(cached_weather, selected):
+            raise HistoricalDataUnavailable(
+                "A hora solicitada não possui vento ERA5 processado para os conjuntos cadastrados."
+            )
+        return cached_weather
+
+    def catalog_path_for_timestamp(self, timestamp: datetime, weather: Path | None = None) -> Path:
+        selected = pd.Timestamp(timestamp).tz_convert("UTC").floor("h")
+        cached_weather = (self.data_root / "processed" / "era5"
+                          / f"year={selected.year:04d}" / f"month={selected.month:02d}"
+                          / "weather_hourly.parquet")
+        if weather == cached_weather:
+            return self.catalog_path
+        monthly = replay_partition(self.data_root, selected).parent / "catalog.parquet"
+        return monthly if monthly.is_file() else self.catalog_path
+
+    def era5_provenance(self, timestamp: datetime, weather: Path) -> dict:
+        selected = pd.Timestamp(timestamp).tz_convert("UTC").floor("h")
+        report = replay_partition(self.data_root, selected).with_name(
+            f"join_report_utc={selected.year:04d}-{selected.month:02d}.json"
+        )
+        details: dict = {
+            "weather_data_version": f"era5-weather-sha256-{sha256_file(weather)}",
+        }
+        if report.is_file():
+            try:
+                payload = json.loads(report.read_text(encoding="utf-8"))
+                if payload.get("era5_sha256"):
+                    details["era5_sha256"] = payload["era5_sha256"]
+            except (OSError, ValueError, TypeError):
+                pass
+        else:
+            manifest = (self.data_root / "manifests" / "era5"
+                        / f"year={selected.year:04d}" / f"month={selected.month:02d}"
+                        / "download.json")
+            if manifest.is_file():
+                try:
+                    payload = json.loads(manifest.read_text(encoding="utf-8"))
+                    if payload.get("sha256"):
+                        details["era5_sha256"] = payload["sha256"]
+                except (OSError, ValueError, TypeError):
+                    pass
+        return details
+
+    @staticmethod
+    def _weather_contains(path: Path, selected: pd.Timestamp) -> bool:
+        if not path.is_file():
+            return False
+        try:
+            timestamps = pd.to_datetime(
+                pd.read_parquet(path, columns=["timestamp_utc"])["timestamp_utc"],
+                utc=True,
+                errors="coerce",
+            )
+        except (OSError, KeyError, ValueError):
+            return False
+        return bool(timestamps.eq(selected).any())
 
     def _find_snapshot(self, selected: pd.Timestamp) -> Path | None:
         for path in (self.snapshot_path, replay_partition(self.data_root, selected)):

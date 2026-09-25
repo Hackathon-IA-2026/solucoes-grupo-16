@@ -19,7 +19,7 @@ de fluxo de potência nem afirma que o caso converge.
 | Etapa | Estado | Entrega | Limite |
 | --- | --- | --- | --- |
 | 1. Replay histórico | **Implementada** | Escolher uma hora existente, recuperar geração ONS observada e vento ERA5, mapear barras e exportar PWF | Não há previsão de IA |
-| 2. Arquivo climático do usuário | **Protótipo ponta a ponta em validação** | Upload CSV, escolha da hora, curva física de potencial e fluxo até PWF | CSV normalizado e rastreabilidade persistida; ainda faltam aprovação de cobertura/domínio e aceite no ANAREDE |
+| 2. Cenário climático | **Protótipo ponta a ponta em validação** | Upload CSV ou busca ERA5 histórica, escolha da hora, curva física de potencial e fluxo até PWF | CSV normalizado e rastreabilidade persistida; ainda faltam aprovação de cobertura/domínio e aceite no ANAREDE |
 | 3. Hora futura | **Pós-MVP** | Escolher uma hora futura, estimar geração com um modelo e exportar um PWF daquele instante | Exige fonte/hipótese meteorológica futura explícita |
 | 4. Curtailment | **Por último — fora do MVP** | Estimar risco, montante e causa provável de restrição | Não se confunde com potencial eólico ou geração bruta |
 
@@ -55,7 +55,7 @@ efetiva das horas recentes depende do atraso de publicação das fontes. Nenhuma
 conciliados. Consulte [`OPERACAO_HISTORICO_MENSAL.md`](OPERACAO_HISTORICO_MENSAL.md)
 para a carga planejada de períodos maiores.
 
-### Etapa 2 — arquivo climático do usuário
+### Etapa 2 — cenário climático
 
 Esta etapa encerra o MVP. O fluxo CSV e a estimativa física inicial estão
 implementados. Um smoke test com `CEECVA` e um PWF real de 2040 percorreu os
@@ -63,9 +63,9 @@ três serviços, preservou o tamanho do arquivo e alterou a barra esperada. Isso
 valida a integração técnica mínima, mas ainda não constitui aceite da fase.
 Fluxo:
 
-1. usuário envia um arquivo climático;
-2. backend valida formato, unidades, timezone e duplicatas;
-3. usuário seleciona uma hora presente no arquivo;
+1. usuário envia um arquivo climático ou escolhe uma hora histórica do ERA5;
+2. backend valida o CSV ou busca e normaliza o ERA5 pelo catálogo;
+3. usuário seleciona a hora e informa a disponibilidade quando usa ERA5;
 4. serviço valida cadastro/capacidade para a hora, calcula a geração esperada
    de cada conjunto/usina e persiste CSV, proveniência e observações;
 5. usuário revisa usinas e alocações de barras;
@@ -74,7 +74,7 @@ Fluxo:
 7. backend persiste o PWF e seu manifesto de exportação;
 8. especialista abre o arquivo no ANAREDE.
 
-O contrato implementado está em [`ML/CENARIO_CLIMATICO_FASE_2.md`](ML/CENARIO_CLIMATICO_FASE_2.md). O mínimo aceito é:
+O contrato implementado está em [`ML/CENARIO_CLIMATICO_FASE_2.md`](ML/CENARIO_CLIMATICO_FASE_2.md). No upload, o mínimo aceito é:
 
 - `timestamp_utc` com timezone;
 - `usina_id` do conjunto ONS conciliado no catálogo por CEG;
@@ -83,8 +83,10 @@ O contrato implementado está em [`ML/CENARIO_CLIMATICO_FASE_2.md`](ML/CENARIO_C
 - disponibilidade entre 0 e 1 por conjunto e hora;
 - uma linha por usina e hora, sem duplicatas.
 
-Somente CSV está implementado para esta etapa. Parquet e NetCDF ainda não são
-aceitos. O contrato do MVP é **CSV normalizado por conjunto ONS**, schema
+O upload aceita somente CSV; Parquet e NetCDF enviados pelo navegador ainda
+não são aceitos. Como alternativa, a interface busca uma hora histórica no
+Copernicus CDS, extrai o ERA5 pelo catálogo e pede uma hipótese explícita de
+disponibilidade. Nos dois caminhos, o contrato persistido do MVP é **CSV normalizado por conjunto ONS**, schema
 `normalized-ons-hourly-v1`, não um arquivo ERA5 nativo: `u100` e `v100` podem
 vir do ERA5, mas `usina_id` e disponibilidade
 precisam vir da preparação/cadastro. A série ONS de geração verificada não
@@ -146,6 +148,7 @@ Endpoints operacionais dos fluxos atuais:
 - `GET /system/capabilities`;
 - `POST /climate-scenarios/historical`;
 - `POST /climate-scenarios/file/inspect` e `POST /climate-scenarios/file/estimate`;
+- `POST /climate-scenarios/era5/estimate`;
 - `GET /climate-scenarios/:id`;
 - `POST /pwf/reference-cases`;
 - `GET /pwf/reference-cases/:id/generation-targets`;
@@ -164,8 +167,9 @@ Endpoints operacionais dos fluxos atuais:
 - Os casos PWF reais disponíveis não contêm `DGEI`/`DGER`; a preservação desses
   blocos foi coberta por teste sintético, mas o aceite final deve ocorrer no
   ANAREDE com um caso representativo.
-- A entrada da etapa 2 é CSV normalizado; upload direto de ERA5 NetCDF/GRIB não
-  está implementado.
+- A entrada persistida da etapa 2 é CSV normalizado. Upload direto de ERA5
+  NetCDF/GRIB não está implementado, mas o servidor pode buscar e normalizar
+  ERA5 histórico sob demanda.
 - Cenários estimados e seus PWFs são persistidos no disco/volume local com
   manifestos e hashes. Ainda não há réplica em Supabase, política de retenção ou
   backup para um ambiente distribuído.

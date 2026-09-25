@@ -8,6 +8,7 @@ import math
 from dataclasses import asdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from uuid import uuid4
 
 import pandas as pd
@@ -104,6 +105,21 @@ def parse_climate_csv(csv_text: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _fully_reconciled_ids(catalog: pd.DataFrame, timestamp: datetime) -> set[str]:
+    active = pd.Series(True, index=catalog.index)
+    if "relationship_start" in catalog:
+        start = pd.to_datetime(catalog["relationship_start"], utc=True, errors="coerce")
+        active &= start.isna() | start.le(timestamp)
+    if "relationship_end" in catalog:
+        end = pd.to_datetime(catalog["relationship_end"], utc=True, errors="coerce")
+        active &= end.isna() | end.add(pd.Timedelta(days=1)).gt(timestamp)
+    active_catalog = catalog.loc[active]
+    all_status = active_catalog.groupby("usina_id")["match_status"].apply(
+        lambda values: values.eq("matched").all()
+    )
+    return set(all_status[all_status].index.astype(str))
+
+
 @dataclass
 class ClimateFileService:
     historical: HistoricalScenarioService
@@ -115,27 +131,34 @@ class ClimateFileService:
                 "timestamps": [timestamp.isoformat() for timestamp in instants],
                 "sha256": hashlib.sha256(csv_text.encode("utf-8")).hexdigest()}
 
-    def estimate(self, csv_text: str, selected_timestamp: str) -> dict:
+    def estimate(
+        self,
+        csv_text: str,
+        selected_timestamp: str,
+        *,
+        catalog_path: Path | None = None,
+        weather_source: str = "USER",
+        source_provenance: dict | None = None,
+    ) -> dict:
         frame = parse_climate_csv(csv_text)
         timestamp = parse_timestamp(selected_timestamp)
         selected = frame.loc[frame.timestamp_utc.eq(timestamp)].copy()
         if selected.empty:
             raise ClimateFileError("A hora escolhida não existe no CSV.")
-        catalog_path = self.historical.catalog_path
+        catalog_path = catalog_path or self.historical.catalog_path
         if not catalog_path.is_file():
             raise ClimateFileError("O catálogo de usinas não está disponível.")
         catalog = pd.read_parquet(catalog_path)
         if not {"usina_id", "id_ons", "capacidade_instalada_mw", "match_status"}.issubset(catalog.columns):
             raise ClimateFileError("O catálogo não possui os campos necessários.")
-        all_status = catalog.groupby("usina_id")["match_status"].apply(lambda values: values.eq("matched").all())
-        invalid = sorted(set(selected.usina_id) - set(all_status[all_status].index))
+        invalid = sorted(set(selected.usina_id) - _fully_reconciled_ids(catalog, timestamp))
         if invalid:
             raise ClimateFileError(f"Usinas sem cadastro totalmente conciliado: {', '.join(invalid)}.")
         capacity = _capacity_by_hour(selected, catalog.loc[catalog.match_status.eq("matched")])
         selected = selected.merge(capacity, on=["usina_id", "timestamp_utc"], how="left", validate="one_to_one")
         if selected.capacidade_instalada_mw.isna().any() or selected.capacidade_instalada_mw.le(0).any():
             raise ClimateFileError("Há usinas sem capacidade válida na hora escolhida.")
-        metadata = self.historical._catalog_by_plant()
+        metadata = self.historical._catalog_by_plant(catalog_path)
         allocations = self.historical._bus_allocations(pd.Timestamp(timestamp))
         observations = []
         global_warnings: set[str] = set()
@@ -164,19 +187,100 @@ class ClimateFileService:
                 "capacity_factor_percent": round(generation / row.capacidade_instalada_mw * 100, 3),
                 "u100": row.u100, "v100": row.v100, "wind_speed_mps": round(speed, 6),
                 "wind_direction_degrees": round(direction, 3), "availability": row.disponibilidade,
-                "generation_source": "PHYSICAL_CURVE", "weather_source": "USER",
+                "generation_source": "PHYSICAL_CURVE", "weather_source": weather_source,
                 "suggested_bus_allocations": [{"bus_number": item["bus_number"], "bus_name": item["bus_name"],
                     "allocation_factor": round(item["allocation_factor"], 9),
                     "allocated_generation_mw": round(generation * item["allocation_factor"], 6)}
                     for item in allocation.get("allocations", [])],
                 "mapping_coverage_percent": round(coverage, 3), "warnings": warnings})
         digest = hashlib.sha256(csv_text.encode("utf-8")).hexdigest()
+        data_prefix = "user-csv" if weather_source == "USER" else "era5-generated-csv"
+        provenance = {"input_schema_version": INPUT_SCHEMA_VERSION,
+            "input_sha256": digest, "catalog_sha256": _sha256_file(catalog_path),
+            "mapping_sha256": _sha256_file(self.historical.mapping_path),
+            "estimator_version": ESTIMATOR_VERSION,
+            "availability_source": "USER_FILE" if weather_source == "USER" else "USER_GLOBAL_ASSUMPTION",
+            "physical_curve": asdict(curve)}
+        provenance.update(source_provenance or {})
         return {"scenario_id": str(uuid4()), "subsystem": "NE", "timestamp": timestamp.isoformat(),
-            "resolution_minutes": 60, "data_version": f"user-csv-sha256-{digest}",
-            "generation_source": "PHYSICAL_CURVE", "weather_source": "USER",
+            "resolution_minutes": 60, "data_version": f"{data_prefix}-sha256-{digest}",
+            "generation_source": "PHYSICAL_CURVE", "weather_source": weather_source,
             "row_count": len(frame), "observations": observations, "warnings": sorted(global_warnings),
-            "provenance": {"input_schema_version": INPUT_SCHEMA_VERSION,
-                "input_sha256": digest, "catalog_sha256": _sha256_file(catalog_path),
-                "mapping_sha256": _sha256_file(self.historical.mapping_path),
-                "estimator_version": ESTIMATOR_VERSION,
-                "physical_curve": asdict(curve)}}
+            "provenance": provenance}
+
+    def estimate_from_era5(self, selected_timestamp: str, availability: float) -> dict:
+        timestamp = parse_timestamp(selected_timestamp)
+        if not math.isfinite(availability) or not 0 <= availability <= 1:
+            raise ClimateFileError("A disponibilidade deve estar entre 0 e 1.")
+        weather_result = self.historical.request_era5_weather(timestamp)
+        if isinstance(weather_result, dict):
+            return weather_result
+        weather = pd.read_parquet(weather_result)
+        required = {"timestamp_utc", "usina_id", "u100", "v100"}
+        missing = sorted(required - set(weather.columns))
+        if missing:
+            raise ClimateFileError(
+                f"A partição ERA5 não possui os campos necessários: {missing}."
+            )
+        weather = weather.copy()
+        weather["timestamp_utc"] = pd.to_datetime(
+            weather["timestamp_utc"], utc=True, errors="coerce"
+        )
+        selected = weather.loc[weather["timestamp_utc"].eq(timestamp)].copy()
+        if selected.empty:
+            raise ClimateFileError("A hora escolhida não existe na partição ERA5.")
+        catalog_path = self.historical.catalog_path_for_timestamp(timestamp, weather_result)
+        catalog = pd.read_parquet(catalog_path)
+        required_catalog = {"usina_id", "match_status"}
+        if not required_catalog.issubset(catalog.columns):
+            raise ClimateFileError("O catálogo não possui os campos necessários.")
+        eligible_ids = _fully_reconciled_ids(catalog, timestamp)
+        weather_ids = set(selected["usina_id"].astype(str))
+        excluded_ids = sorted(weather_ids - eligible_ids)
+        selected = selected.loc[selected["usina_id"].astype(str).isin(eligible_ids)].copy()
+        if selected.empty:
+            raise ClimateFileError(
+                "Nenhum conjunto do ERA5 possui cadastro totalmente conciliado nesta hora."
+            )
+        selected = selected.sort_values("usina_id")
+        optional = [
+            column for column in ("temperature_2m", "surface_pressure")
+            if column in selected.columns
+        ]
+        output = io.StringIO(newline="")
+        writer = csv.writer(output, lineterminator="\n")
+        writer.writerow(["timestamp_utc", "usina_id", "u100", "v100",
+                         "disponibilidade", *optional])
+        timestamp_text = timestamp.isoformat().replace("+00:00", "Z")
+        for row in selected.itertuples(index=False):
+            writer.writerow([
+                timestamp_text,
+                str(row.usina_id),
+                float(row.u100),
+                float(row.v100),
+                availability,
+                *[float(getattr(row, column)) for column in optional],
+            ])
+        normalized_csv = output.getvalue()
+        provenance = self.historical.era5_provenance(timestamp, weather_result)
+        provenance.update({
+            "availability_source": "USER_GLOBAL_ASSUMPTION",
+            "availability_value": availability,
+            "excluded_usina_ids": excluded_ids,
+            "catalog_coverage_percent": round(
+                len(selected) / len(weather_ids) * 100, 3
+            ) if weather_ids else 0,
+        })
+        result = self.estimate(
+            normalized_csv,
+            timestamp_text,
+            catalog_path=catalog_path,
+            weather_source="ERA5",
+            source_provenance=provenance,
+        )
+        if excluded_ids:
+            result["warnings"] = sorted(set(result["warnings"]) | {
+                "ha_conjuntos_era5_excluidos_por_cadastro_incompleto"
+            })
+        result["normalized_csv"] = normalized_csv
+        return result

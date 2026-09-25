@@ -1,9 +1,28 @@
 # Fase 2: cenário climático enviado pelo usuário
 
-O usuário envia vento horário de conjuntos eólicos do Nordeste, escolhe **uma hora** do arquivo e recebe uma estimativa de **potencial pelo vento** para preparar um PWF. Este fluxo usa uma curva física genérica. Ele não usa o modelo LightGBM dos experimentos, não reproduz a geração observada da ONS e não prevê o vento futuro.
+O usuário envia vento horário de conjuntos eólicos do Nordeste ou escolhe uma
+hora histórica para busca no Copernicus ERA5. Em seguida recebe uma estimativa
+de **potencial pelo vento** para preparar um PWF. Este fluxo usa uma curva física
+genérica. Ele não usa o modelo LightGBM dos experimentos, não reproduz a geração
+observada da ONS e não prevê o vento futuro.
 
 O estado de implementação, as evidências executadas e as pendências bloqueantes
 estão em [Auditoria da fase 2](AUDITORIA_FASE_2.md).
+
+## Origens disponíveis
+
+- **Copernicus ERA5 histórico:** o servidor reutiliza a partição mensal em cache
+  ou baixa e extrai o mês sob demanda. O usuário informa e confirma uma
+  disponibilidade aplicada a todos os conjuntos. O valor é registrado como
+  hipótese, não como dado do ERA5.
+- **CSV próprio:** o usuário envia diretamente o contrato descrito abaixo,
+  podendo informar uma disponibilidade diferente por conjunto e hora.
+
+Nos dois caminhos, o servidor persiste um CSV `normalized-ons-hourly-v1`. A
+busca ERA5 não usa a geração observada da ONS no cálculo; ela fornece somente o
+vento, enquanto a curva física produz a estimativa. Conjuntos sem cadastro
+totalmente conciliado na hora são excluídos do CSV gerado, com IDs, percentual
+de cobertura e aviso preservados na resposta e no manifesto.
 
 ## Arquivo aceito
 
@@ -33,13 +52,14 @@ Uma linha representa um conjunto em uma hora. O mesmo conjunto e hora não pode 
 ## Uso
 
 1. Inicie os três serviços conforme o README principal e acesse **Cenário climático** na página inicial.
-2. Envie o CSV. O serviço lista as horas validadas e mostra quantos conjuntos encontrou.
-3. Escolha a hora e clique em **Estimar e revisar usinas**.
-4. Revise capacidades, estimativas e avisos. Selecione os conjuntos que entram no estudo.
-5. Envie um caso base `.pwf` e confira as barras propostas. Se não houver mapeamento cadastral, indique a barra no caso base e confirme a escolha com um especialista.
-6. Exporte o PWF. O writer altera apenas `Pg` das barras escolhidas. A tela
+2. Escolha **Buscar no Copernicus ERA5** ou **Enviar CSV próprio**.
+3. No ERA5, escolha uma hora histórica, informe e confirme a disponibilidade; no CSV, envie o arquivo e escolha uma de suas horas.
+4. Obtenha o vento e estime ou clique em **Estimar e revisar usinas**.
+5. Revise capacidades, estimativas e avisos. Selecione os conjuntos que entram no estudo.
+6. Envie um caso base `.pwf` e confira as barras propostas. Se não houver mapeamento cadastral, indique a barra no caso base e confirme a escolha com um especialista.
+7. Exporte o PWF. O writer altera apenas `Pg` das barras escolhidas. A tela
    mostra os IDs e hashes do cenário e da exportação.
-7. Abra e valide o resultado no ANAREDE; o ClimaGrid não executa o fluxo de
+8. Abra e valide o resultado no ANAREDE; o ClimaGrid não executa o fluxo de
    potência.
 
 No comportamento atual, conjuntos ausentes do CSV ou desmarcados pelo usuário

@@ -11,7 +11,10 @@ import {
 import { ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { createHash, randomUUID } from 'node:crypto';
-import { AiServiceClient } from './ai-service.client.js';
+import {
+  AiServiceClient,
+  type AiClimateFileEstimate,
+} from './ai-service.client.js';
 import { ClimateScenarioStorageService } from '../climate-scenario/climate-scenario-storage.service.js';
 import type { ClimateScenarioManifest } from '../climate-scenario/climate-scenario.types.js';
 
@@ -25,6 +28,11 @@ interface HistoricalScenarioBody {
   subsystem?: string;
   timestamp?: string;
   resolutionMinutes?: number;
+}
+
+interface Era5ScenarioBody {
+  timestamp?: string;
+  availability?: number;
 }
 
 @ApiTags('Integration')
@@ -49,6 +57,8 @@ export class IntegrationController {
           historicalOnDemand: capabilities.features.historical_on_demand ?? false,
           historicalEstimates: false,
           fileUpload: capabilities.features.climate_file_upload,
+          era5Scenario:
+            capabilities.features.climate_era5_scenario ?? false,
         },
         model: {
           version: capabilities.model.model_version,
@@ -83,11 +93,50 @@ export class IntegrationController {
           historicalOnDemand: false,
           historicalEstimates: false,
           fileUpload: false,
+          era5Scenario: false,
         },
         model: null,
         data: null,
       };
     }
+  }
+
+  @Post('climate-scenarios/era5/estimate')
+  @ApiOperation({
+    summary:
+      'Estimar potencial físico usando vento ERA5 histórico e disponibilidade informada',
+  })
+  async estimateEra5Scenario(@Body() body: Era5ScenarioBody) {
+    const timestamp = parseTimestamp(body.timestamp, 'timestamp');
+    if (
+      typeof body.availability !== 'number' ||
+      !Number.isFinite(body.availability) ||
+      body.availability < 0 ||
+      body.availability > 1
+    ) {
+      throw new BadRequestException(
+        'A disponibilidade deve ser um número entre 0 e 1.',
+      );
+    }
+    const result = await this.ai.estimateClimateEra5(
+      timestamp.toISOString(),
+      body.availability,
+    );
+    if ('status' in result) return result;
+    if (!result.normalized_csv) {
+      throw new BadGatewayException(
+        'O serviço de estimativa não devolveu o CSV normalizado do cenário ERA5.',
+      );
+    }
+    const input = Buffer.from(result.normalized_csv, 'utf8');
+    const inputSha256 = createHash('sha256').update(input).digest('hex');
+    if (inputSha256 !== result.provenance.input_sha256) {
+      throw new BadGatewayException(
+        'O CSV normalizado devolvido pelo serviço não corresponde à proveniência.',
+      );
+    }
+    const filename = `era5_${timestamp.toISOString().replace(/[:.]/g, '-')}.csv`;
+    return this.persistClimateEstimate(result, input, filename, 'era5');
   }
 
   @Post('climate-scenarios/historical')
@@ -198,6 +247,21 @@ export class IntegrationController {
         'O serviço de estimativa devolveu uma proveniência incompatível com o CSV recebido.',
       );
     }
+    return this.persistClimateEstimate(
+      result,
+      file!.buffer,
+      file!.originalname,
+      'upload',
+    );
+  }
+
+  private async persistClimateEstimate(
+    result: AiClimateFileEstimate,
+    input: Buffer,
+    filename: string,
+    source: 'upload' | 'era5',
+  ) {
+    const inputSha256 = createHash('sha256').update(input).digest('hex');
     const id = randomUUID();
     const createdAt = new Date().toISOString();
     const observations = result.observations.map((observation) => ({
@@ -224,13 +288,13 @@ export class IntegrationController {
     }));
     const scenario = {
       id,
-      source: 'upload' as const,
+      source,
       mode: 'scenario' as const,
       subsystem: result.subsystem,
       timestamp: result.timestamp,
       resolutionMinutes: result.resolution_minutes,
-      fileName: file!.originalname,
-      fileSizeBytes: file!.size,
+      fileName: filename,
+      fileSizeBytes: input.length,
       rowCount: result.row_count,
       dataVersion: result.data_version,
       generationSource: result.generation_source,
@@ -243,6 +307,12 @@ export class IntegrationController {
         catalogSha256: result.provenance.catalog_sha256,
         mappingSha256: result.provenance.mapping_sha256,
         estimatorVersion: result.provenance.estimator_version,
+        weatherDataVersion: result.provenance.weather_data_version,
+        era5Sha256: result.provenance.era5_sha256,
+        availabilitySource: result.provenance.availability_source,
+        availabilityValue: result.provenance.availability_value,
+        excludedPlantIds: result.provenance.excluded_usina_ids,
+        catalogCoveragePercent: result.provenance.catalog_coverage_percent,
       },
     };
     const manifest: ClimateScenarioManifest = {
@@ -257,16 +327,24 @@ export class IntegrationController {
       dataVersion: result.data_version,
       input: {
         schemaVersion: result.provenance.input_schema_version,
-        name: file!.originalname,
-        sizeBytes: file!.size,
+        name: filename,
+        sizeBytes: input.length,
         sha256: inputSha256,
         mediaType: 'text/csv',
         rowCount: result.row_count,
+        source:
+          source === 'era5' ? 'era5_cds_generated' : 'user_upload',
       },
       provenance: {
         catalogSha256: result.provenance.catalog_sha256,
         mappingSha256: result.provenance.mapping_sha256,
         estimatorVersion: result.provenance.estimator_version,
+        weatherDataVersion: result.provenance.weather_data_version,
+        era5Sha256: result.provenance.era5_sha256,
+        availabilitySource: result.provenance.availability_source,
+        availabilityValue: result.provenance.availability_value,
+        excludedPlantIds: result.provenance.excluded_usina_ids,
+        catalogCoveragePercent: result.provenance.catalog_coverage_percent,
         physicalCurve: {
           cutInMs: result.provenance.physical_curve.cut_in_ms,
           ratedMs: result.provenance.physical_curve.rated_ms,
@@ -276,7 +354,7 @@ export class IntegrationController {
       observations,
       warnings: result.warnings,
     };
-    await this.scenarios.saveScenario(manifest, file!.buffer);
+    await this.scenarios.saveScenario(manifest, input);
     return { scenario, observations };
   }
 }

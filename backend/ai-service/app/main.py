@@ -24,6 +24,12 @@ class ClimateCsvRequest(BaseModel):
 class ClimateEstimateRequest(ClimateCsvRequest):
     timestamp_utc: str
 
+
+class ClimateEra5EstimateRequest(BaseModel):
+    timestamp_utc: str
+    availability: float = Field(ge=0, le=1)
+
+
 def create_app(artifact_dir: Path | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(application: FastAPI):
@@ -72,6 +78,20 @@ def create_app(artifact_dir: Path | None = None) -> FastAPI:
         try:
             return request.app.state.climate_file.estimate(payload.csv_text, payload.timestamp_utc)
         except ClimateFileError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @application.post("/cenario-climatico/era5/estimar")
+    def estimate_era5_climate(
+        payload: ClimateEra5EstimateRequest, request: Request
+    ) -> dict:
+        try:
+            result = request.app.state.climate_file.estimate_from_era5(
+                payload.timestamp_utc, payload.availability
+            )
+            if result.get("status") == "preparing":
+                return JSONResponse(status_code=202, content=result)
+            return result
+        except (ClimateFileError, HistoricalDataUnavailable) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     return application

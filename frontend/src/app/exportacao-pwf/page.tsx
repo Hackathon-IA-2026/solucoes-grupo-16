@@ -115,7 +115,7 @@ export default function PwfExportPage() {
                         <td className="px-5 py-4"><p className="text-sm font-medium text-on-surface">{plant.name}</p><p className="mt-0.5 font-mono text-[10px] text-outline">{plant.onsId}</p></td>
                         <td className="px-3 py-4"><p className="font-mono text-sm text-on-surface">{mappings.map((mapping) => mapping.busNumber).join(", ") || "—"}</p><p className="text-[10px] text-outline">{mappings.length} parcela(s) de geração</p></td>
                         <td className="px-3 py-4 text-right font-mono text-sm text-secondary">{generationMw(plant).toLocaleString("pt-BR")} MW</td>
-                        <td className="px-5 py-4 text-xs text-on-surface-variant">{isScenario ? "Curva física · vento do usuário" : "ONS · geração verificada"}</td>
+                        <td className="px-5 py-4 text-xs text-on-surface-variant">{isScenario ? `Curva física · ${state.climateScenario?.weatherSource === "ERA5" ? "vento ERA5" : "vento do usuário"}` : "ONS · geração verificada"}</td>
                       </tr>
                     );
                   })}
@@ -137,8 +137,9 @@ export default function PwfExportPage() {
                 <TraceRow label="CSV SHA-256" value={state.climateScenario?.traceability?.inputSha256 ?? "—"} />
                 <TraceRow label="Catálogo SHA-256" value={state.climateScenario?.traceability?.catalogSha256 ?? "—"} />
                 <TraceRow label="Estimador" value={state.climateScenario?.traceability?.estimatorVersion ?? "—"} />
+                <TraceRow label="Disponibilidade" value={!isScenario ? "Não se aplica" : state.climateScenario?.traceability?.availabilitySource === "USER_GLOBAL_ASSUMPTION" ? `Hipótese do usuário · ${((state.climateScenario.traceability.availabilityValue ?? 0) * 100).toLocaleString("pt-BR")}%` : "Informada no CSV"} />
                 <TraceRow label="Geração" value={isScenario ? "Potencial físico estimado" : "ONS observada"} />
-                <TraceRow label="Vento" value={isScenario ? "Arquivo do usuário" : "ERA5"} />
+                <TraceRow label="Vento" value={isScenario ? (state.climateScenario?.weatherSource === "ERA5" ? "Copernicus ERA5 histórico" : "Arquivo do usuário") : "ERA5"} />
                 <TraceRow label="Caso base" value={state.study.referencePwf?.name ?? "—"} />
               </dl>
             </section>
