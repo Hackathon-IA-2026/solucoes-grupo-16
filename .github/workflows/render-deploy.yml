@@ -1,0 +1,192 @@
+name: Build, push and deploy to Render
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_ingestion:
+        description: 'Run ingestion in CI to produce observations.parquet (true/false)'
+        required: false
+        default: 'false'
+
+env:
+  DOCKER_REPO: ${{ secrets.DOCKER_REPO }} # ex: victorszcruzpoli
+  RENDER_API_URL: https://api.render.com/v1
+
+jobs:
+  build-push-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU and buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set tags
+        id: tags
+        run: |
+          SHORT=$(git rev-parse --short HEAD)
+          echo "SHORT=$SHORT" >> $GITHUB_OUTPUT
+          echo "TAG=sha-$SHORT" >> $GITHUB_OUTPUT
+
+      - name: Optionally run ingestion (produce observations.parquet)
+        if: ${{ github.event.inputs.run_ingestion == 'true' }}
+        run: |
+          docker build -t ai-runner -f backend/ai-service/Dockerfile backend/ai-service
+          mkdir -p backend/ai-service/data
+          # run ingestion steps you need; example: download and join (adjust args as needed)
+          docker run --rm -v $PWD/backend/ai-service/data:/service/data ai-runner \
+            python -m ingestion.era5.cli download-siga
+          docker run --rm -v $PWD/backend/ai-service/data:/service/data ai-runner \
+            python -m ingestion.era5.cli download-ons-membership
+          # add your backfill/join commands here; WARNING: can be long-running
+
+      - name: Build & push ai-service image
+        env:
+          TAG: ${{ steps.tags.outputs.SHORT }}
+        run: |
+          TAG=sha-${{ steps.tags.outputs.SHORT }}
+          docker build -t ${DOCKER_REPO}/climagrid-ai-service:${TAG} -f backend/ai-service/Dockerfile backend/ai-service
+          docker push ${DOCKER_REPO}/climagrid-ai-service:${TAG}
+
+      - name: Trigger Deploy on Render (AI service)
+        id: deploy_ai
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID_AI }}
+          IMAGE: ${DOCKER_REPO}/climagrid-ai-service:sha-${{ steps.tags.outputs.SHORT }}
+        run: |
+          set -e
+          resp=$(curl -s -X POST "$RENDER_API_URL/services/$SERVICE_ID/deploys" -H "Authorization: Bearer $RENDER_API_KEY" -H 'Content-Type: application/json' -d "{\"image\": \"$IMAGE\"}")
+          deployId=$(echo "$resp" | jq -r '.id')
+          echo "deployId=$deployId" >> $GITHUB_OUTPUT
+
+      - name: Wait for AI deploy to succeed
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID_AI }}
+        run: |
+          deployId=${{ steps.deploy_ai.outputs.deployId }}
+          echo "Waiting for deploy $deployId"
+          for i in {1..60}; do
+            status=$(curl -s -H "Authorization: Bearer $RENDER_API_KEY" "$RENDER_API_URL/services/$SERVICE_ID/deploys/$deployId" | jq -r '.status')
+            echo "status=$status"
+            if [ "$status" == "successful" ] || [ "$status" == "succeeded" ]; then
+              exit 0
+            fi
+            if [ "$status" == "failed" ]; then
+              echo "Deploy failed"; curl -s -H "Authorization: Bearer $RENDER_API_KEY" "$RENDER_API_URL/services/$SERVICE_ID/deploys/$deployId"; exit 1
+            fi
+            sleep 10
+          done
+          echo "Timed out waiting for AI deploy"; exit 1
+
+      - name: Build & push backend image
+        env:
+          TAG: ${{ steps.tags.outputs.SHORT }}
+        run: |
+          TAG=sha-${{ steps.tags.outputs.SHORT }}
+          docker build -t ${DOCKER_REPO}/climagrid-backend:${TAG} -f backend/Dockerfile backend
+          docker push ${DOCKER_REPO}/climagrid-backend:${TAG}
+
+      - name: Trigger Deploy on Render (Backend)
+        id: deploy_backend
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID_BACKEND }}
+          IMAGE: ${DOCKER_REPO}/climagrid-backend:sha-${{ steps.tags.outputs.SHORT }}
+        run: |
+          resp=$(curl -s -X POST "$RENDER_API_URL/services/$SERVICE_ID/deploys" -H "Authorization: Bearer $RENDER_API_KEY" -H 'Content-Type: application/json' -d "{\"image\": \"$IMAGE\"}")
+          deployId=$(echo "$resp" | jq -r '.id')
+          echo "deployId=$deployId" >> $GITHUB_OUTPUT
+
+      - name: Wait for Backend deploy to succeed
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID_BACKEND }}
+        run: |
+          deployId=${{ steps.deploy_backend.outputs.deployId }}
+          for i in {1..60}; do
+            status=$(curl -s -H "Authorization: Bearer $RENDER_API_KEY" "$RENDER_API_URL/services/$SERVICE_ID/deploys/$deployId" | jq -r '.status')
+            echo "status=$status"
+            if [ "$status" == "successful" ] || [ "$status" == "succeeded" ]; then
+              exit 0
+            fi
+            if [ "$status" == "failed" ]; then
+              echo "Deploy failed"; curl -s -H "Authorization: Bearer $RENDER_API_KEY" "$RENDER_API_URL/services/$SERVICE_ID/deploys/$deployId"; exit 1
+            fi
+            sleep 10
+          done
+          echo "Timed out waiting for backend deploy"; exit 1
+
+      - name: Resolve backend public URL (try API then fallback to secret)
+        id: backend_url
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID_BACKEND }}
+        run: |
+          # try to fetch common fields; user can also provide RENDER_BACKEND_URL secret
+          url=$(curl -s -H "Authorization: Bearer $RENDER_API_KEY" "$RENDER_API_URL/services/$SERVICE_ID" | jq -r '.serviceDetails.domain // .serviceDetails.defaultDomain // .defaultDomain // .serviceDetails?.service?.defaultDomain // empty')
+          if [ -z "$url" ]; then
+            echo "No domain found via Render API, falling back to secret RENDER_BACKEND_URL"
+            url="${{ secrets.RENDER_BACKEND_URL }}"
+          fi
+          if [ -z "$url" ]; then
+            echo "ERROR: backend URL not detected and secret RENDER_BACKEND_URL not set"; exit 1
+          fi
+          echo "backend_url=$url" >> $GITHUB_OUTPUT
+
+      - name: Build & push frontend image with backend URL
+        env:
+          TAG: ${{ steps.tags.outputs.SHORT }}
+        run: |
+          TAG=sha-${{ steps.tags.outputs.SHORT }}
+          BACKEND_URL=${{ steps.backend_url.outputs.backend_url }}
+          echo "Using backend URL: $BACKEND_URL"
+          docker build --build-arg NEXT_PUBLIC_API_BASE_URL="$BACKEND_URL" -t ${DOCKER_REPO}/climagrid-frontend:${TAG} -f frontend/Dockerfile frontend
+          docker push ${DOCKER_REPO}/climagrid-frontend:${TAG}
+
+      - name: Trigger Deploy on Render (Frontend)
+        id: deploy_frontend
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID_FRONTEND }}
+          IMAGE: ${DOCKER_REPO}/climagrid-frontend:sha-${{ steps.tags.outputs.SHORT }}
+        run: |
+          resp=$(curl -s -X POST "$RENDER_API_URL/services/$SERVICE_ID/deploys" -H "Authorization: Bearer $RENDER_API_KEY" -H 'Content-Type: application/json' -d "{\"image\": \"$IMAGE\"}")
+          deployId=$(echo "$resp" | jq -r '.id')
+          echo "deployId=$deployId" >> $GITHUB_OUTPUT
+
+      - name: Wait for Frontend deploy to succeed
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID_FRONTEND }}
+        run: |
+          deployId=${{ steps.deploy_frontend.outputs.deployId }}
+          for i in {1..60}; do
+            status=$(curl -s -H "Authorization: Bearer $RENDER_API_KEY" "$RENDER_API_URL/services/$SERVICE_ID/deploys/$deployId" | jq -r '.status')
+            echo "status=$status"
+            if [ "$status" == "successful" ] || [ "$status" == "succeeded" ]; then
+              exit 0
+            fi
+            if [ "$status" == "failed" ]; then
+              echo "Deploy failed"; curl -s -H "Authorization: Bearer $RENDER_API_KEY" "$RENDER_API_URL/services/$SERVICE_ID/deploys/$deployId"; exit 1
+            fi
+            sleep 10
+          done
+          echo "Timed out waiting for frontend deploy"; exit 1
+
+      - name: Final health check
+        run: |
+          echo "Backend capabilities:"
+          curl -I https://${{ steps.backend_url.outputs.backend_url }} /system/capabilities || true
+
