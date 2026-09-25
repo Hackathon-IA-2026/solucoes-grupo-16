@@ -102,7 +102,7 @@ class HistoricalScenarioService:
             "features": {
                 "historical_replay": availability.available,
                 "historical_estimates": False,
-                "climate_file_upload": False,
+                "climate_file_upload": self.catalog_path.is_file(),
                 "physical_fallback": True,
             },
         }

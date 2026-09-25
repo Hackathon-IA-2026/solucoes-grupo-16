@@ -2,7 +2,9 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, Request, HTTPException
+from pydantic import BaseModel, Field
 
+from app.climate_file import ClimateFileError, ClimateFileService
 from app.historical import HistoricalDataUnavailable, HistoricalScenarioService
 from app.predictor import Predictor
 from app.schemas import (
@@ -13,11 +15,20 @@ from app.schemas import (
     HistoricalReplayResponse,
 )
 
+
+class ClimateCsvRequest(BaseModel):
+    csv_text: str = Field(min_length=1, max_length=5 * 1024 * 1024)
+
+
+class ClimateEstimateRequest(ClimateCsvRequest):
+    timestamp_utc: str
+
 def create_app(artifact_dir: Path | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(application: FastAPI):
         application.state.predictor = Predictor.from_artifacts(artifact_dir)
         application.state.historical = HistoricalScenarioService.from_environment(application.state.predictor)
+        application.state.climate_file = ClimateFileService(application.state.historical)
         yield
 
     application = FastAPI(title="ClimaGrid AI Service", version="1.0.0", lifespan=lifespan)
@@ -44,6 +55,20 @@ def create_app(artifact_dir: Path | None = None) -> FastAPI:
             return request.app.state.historical.replay(payload)
         except HistoricalDataUnavailable as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @application.post("/cenario-climatico/inspecionar")
+    def inspect_climate_file(payload: ClimateCsvRequest, request: Request) -> dict:
+        try:
+            return request.app.state.climate_file.inspect(payload.csv_text)
+        except ClimateFileError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @application.post("/cenario-climatico/estimar")
+    def estimate_climate_file(payload: ClimateEstimateRequest, request: Request) -> dict:
+        try:
+            return request.app.state.climate_file.estimate(payload.csv_text, payload.timestamp_utc)
+        except ClimateFileError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     return application
 

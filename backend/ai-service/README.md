@@ -1,5 +1,9 @@
 # ClimaGrid AI Service — replay histórico e base experimental
 
+## Cenário climático do usuário (fase 2)
+
+`POST /cenario-climatico/inspecionar` recebe `{"csv_text":"..."}` e lista as horas válidas. `POST /cenario-climatico/estimar` recebe o mesmo CSV e `timestamp_utc`; devolve potencial eólico para **uma hora**, usando a curva física, capacidade do catálogo e disponibilidade informada no arquivo. A resposta identifica `generation_source: PHYSICAL_CURVE`, `weather_source: USER` e o SHA-256 do CSV. O formato está documentado em [`Docs/ML/CENARIO_CLIMATICO_FASE_2.md`](../../Docs/ML/CENARIO_CLIMATICO_FASE_2.md). Os artefatos LightGBM dos experimentos 1 e 2 não são usados como modelo aprovado de potencial.
+
 > A fonte canônica de escopo e status é
 > [`../../Docs/CONTEXTO_PROJETO_IA.md`](../../Docs/CONTEXTO_PROJETO_IA.md). O
 > replay é a etapa 1; upload climático encerra o MVP na etapa 2; previsão futura
