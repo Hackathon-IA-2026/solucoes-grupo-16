@@ -1,9 +1,5 @@
 export type ClimateSource = "historical" | "upload";
 
-export type CurtailmentReason = "REL" | "CNF" | "ENE" | "PAR" | "NONE";
-
-export type RiskLevel = "low" | "medium" | "high" | "unavailable";
-
 export interface ClimateScenario {
   id: string;
   source: ClimateSource;
@@ -40,15 +36,7 @@ export interface WindPlantEstimate {
   weatherSource: "ERA5" | "USER";
   suggestedBusAllocations: SuggestedBusAllocation[];
   mappingCoveragePercent: number;
-  estimatedGenerationMw: number;
-  confidenceLowMw: number | null;
-  confidenceHighMw: number | null;
-  confidenceLevel: "alta" | "media" | "baixa";
-  historicalAvailabilityPercent: number;
-  historicalCurtailmentPercent: number | null;
-  sampleCount?: number;
-  probableReason: CurtailmentReason | null;
-  riskLevel: RiskLevel;
+  estimatedGenerationMw: number | null;
   warnings?: string[];
 }
 

@@ -29,7 +29,10 @@ export default function HistoricalObservationsPage() {
   );
   const selectedSet = useMemo(() => new Set(state.selectedPlantIds), [state.selectedPlantIds]);
   const selectedPlants = state.estimates.filter((plant) => selectedSet.has(plant.id));
-  const selectedGeneration = selectedPlants.reduce((total, plant) => total + generationMw(plant), 0);
+  const selectedGeneration = selectedPlants.reduce(
+    (total, plant) => total + (plant.observedGenerationMw ?? 0),
+    0,
+  );
   const selectedCapacity = selectedPlants.reduce((total, plant) => total + plant.installedCapacityMw, 0);
   const allVisibleSelected = filteredPlants.length > 0 && filteredPlants.every((plant) => selectedSet.has(plant.id));
 
@@ -114,13 +117,18 @@ export default function HistoricalObservationsPage() {
                     <td className="px-3 py-4"><p className="text-sm font-medium text-on-surface">{plant.name}</p><p className="mt-0.5 font-mono text-[10px] text-outline">{plant.onsId}</p></td>
                     <td className="px-3 py-4 text-sm text-on-surface-variant">{plant.state}</td>
                     <td className="px-3 py-4 text-right font-mono text-sm text-on-surface-variant">{plant.installedCapacityMw.toLocaleString("pt-BR")} MW</td>
-                    <td className="px-3 py-4 text-right font-mono text-sm font-semibold text-secondary">{plant.estimatedGenerationMw.toLocaleString("pt-BR")} MW</td>
-                    <td className="px-3 py-4 text-right font-mono text-xs text-on-surface-variant">
-                      {plant.confidenceLowMw != null && plant.confidenceHighMw != null
-                        ? `${plant.confidenceLowMw.toLocaleString("pt-BR")}–${plant.confidenceHighMw.toLocaleString("pt-BR")} MW`
-                        : "Indisponível"}
+                    <td className="px-3 py-4 text-right font-mono text-sm font-semibold text-secondary">
+                      {formatMw(plant.observedGenerationMw)}
                     </td>
-                    <td className="px-3 py-4 text-right font-mono text-sm text-on-surface-variant">{plant.historicalAvailabilityPercent.toLocaleString("pt-BR")}%</td>
+                    <td className="px-3 py-4 text-right font-mono text-xs text-on-surface-variant">
+                      {formatPercent(plant.capacityFactorPercent)}
+                    </td>
+                    <td className="px-3 py-4 text-right font-mono text-sm text-on-surface-variant">
+                      {plant.windSpeedMps.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} m/s
+                    </td>
+                    <td className="px-4 py-4 text-right font-mono text-sm text-on-surface-variant">
+                      {plant.windDirectionDegrees.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}°
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -138,8 +146,16 @@ export default function HistoricalObservationsPage() {
   );
 }
 
-function generationMw(plant: { observedGenerationMw: number | null; estimatedGenerationMw: number | null }): number {
-  return plant.observedGenerationMw ?? plant.estimatedGenerationMw ?? 0;
+function formatMw(value: number | null): string {
+  return value == null
+    ? "Indisponível"
+    : `${value.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MW`;
+}
+
+function formatPercent(value: number | null): string {
+  return value == null
+    ? "Indisponível"
+    : `${value.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
 }
 
 function Metric({ label, value, detail }: { label: string; value: string; detail: string }) {
