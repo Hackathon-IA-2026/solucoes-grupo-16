@@ -63,10 +63,10 @@ jobs:
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID_AI }}
-          IMAGE: ${DOCKER_REPO}/climagrid-ai-service:sha-${{ steps.tags.outputs.SHORT }}
+          IMAGE: docker.io/${{ env.DOCKER_REPO }}/climagrid-ai-service:sha-${{ steps.tags.outputs.SHORT }}
         run: |
           set -e
-          resp=$(curl -s -X POST "$RENDER_API_URL/services/$SERVICE_ID/deploys" -H "Authorization: Bearer $RENDER_API_KEY" -H 'Content-Type: application/json' -d "{\"image\": \"$IMAGE\"}")
+          resp=$(curl -s -X POST "$RENDER_API_URL/services/$SERVICE_ID/deploys" -H "Authorization: Bearer $RENDER_API_KEY" -H 'Content-Type: application/json' -d "{\"imageUrl\": \"$IMAGE\"}")
           deployId=$(echo "$resp" | jq -r '.id')
           echo "deployId=$deployId" >> $GITHUB_OUTPUT
 
@@ -80,10 +80,10 @@ jobs:
           for i in {1..60}; do
             status=$(curl -s -H "Authorization: Bearer $RENDER_API_KEY" "$RENDER_API_URL/services/$SERVICE_ID/deploys/$deployId" | jq -r '.status')
             echo "status=$status"
-            if [ "$status" == "successful" ] || [ "$status" == "succeeded" ]; then
+            if [ "$status" == "live" ]; then
               exit 0
             fi
-            if [ "$status" == "failed" ]; then
+            if [[ "$status" =~ ^(build_failed|update_failed|pre_deploy_failed|canceled)$ ]]; then
               echo "Deploy failed"; curl -s -H "Authorization: Bearer $RENDER_API_KEY" "$RENDER_API_URL/services/$SERVICE_ID/deploys/$deployId"; exit 1
             fi
             sleep 10
@@ -103,9 +103,9 @@ jobs:
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID_BACKEND }}
-          IMAGE: ${DOCKER_REPO}/climagrid-backend:sha-${{ steps.tags.outputs.SHORT }}
+          IMAGE: docker.io/${{ env.DOCKER_REPO }}/climagrid-backend:sha-${{ steps.tags.outputs.SHORT }}
         run: |
-          resp=$(curl -s -X POST "$RENDER_API_URL/services/$SERVICE_ID/deploys" -H "Authorization: Bearer $RENDER_API_KEY" -H 'Content-Type: application/json' -d "{\"image\": \"$IMAGE\"}")
+          resp=$(curl -s -X POST "$RENDER_API_URL/services/$SERVICE_ID/deploys" -H "Authorization: Bearer $RENDER_API_KEY" -H 'Content-Type: application/json' -d "{\"imageUrl\": \"$IMAGE\"}")
           deployId=$(echo "$resp" | jq -r '.id')
           echo "deployId=$deployId" >> $GITHUB_OUTPUT
 
@@ -118,7 +118,7 @@ jobs:
           for i in {1..60}; do
             status=$(curl -s -H "Authorization: Bearer $RENDER_API_KEY" "$RENDER_API_URL/services/$SERVICE_ID/deploys/$deployId" | jq -r '.status')
             echo "status=$status"
-            if [ "$status" == "successful" ] || [ "$status" == "succeeded" ]; then
+            if [ "$status" == "live" ]; then
               exit 0
             fi
             if [ "$status" == "failed" ]; then
@@ -160,9 +160,9 @@ jobs:
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID_FRONTEND }}
-          IMAGE: ${DOCKER_REPO}/climagrid-frontend:sha-${{ steps.tags.outputs.SHORT }}
+          IMAGE: docker.io/${{ env.DOCKER_REPO }}/climagrid-frontend:sha-${{ steps.tags.outputs.SHORT }}
         run: |
-          resp=$(curl -s -X POST "$RENDER_API_URL/services/$SERVICE_ID/deploys" -H "Authorization: Bearer $RENDER_API_KEY" -H 'Content-Type: application/json' -d "{\"image\": \"$IMAGE\"}")
+          resp=$(curl -s -X POST "$RENDER_API_URL/services/$SERVICE_ID/deploys" -H "Authorization: Bearer $RENDER_API_KEY" -H 'Content-Type: application/json' -d "{\"imageUrl\": \"$IMAGE\"}")
           deployId=$(echo "$resp" | jq -r '.id')
           echo "deployId=$deployId" >> $GITHUB_OUTPUT
 
@@ -175,7 +175,7 @@ jobs:
           for i in {1..60}; do
             status=$(curl -s -H "Authorization: Bearer $RENDER_API_KEY" "$RENDER_API_URL/services/$SERVICE_ID/deploys/$deployId" | jq -r '.status')
             echo "status=$status"
-            if [ "$status" == "successful" ] || [ "$status" == "succeeded" ]; then
+            if [ "$status" == "live" ]; then
               exit 0
             fi
             if [ "$status" == "failed" ]; then
@@ -186,7 +186,8 @@ jobs:
           echo "Timed out waiting for frontend deploy"; exit 1
 
       - name: Final health check
-        run: |
-          echo "Backend capabilities:"
-          curl -I https://${{ steps.backend_url.outputs.backend_url }} /system/capabilities || true
+  env:
+    BACKEND_URL: ${{ secrets.RENDER_BACKEND_URL }}
+  run: |
+    curl -fsS "$BACKEND_URL/system/capabilities" | jq .
 

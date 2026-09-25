@@ -1,18 +1,20 @@
 {
-  "rows": 1002,
-  "plants": 139,
-  "matched": 1000,
-  "review_required": 2,
-  "unresolved": 0,
-  "coverage": 0.998003992015968,
-  "plants_fully_located": 137,
-  "plant_coverage": 0.9856115107913669,
+  "rows": 925,
+  "plants": 160,
+  "matched": 915,
+  "review_required": 1,
+  "unresolved": 9,
+  "coverage": 0.9891891891891892,
+  "plants_fully_located": 150,
+  "plant_coverage": 0.9375,
   "match_methods": {
-    "unique_ceg_root": 1002
+    "unique_ceg_root": 916,
+    "unresolved": 9
   },
   "reasons": {
-    "": 1000,
-    "coordinates_outside_northeast_guardrail": 2
+    "": 915,
+    "unresolved_group": 9,
+    "coordinates_outside_northeast_guardrail": 1
   },
   "bounds": {
     "north": -2.25,

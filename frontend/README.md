@@ -31,6 +31,29 @@ Copie `.env.example` para `.env.local` e configure:
 ```bash
 NEXT_PUBLIC_API_BASE_URL=http://localhost:3333
 ```
+Copie `.env.example` para `.env.local` e configure (development):
+
+```bash
+NEXT_PUBLIC_API_BASE_URL=http://localhost:3333
+```
+
+## Produção / Docker build note
+- Quando construir a imagem Docker do frontend para implantação, defina a URL do backend como um build-arg para que o Next.js a injete no pacote de produção.
+	Exemplo usando o script auxiliar incluído:
+
+```bash
+DOCKER_REPO=victorszcruzpoli \
+FRONTEND_API_BASE_URL=https://backend-ztk6.onrender.com \
+./deploy/push-images.sh --docker
+```
+
+Ou, se você construir manualmente:
+
+```bash
+docker build --build-arg NEXT_PUBLIC_API_BASE_URL=https://backend-ztk6.onrender.com \
+	-t victorszcruzpoli/climagrid-frontend:sha-$(git rev-parse --short HEAD) \
+	-f frontend/Dockerfile frontend
+```
 
 O navegador conversa somente com o NestJS; o FastAPI permanece um serviço interno. O acesso HTTP está isolado em `src/lib/api.ts` e usa os contratos abaixo:
 
