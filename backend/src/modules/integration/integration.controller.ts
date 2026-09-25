@@ -4,9 +4,18 @@ import {
   Controller,
   Get,
   Post,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { AiServiceClient } from './ai-service.client.js';
+
+interface UploadedClimateFile {
+  originalname: string;
+  size: number;
+  buffer: Buffer;
+}
 
 interface HistoricalScenarioBody {
   subsystem?: string;
@@ -136,6 +145,82 @@ export class IntegrationController {
       })),
     };
   }
+
+  @Post('climate-scenarios/file/inspect')
+  @ApiOperation({ summary: 'Validar CSV climático e listar as horas disponíveis' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', required: ['file'], properties: {
+    file: { type: 'string', format: 'binary' },
+  } } })
+  @UseInterceptors(FileInterceptor('file', { limits: { files: 1, fileSize: 5 * 1024 * 1024 } }))
+  async inspectClimateFile(@UploadedFile() file?: UploadedClimateFile) {
+    const csvText = validatedCsv(file);
+    const result = await this.ai.inspectClimateFile(csvText);
+    return {
+      rowCount: result.row_count,
+      plantCount: result.plant_count,
+      timestamps: result.timestamps,
+      sha256: result.sha256,
+    };
+  }
+
+  @Post('climate-scenarios/file/estimate')
+  @ApiOperation({ summary: 'Estimar potencial eólico para uma hora do CSV do usuário' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', required: ['file', 'timestamp'], properties: {
+    file: { type: 'string', format: 'binary' }, timestamp: { type: 'string' },
+  } } })
+  @UseInterceptors(FileInterceptor('file', { limits: { files: 1, fileSize: 5 * 1024 * 1024 } }))
+  async estimateClimateFile(@UploadedFile() file?: UploadedClimateFile,
+                            @Body('timestamp') timestamp?: string) {
+    const csvText = validatedCsv(file);
+    const selected = parseTimestamp(timestamp, 'timestamp');
+    const result = await this.ai.estimateClimateFile(csvText, selected.toISOString());
+    return {
+      scenario: {
+        id: result.scenario_id,
+        source: 'upload', mode: 'scenario', subsystem: result.subsystem,
+        timestamp: result.timestamp, resolutionMinutes: result.resolution_minutes,
+        fileName: file!.originalname, fileSizeBytes: file!.size,
+        rowCount: result.row_count, dataVersion: result.data_version,
+        generationSource: result.generation_source, weatherSource: result.weather_source,
+        warnings: result.warnings, createdAt: new Date().toISOString(),
+      },
+      observations: result.observations.map((observation) => ({
+        id: observation.usina_id, onsId: observation.ons_id,
+        name: observation.name, state: observation.state,
+        latitude: observation.latitude, longitude: observation.longitude,
+        installedCapacityMw: observation.installed_capacity_mw,
+        observedGenerationMw: null,
+        estimatedGenerationMw: observation.estimated_generation_mw,
+        capacityFactorPercent: observation.capacity_factor_percent,
+        u100: observation.u100, v100: observation.v100,
+        windSpeedMps: observation.wind_speed_mps,
+        windDirectionDegrees: observation.wind_direction_degrees,
+        availability: observation.availability,
+        generationSource: observation.generation_source,
+        weatherSource: observation.weather_source,
+        suggestedBusAllocations: observation.suggested_bus_allocations.map((allocation) => ({
+          busNumber: String(allocation.bus_number), busName: allocation.bus_name,
+          allocationFactor: allocation.allocation_factor,
+          allocatedGenerationMw: allocation.allocated_generation_mw,
+        })),
+        mappingCoveragePercent: observation.mapping_coverage_percent,
+        warnings: observation.warnings,
+      })),
+    };
+  }
+}
+
+function validatedCsv(file?: UploadedClimateFile): string {
+  if (!file || !file.originalname.toLowerCase().endsWith('.csv') || !file.buffer?.length) {
+    throw new BadRequestException('Envie um arquivo CSV não vazio.');
+  }
+  const text = file.buffer.toString('utf8');
+  if (text.includes('\uFFFD')) {
+    throw new BadRequestException('O CSV deve estar codificado em UTF-8.');
+  }
+  return text;
 }
 
 function parseTimestamp(value: string | undefined, field: string): Date {

@@ -1,8 +1,8 @@
 # ClimaGrid — frontend
 
 > Leia [`../Docs/CONTEXTO_PROJETO_IA.md`](../Docs/CONTEXTO_PROJETO_IA.md) antes de
-> alterar o fluxo. A interface atual implementa a etapa 1. A próxima etapa é o
-> cenário climático enviado pelo usuário e encerra o escopo do MVP.
+> alterar o fluxo. A etapa 1 está implementada; o fluxo inicial da etapa 2
+> aceita CSV e calcula potencial eólico com curva física genérica.
 
 Interface do MVP para reproduzir a geração eólica observada em uma hora,
 mapear conjuntos ONS para barras elétricas e gerar um PWF para estudo no
@@ -38,6 +38,8 @@ O navegador conversa somente com o NestJS; o FastAPI permanece um serviço inter
 | --- | --- | --- |
 | `GET` | `/system/capabilities` | Informar disponibilidade do NestJS, IA, ONS, ERA5 e modelo |
 | `POST` | `/climate-scenarios/historical` | Reproduzir uma hora observada do snapshot ONS + ERA5 |
+| `POST` | `/climate-scenarios/file/inspect` | Validar CSV climático e listar horas |
+| `POST` | `/climate-scenarios/file/estimate` | Estimar potencial físico para uma hora do CSV |
 | `POST` | `/pwf/reference-cases` | Armazenar e validar o caso base `.pwf` |
 | `GET` | `/pwf/reference-cases/:id/generation-targets` | Listar barras geradoras do caso base |
 | `POST` | `/pwf/exports` | Gerar o PWF e devolver o arquivo como `Blob` |
@@ -48,14 +50,12 @@ log de proveniência.
 
 Os tipos compartilhados pelo frontend ficam em `src/types/climagrid.ts`. A regra de negócio permanece no backend; as validações locais existem para feedback rápido e não substituem a validação oficial dos dados ou do PWF.
 
-O upload de cenário futuro, a estimativa por IA e a classificação de
-curtailment permanecem fora desta etapa. Não há queda silenciosa do replay real
-para dados previstos ou fictícios.
+O formato e as limitações do CSV estão em [`Docs/ML/CENARIO_CLIMATICO_FASE_2.md`](../Docs/ML/CENARIO_CLIMATICO_FASE_2.md). A curva física ainda não é um modelo treinado de potencial. A previsão meteorológica para uma hora futura e a classificação de curtailment permanecem fora desta etapa. Não há queda silenciosa do replay real para dados previstos ou fictícios.
 
 Roadmap da interface:
 
 1. replay histórico observado — implementado;
-2. arquivo climático do usuário e PWF de uma hora — próximo/MVP;
+2. arquivo climático do usuário e PWF de uma hora — implementação inicial em validação;
 3. hora futura prevista — pós-MVP;
 4. curtailment — fora do MVP.
 

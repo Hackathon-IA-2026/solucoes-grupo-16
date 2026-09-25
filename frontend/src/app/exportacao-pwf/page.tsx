@@ -28,7 +28,7 @@ export default function PwfExportPage() {
     const pendingMappings = allocationMappings.filter((mapping) => !mapping.busNumber);
     const invalidGeneration = selectedPlants.filter((plant) => plant.observedGenerationMw === null && plant.estimatedGenerationMw === null);
     const blockers = [
-      ...(!state.climateScenario ? ["Replay histórico ausente."] : []),
+      ...(!state.climateScenario ? ["Cenário ausente."] : []),
       ...(selectedPlants.length === 0 ? ["Nenhuma usina selecionada."] : []),
       ...(!state.study.name.trim() ? ["Nome do cenário ausente."] : []),
       ...(!state.study.referencePwf ? ["Caso base PWF ausente."] : []),
@@ -39,6 +39,7 @@ export default function PwfExportPage() {
     return { blockers, isReady: blockers.length === 0 };
   }, [allocationMappings, selectedPlants, state.climateScenario, state.study]);
   const totalGeneration = selectedPlants.reduce((sum, plant) => sum + generationMw(plant), 0);
+  const isScenario = state.climateScenario?.mode === "scenario";
 
   async function handleExport() {
     if (!readiness.isReady || !state.climateScenario) return;
@@ -78,8 +79,8 @@ export default function PwfExportPage() {
       <div className="space-y-6">
         <PageHeader
           eyebrow="Etapa 4 de 4 · Exportação PWF"
-          title="Revise a geração observada antes de gerar o PWF"
-          description="O arquivo final preserva o caso base e substitui somente o campo Pg das barras mapeadas pelos valores observados pela ONS no instante selecionado."
+          title={`Revise a geração ${isScenario ? "estimada" : "observada"} antes de gerar o PWF`}
+          description={`O arquivo final preserva o caso base e substitui somente o campo Pg das barras mapeadas pelos valores ${isScenario ? "estimados pela curva física" : "observados pela ONS"} no instante selecionado.`}
           aside={<span className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold ${readiness.isReady ? "border-emerald-300/30 bg-emerald-300/10 text-emerald-200" : "border-amber-300/30 bg-amber-300/10 text-amber-200"}`}><span className={`h-2 w-2 rounded-full ${readiness.isReady ? "bg-emerald-300" : "bg-amber-300"}`} />{readiness.isReady ? "Pronto para exportar" : "Configuração incompleta"}</span>}
         />
 
@@ -87,9 +88,9 @@ export default function PwfExportPage() {
         {readiness.blockers.length > 0 ? <Notice tone="error" title="Exportação bloqueada"><ul className="list-disc space-y-1 pl-4">{readiness.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul></Notice> : null}
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <SummaryCard label="Usinas mapeadas" value={`${selectedPlants.length}`} detail="selecionadas no replay" />
-          <SummaryCard label="Geração observada" value={`${totalGeneration.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MW`} detail="valor horário da ONS" />
-          <SummaryCard label="Instante" value={state.climateScenario ? new Date(state.climateScenario.timestamp).toLocaleDateString("pt-BR") : "—"} detail={state.climateScenario ? new Date(state.climateScenario.timestamp).toLocaleTimeString("pt-BR") : "replay pendente"} />
+          <SummaryCard label="Usinas mapeadas" value={`${selectedPlants.length}`} detail="selecionadas no cenário" />
+          <SummaryCard label={isScenario ? "Potencial estimado" : "Geração observada"} value={`${totalGeneration.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MW`} detail={isScenario ? "curva física e disponibilidade informada" : "valor horário da ONS"} />
+          <SummaryCard label="Instante" value={state.climateScenario ? new Date(state.climateScenario.timestamp).toLocaleDateString("pt-BR") : "—"} detail={state.climateScenario ? new Date(state.climateScenario.timestamp).toLocaleTimeString("pt-BR") : "cenário pendente"} />
           <SummaryCard label="Caso base" value={state.study.referencePwf ? "Recebido" : "Pendente"} detail={state.study.referencePwf?.name ?? "necessário para o PWF"} />
         </section>
 
@@ -98,7 +99,7 @@ export default function PwfExportPage() {
             <div className="border-b border-outline-variant/40 p-5"><h2 className="font-semibold text-on-surface">Usinas, barras e geração</h2><p className="mt-1 text-sm text-on-surface-variant">Confira os valores que serão escritos no campo Pg.</p></div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[680px] border-collapse text-left">
-                <thead className="bg-surface-container-lowest text-[10px] uppercase tracking-wider text-outline"><tr><th className="px-5 py-3">Usina</th><th className="px-3 py-3">Barra</th><th className="px-3 py-3 text-right">Pg observado</th><th className="px-5 py-3">Fonte</th></tr></thead>
+                <thead className="bg-surface-container-lowest text-[10px] uppercase tracking-wider text-outline"><tr><th className="px-5 py-3">Usina</th><th className="px-3 py-3">Barra</th><th className="px-3 py-3 text-right">{isScenario ? "Pg estimado" : "Pg observado"}</th><th className="px-5 py-3">Fonte</th></tr></thead>
                 <tbody className="divide-y divide-outline-variant/30">
                   {selectedPlants.map((plant) => {
                     const mappings = allocationMappings.filter((mapping) => mapping.plantId === plant.id);
@@ -107,7 +108,7 @@ export default function PwfExportPage() {
                         <td className="px-5 py-4"><p className="text-sm font-medium text-on-surface">{plant.name}</p><p className="mt-0.5 font-mono text-[10px] text-outline">{plant.onsId}</p></td>
                         <td className="px-3 py-4"><p className="font-mono text-sm text-on-surface">{mappings.map((mapping) => mapping.busNumber).join(", ") || "—"}</p><p className="text-[10px] text-outline">{mappings.length} parcela(s) de geração</p></td>
                         <td className="px-3 py-4 text-right font-mono text-sm text-secondary">{generationMw(plant).toLocaleString("pt-BR")} MW</td>
-                        <td className="px-5 py-4 text-xs text-on-surface-variant">ONS · geração verificada</td>
+                        <td className="px-5 py-4 text-xs text-on-surface-variant">{isScenario ? "Curva física · vento do usuário" : "ONS · geração verificada"}</td>
                       </tr>
                     );
                   })}
@@ -124,8 +125,8 @@ export default function PwfExportPage() {
               <dl className="mt-4 space-y-3 text-xs">
                 <TraceRow label="Cenário" value={state.study.name || "—"} />
                 <TraceRow label="Dados" value={state.climateScenario?.dataVersion ?? "—"} />
-                <TraceRow label="Geração" value="ONS observada" />
-                <TraceRow label="Vento" value="ERA5" />
+                <TraceRow label="Geração" value={isScenario ? "Potencial físico estimado" : "ONS observada"} />
+                <TraceRow label="Vento" value={isScenario ? "Arquivo do usuário" : "ERA5"} />
                 <TraceRow label="Caso base" value={state.study.referencePwf?.name ?? "—"} />
               </dl>
             </section>

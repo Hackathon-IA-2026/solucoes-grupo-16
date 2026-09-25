@@ -3,7 +3,7 @@ export type ClimateSource = "historical" | "upload";
 export interface ClimateScenario {
   id: string;
   source: ClimateSource;
-  mode: "replay" | "forecast";
+  mode: "replay" | "scenario" | "forecast";
   subsystem: "NE";
   timestamp: string;
   resolutionMinutes: 30 | 60;
@@ -12,7 +12,7 @@ export interface ClimateScenario {
   fileSizeBytes?: number;
   rowCount?: number;
   dataVersion?: string;
-  generationSource: "ONS_GERACAO_USINA_2_HO" | "MODEL";
+  generationSource: "ONS_GERACAO_USINA_2_HO" | "PHYSICAL_CURVE" | "MODEL";
   weatherSource: "ERA5" | "USER";
   warnings?: string[];
   createdAt: string;
@@ -32,11 +32,12 @@ export interface WindPlantEstimate {
   v100: number;
   windSpeedMps: number;
   windDirectionDegrees: number;
-  generationSource: "ONS_GERACAO_USINA_2_HO" | "MODEL";
+  generationSource: "ONS_GERACAO_USINA_2_HO" | "PHYSICAL_CURVE" | "MODEL";
   weatherSource: "ERA5" | "USER";
   suggestedBusAllocations: SuggestedBusAllocation[];
   mappingCoveragePercent: number;
   estimatedGenerationMw: number | null;
+  availability?: number;
   warnings?: string[];
 }
 
@@ -137,6 +138,13 @@ export interface FileValidationResult {
 export interface ProcessScenarioResult {
   scenario: ClimateScenario;
   estimates: WindPlantEstimate[];
+}
+
+export interface ClimateFileInspection {
+  rowCount: number;
+  plantCount: number;
+  timestamps: string[];
+  sha256: string;
 }
 
 export interface PwfExportRequest {

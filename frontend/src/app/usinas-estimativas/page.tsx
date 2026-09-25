@@ -30,9 +30,10 @@ export default function HistoricalObservationsPage() {
   const selectedSet = useMemo(() => new Set(state.selectedPlantIds), [state.selectedPlantIds]);
   const selectedPlants = state.estimates.filter((plant) => selectedSet.has(plant.id));
   const selectedGeneration = selectedPlants.reduce(
-    (total, plant) => total + (plant.observedGenerationMw ?? 0),
+    (total, plant) => total + (plant.observedGenerationMw ?? plant.estimatedGenerationMw ?? 0),
     0,
   );
+  const isScenario = state.climateScenario?.mode === "scenario";
   const selectedCapacity = selectedPlants.reduce((total, plant) => total + plant.installedCapacityMw, 0);
   const allVisibleSelected = filteredPlants.length > 0 && filteredPlants.every((plant) => selectedSet.has(plant.id));
 
@@ -54,9 +55,9 @@ export default function HistoricalObservationsPage() {
       <AppShell>
         <div className="mx-auto flex min-h-[55vh] max-w-xl flex-col items-center justify-center text-center">
           <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary/10 text-secondary"><Icon name="wind" className="h-7 w-7" /></span>
-          <h1 className="mt-5 text-2xl font-semibold">Nenhum replay carregado</h1>
-          <p className="mt-2 text-sm leading-6 text-on-surface-variant">Escolha uma hora histórica para consultar a geração observada das usinas.</p>
-          <Link href="/" className="button-primary mt-6"><Icon name="arrow-left" /> Escolher uma hora</Link>
+          <h1 className="mt-5 text-2xl font-semibold">Nenhum cenário carregado</h1>
+          <p className="mt-2 text-sm leading-6 text-on-surface-variant">Escolha uma hora histórica ou envie um arquivo climático para iniciar.</p>
+          <Link href="/" className="button-primary mt-6"><Icon name="arrow-left" /> Iniciar</Link>
         </div>
       </AppShell>
     );
@@ -66,22 +67,22 @@ export default function HistoricalObservationsPage() {
     <AppShell>
       <div className="space-y-6">
         <PageHeader
-          eyebrow="Etapa 2 de 4 · Observações históricas"
+          eyebrow={isScenario ? "Etapa 2 de 4 · Potencial estimado" : "Etapa 2 de 4 · Observações históricas"}
           title="Selecione as usinas do estudo"
-          description="Os valores abaixo são medições horárias da ONS, acompanhadas pelo vento ERA5 da mesma hora. Selecione somente as usinas que serão associadas ao PWF."
+          description={isScenario ? "Os valores abaixo são estimativas físicas para o vento informado no CSV. Selecione os conjuntos que serão associados ao PWF." : "Os valores abaixo são medições horárias da ONS, acompanhadas pelo vento ERA5 da mesma hora. Selecione somente as usinas que serão associadas ao PWF."}
           aside={<div className="rounded-xl bg-surface-container-lowest px-4 py-3 text-right"><p className="text-[10px] font-semibold uppercase tracking-wider text-outline">Selecionadas</p><p className="mt-1 text-xl font-semibold text-secondary">{state.selectedPlantIds.length} de {state.estimates.length}</p></div>}
         />
 
         {runtimeConfig.isDemoMode ? <Notice tone="warning" title="Resultados simulados">A API não está configurada; estes valores servem apenas para navegar pelo fluxo.</Notice> : null}
-        <Notice tone="success" title="Geração observada, não estimada">
-          Instante reproduzido: <strong>{new Date(state.climateScenario.timestamp).toLocaleString("pt-BR")}</strong>. Fonte de geração: ONS; fonte de vento: ERA5.
+        <Notice tone={isScenario ? "warning" : "success"} title={isScenario ? "Potencial estimado pela curva física" : "Geração observada, não estimada"}>
+          Instante: <strong>{new Date(state.climateScenario.timestamp).toLocaleString("pt-BR")}</strong>. Fonte de geração: {isScenario ? "curva física genérica" : "ONS"}; fonte de vento: {isScenario ? "arquivo do usuário" : "ERA5"}.
         </Notice>
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Resumo da seleção">
-          <Metric label="Geração observada" value={`${selectedGeneration.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MW`} detail="soma das usinas selecionadas" />
+          <Metric label={isScenario ? "Potencial estimado" : "Geração observada"} value={`${selectedGeneration.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MW`} detail="soma das usinas selecionadas" />
           <Metric label="Capacidade instalada" value={`${selectedCapacity.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} MW`} detail="capacidade cadastrada" />
-          <Metric label="Fator observado" value={selectedCapacity > 0 ? `${((selectedGeneration / selectedCapacity) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%` : "—"} detail="geração / capacidade" />
-          <Metric label="Cobertura" value={`${state.estimates.length} conjuntos`} detail={`snapshot ${state.climateScenario.snapshotDate ?? "—"}`} />
+          <Metric label={isScenario ? "Fator estimado" : "Fator observado"} value={selectedCapacity > 0 ? `${((selectedGeneration / selectedCapacity) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%` : "—"} detail="geração / capacidade" />
+          <Metric label="Cobertura" value={`${state.estimates.length} conjuntos`} detail={isScenario ? (state.climateScenario.fileName ?? "arquivo do usuário") : `snapshot ${state.climateScenario.snapshotDate ?? "—"}`} />
         </section>
 
         <section className="overflow-hidden rounded-2xl border border-outline-variant/50 bg-surface-container-low shadow-sm">
@@ -104,9 +105,9 @@ export default function HistoricalObservationsPage() {
                   <th className="px-3 py-3">Usina</th>
                   <th className="px-3 py-3">UF</th>
                   <th className="px-3 py-3 text-right">Capacidade</th>
-                  <th className="px-3 py-3 text-right">Geração ONS</th>
+                  <th className="px-3 py-3 text-right">{isScenario ? "Potencial estimado" : "Geração ONS"}</th>
                   <th className="px-3 py-3 text-right">Fator</th>
-                  <th className="px-3 py-3 text-right">Vento ERA5</th>
+                  <th className="px-3 py-3 text-right">{isScenario ? "Vento informado" : "Vento ERA5"}</th>
                   <th className="px-4 py-3 text-right">Direção</th>
                 </tr>
               </thead>
@@ -118,7 +119,7 @@ export default function HistoricalObservationsPage() {
                     <td className="px-3 py-4 text-sm text-on-surface-variant">{plant.state}</td>
                     <td className="px-3 py-4 text-right font-mono text-sm text-on-surface-variant">{plant.installedCapacityMw.toLocaleString("pt-BR")} MW</td>
                     <td className="px-3 py-4 text-right font-mono text-sm font-semibold text-secondary">
-                      {formatMw(plant.observedGenerationMw)}
+                      {formatMw(plant.observedGenerationMw ?? plant.estimatedGenerationMw)}
                     </td>
                     <td className="px-3 py-4 text-right font-mono text-xs text-on-surface-variant">
                       {formatPercent(plant.capacityFactorPercent)}
@@ -138,7 +139,7 @@ export default function HistoricalObservationsPage() {
         </section>
 
         <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <Link href="/" className="button-secondary"><Icon name="arrow-left" /> Alterar instante</Link>
+          <Link href={isScenario ? "/cenario-climatico" : "/"} className="button-secondary"><Icon name="arrow-left" /> Alterar instante</Link>
           <button type="button" disabled={state.selectedPlantIds.length === 0} onClick={() => router.push("/mapeamento-barras")} className="button-primary">Mapear {state.selectedPlantIds.length} {state.selectedPlantIds.length === 1 ? "usina" : "usinas"}<Icon name="arrow-right" /></button>
         </div>
       </div>

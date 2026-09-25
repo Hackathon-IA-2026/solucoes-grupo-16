@@ -2,6 +2,7 @@ import { DEMO_SNAPSHOT_DATE, demoPlantEstimates } from "@/lib/mock-data";
 import type {
   ClimateScenario,
   ClimateSource,
+  ClimateFileInspection,
   ProcessScenarioResult,
   PwfExportRequest,
   PwfExportResult,
@@ -44,6 +45,17 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 async function processScenario(input: ProcessScenarioInput): Promise<ProcessScenarioResult> {
+  if (input.source === "upload") {
+    if (!apiBaseUrl) throw new Error("O cenário climático exige a API do ClimaGrid.");
+    if (!input.file) throw new Error("Selecione um arquivo CSV.");
+    const formData = new FormData();
+    formData.append("file", input.file);
+    formData.append("timestamp", input.timestamp);
+    const result = await requestJson<{scenario: ClimateScenario; observations: ProcessScenarioResult["estimates"]}>(
+      "/climate-scenarios/file/estimate", { method: "POST", body: formData },
+    );
+    return { scenario: result.scenario, estimates: result.observations };
+  }
   if (!apiBaseUrl) {
     await new Promise((resolve) => window.setTimeout(resolve, 650));
     const now = new Date().toISOString();
@@ -70,10 +82,6 @@ async function processScenario(input: ProcessScenarioInput): Promise<ProcessScen
     };
   }
 
-  if (input.source === "upload" && input.file) {
-    throw new Error("O upload climático ainda não está disponível no backend.");
-  }
-
   const result = await requestJson<{
     scenario: ClimateScenario;
     observations: ProcessScenarioResult["estimates"];
@@ -86,6 +94,15 @@ async function processScenario(input: ProcessScenarioInput): Promise<ProcessScen
     }),
   });
   return { scenario: result.scenario, estimates: result.observations };
+}
+
+async function inspectClimateFile(file: File): Promise<ClimateFileInspection> {
+  if (!apiBaseUrl) throw new Error("O cenário climático exige a API do ClimaGrid.");
+  const formData = new FormData();
+  formData.append("file", file);
+  return requestJson<ClimateFileInspection>("/climate-scenarios/file/inspect", {
+    method: "POST", body: formData,
+  });
 }
 
 async function exportPwf(request: PwfExportRequest): Promise<PwfExportResult> {
@@ -221,6 +238,7 @@ async function getCapabilities(): Promise<SystemCapabilities> {
 
 export const climagridApi = {
   processScenario,
+  inspectClimateFile,
   uploadReferencePwf,
   getPwfGenerationTargets,
   getCapabilities,

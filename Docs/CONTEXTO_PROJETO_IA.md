@@ -19,7 +19,7 @@ de fluxo de potência nem afirma que o caso converge.
 | Etapa | Estado | Entrega | Limite |
 | --- | --- | --- | --- |
 | 1. Replay histórico | **Implementada** | Escolher uma hora existente, recuperar geração ONS observada e vento ERA5, mapear barras e exportar PWF | Não há previsão de IA |
-| 2. Arquivo climático do usuário | **Próxima — encerra o MVP** | Fazer upload de clima próprio, escolher uma hora, calcular geração esperada e exportar PWF | Não é previsão automática do futuro |
+| 2. Arquivo climático do usuário | **Implementação inicial em validação** | Upload CSV, escolha da hora, curva física de potencial e fluxo até PWF | Ainda sem modelo de potencial treinado e aprovado; exige aceite ponta a ponta com caso real |
 | 3. Hora futura | **Pós-MVP** | Escolher uma hora futura, estimar geração com um modelo e exportar um PWF daquele instante | Exige fonte/hipótese meteorológica futura explícita |
 | 4. Curtailment | **Por último — fora do MVP** | Estimar risco, montante e causa provável de restrição | Não se confunde com potencial eólico ou geração bruta |
 
@@ -49,7 +49,7 @@ significa que todos os meses históricos já estejam disponíveis. Consulte
 
 ### Etapa 2 — arquivo climático do usuário
 
-Esta é a próxima implementação e o ponto em que o MVP termina. Fluxo desejado:
+Esta etapa encerra o MVP. O fluxo CSV e a estimativa física inicial estão implementados; ainda é necessária validação ponta a ponta com um caso real e aprovação do significado/qualidade do potencial. Fluxo:
 
 1. usuário envia um arquivo climático;
 2. backend valida formato, unidades, timezone, cobertura e duplicatas;
@@ -59,18 +59,18 @@ Esta é a próxima implementação e o ponto em que o MVP termina. Fluxo desejad
 6. backend gera um PWF para aquela hora;
 7. especialista abre o arquivo no ANAREDE.
 
-Antes de codificar, fechar o contrato do arquivo. O mínimo conceitual é:
+O contrato implementado está em [`ML/CENARIO_CLIMATICO_FASE_2.md`](ML/CENARIO_CLIMATICO_FASE_2.md). O mínimo aceito é:
 
 - `timestamp_utc` com timezone;
-- identificação da usina (`usina_id`/CEG) **ou** coordenadas/grade que permitam
-  associação inequívoca;
+- `usina_id` do conjunto ONS conciliado no catálogo por CEG;
 - `u100` e `v100` em m/s;
 - opcionalmente temperatura a 2 m em K e pressão de superfície em Pa;
+- disponibilidade entre 0 e 1 por conjunto e hora;
 - uma linha por usina e hora, sem duplicatas.
 
-Formatos candidatos são CSV, Parquet e NetCDF. Nenhum deve ser declarado
-suportado até existir parser, contrato, fixture e teste ponta a ponta. O endpoint
-experimental `POST /estimar-geracao` não torna o upload multiusina completo.
+Somente CSV está implementado para esta etapa. Parquet e NetCDF ainda não são
+aceitos. A série ONS de geração verificada não valida um modelo de potencial;
+por isso a curva física é identificada explicitamente como estimativa genérica.
 
 Critério de conclusão do MVP: um arquivo climático válido, uma hora escolhida e
 um PWF real devem percorrer toda a interface sem mocks; geração e proveniência
@@ -123,6 +123,7 @@ Endpoints operacionais da etapa 1:
 
 - `GET /system/capabilities`;
 - `POST /climate-scenarios/historical`;
+- `POST /climate-scenarios/file/inspect` e `POST /climate-scenarios/file/estimate`;
 - `POST /pwf/reference-cases`;
 - `GET /pwf/reference-cases/:id/generation-targets`;
 - `POST /pwf/exports`.

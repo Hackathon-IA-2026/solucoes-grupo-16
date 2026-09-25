@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { Icon } from "@/components/ui/icon";
@@ -137,6 +138,11 @@ export default function HistoricalReplayPage() {
         <Notice title="O que será levado ao PWF">
           Após selecionar as usinas e associá-las às barras, o sistema escreverá no campo Pg exatamente a geração observada nesta hora, preservando os demais blocos do caso base.
         </Notice>
+        <section className="rounded-2xl border border-outline-variant/50 bg-surface-container-low p-5">
+          <h2 className="font-semibold">Tem um arquivo de vento próprio?</h2>
+          <p className="mt-2 text-sm text-on-surface-variant">Envie o clima e a disponibilidade de cada conjunto para estimar o potencial eólico de uma hora do arquivo.</p>
+          <Link href="/cenario-climatico" className="button-secondary mt-4">Criar cenário climático</Link>
+        </section>
       </div>
     </AppShell>
   );

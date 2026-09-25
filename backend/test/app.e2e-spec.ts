@@ -4,7 +4,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
 import { AppModule } from './../src/app.module.js';
 import { configureBodyParsers } from './../src/http-body-parser.js';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -31,6 +31,15 @@ describe('AppController (e2e)', () => {
       .get('/')
       .expect(200)
       .expect('Hello World!');
+  });
+
+  it('reports available capabilities without claiming an unavailable AI service', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/system/capabilities')
+      .expect(200);
+    expect(response.body.backend.available).toBe(true);
+    expect(response.body.pwf.export).toBe(true);
+    expect(typeof response.body.climate.fileUpload).toBe('boolean');
   });
 
   it('uploads, interprets and exposes generation targets from a PWF', async () => {
@@ -105,6 +114,82 @@ describe('AppController (e2e)', () => {
     expect(exportedBuffer.length).toBe(sourcePwf.length);
     expect(block(exportedBuffer, 'DGER')).toBe(block(sourcePwf, 'DGER'));
     expect(block(exportedBuffer, 'DGEI')).toBe(block(sourcePwf, 'DGEI'));
+
+    const scenarioExport = await request(app.getHttpServer())
+      .post('/pwf/exports')
+      .send({
+        referencePwfId: upload.body.id,
+        scenarioId: 'cenario-climatico-teste',
+        studyName: 'Potencial pelo vento',
+        generationSource: 'estimated',
+        dataVersion: 'user-csv-sha256-teste',
+        plants: [{
+          plantId: 'ONS_1', onsId: 'ONS_1', generationMw: 7.11,
+          mapping: { busNumber: '123', busName: 'PARQUE EOL',
+            nominalVoltageKv: '230', area: '5' },
+        }],
+      })
+      .buffer(true)
+      .parse((response, callback) => {
+        const chunks: Buffer[] = [];
+        response.on('data', (data: Buffer) => chunks.push(data));
+        response.on('end', () => callback(null, Buffer.concat(chunks)));
+      })
+      .expect(201);
+    expect(scenarioExport.headers['x-generation-source']).toBe('estimated');
+    expect(scenarioExport.headers['x-data-version']).toBe('user-csv-sha256-teste');
+    const scenarioPwf = scenarioExport.body as Buffer;
+    expect(scenarioPwf.toString('latin1')).toContain('  7.1');
+    expect(scenarioPwf.length).toBe(sourcePwf.length);
+    expect(block(scenarioPwf, 'DGER')).toBe(block(sourcePwf, 'DGER'));
+    expect(block(scenarioPwf, 'DGEI')).toBe(block(sourcePwf, 'DGEI'));
+  });
+
+  it('exports an estimated scenario into a real 2040 PWF', async () => {
+    const original = await readFile(join(
+      process.cwd(), '..', 'Docs', 'Casos de Referência', 'pwfs',
+      '2040_1. PD 2035 - MÁXIMA DIURNA SECO.PWF',
+    ));
+    const upload = await request(app.getHttpServer())
+      .post('/pwf/reference-cases')
+      .attach('file', original, 'referencia-2040.pwf')
+      .expect(201);
+    const targets = await request(app.getHttpServer())
+      .get(`/pwf/reference-cases/${upload.body.id}/generation-targets`)
+      .expect(200);
+    const target = targets.body.items.find((item: { editable: boolean }) => item.editable);
+    expect(target).toBeDefined();
+
+    const exported = await request(app.getHttpServer())
+      .post('/pwf/exports')
+      .send({
+        referencePwfId: upload.body.id,
+        scenarioId: 'cenario-climatico-real',
+        studyName: 'Potencial físico',
+        generationSource: 'estimated',
+        dataVersion: 'user-csv-sha256-teste-real',
+        plants: [{
+          plantId: 'CEECVA', onsId: 'CEECVA', generationMw: 7.110642,
+          mapping: {
+            busNumber: String(target.busNumber), busName: target.busName,
+            nominalVoltageKv: String(target.baseVoltageKv ?? ''),
+            area: String(target.area ?? ''),
+          },
+        }],
+      })
+      .buffer(true)
+      .parse((response, callback) => {
+        const chunks: Buffer[] = [];
+        response.on('data', (data: Buffer) => chunks.push(data));
+        response.on('end', () => callback(null, Buffer.concat(chunks)));
+      })
+      .expect(201);
+    const result = exported.body as Buffer;
+    expect(result.length).toBe(original.length);
+    expect(exported.headers['x-generation-source']).toBe('estimated');
+    expect(exported.headers['x-modified-buses']).toBe(String(target.busNumber));
+    expect(block(result, 'DGER')).toBe(block(original, 'DGER'));
+    expect(block(result, 'DGEI')).toBe(block(original, 'DGEI'));
   });
 
   afterAll(async () => {

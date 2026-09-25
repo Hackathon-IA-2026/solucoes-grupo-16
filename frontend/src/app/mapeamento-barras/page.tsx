@@ -47,6 +47,7 @@ export default function BusMappingPage() {
     && state.study.referencePwf,
   );
   const partialCoverage = selectedPlants.filter((plant) => plant.mappingCoveragePercent < 100);
+  const isScenario = state.climateScenario?.mode === "scenario";
 
   async function handleReferencePwf(file: File | null) {
     setUploadError(null);
@@ -129,14 +130,14 @@ export default function BusMappingPage() {
         <PageHeader
           eyebrow="Etapa 3 de 4 · Distribuição usina → barras"
           title="Valide as barras do caso PWF"
-          description="O sistema usa o CEG de cada usina para localizar as barras e reparte a geração observada proporcionalmente à capacidade conectada. Revise as sugestões antes de exportar."
+          description={`Associe cada conjunto às barras do caso PWF e revise a distribuição da geração ${isScenario ? "estimada" : "observada"} antes de exportar.`}
           aside={<div className="min-w-44 rounded-xl bg-surface-container-lowest px-4 py-3"><div className="flex items-center justify-between text-xs"><span className="text-on-surface-variant">Alocações válidas</span><strong className="text-secondary">{mappedCount}/{allocations.length || "—"}</strong></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-variant"><div className="h-full bg-secondary transition-all" style={{ width: `${allocations.length ? (mappedCount / allocations.length) * 100 : 0}%` }} /></div></div>}
         />
 
         <Notice title="Como a geração é distribuída">
-          Um conjunto ONS pode alimentar várias barras. Cada parcela abaixo é calculada por capacidade e a soma das parcelas preserva exatamente a geração observada do conjunto. Se vários conjuntos chegarem à mesma barra, o backend somará os valores antes de escrever o Pg.
+          Um conjunto ONS pode alimentar várias barras. Quando existe um mapeamento cadastral, a geração é dividida conforme a capacidade conectada. Sem mapeamento, escolha a barra manualmente e confirme a distribuição com o especialista. Se vários conjuntos chegarem à mesma barra, o backend somará os valores antes de escrever o Pg.
         </Notice>
-        {partialCoverage.length > 0 ? <Notice tone="warning" title="Mapeamento parcial">{partialCoverage.length} conjunto(s) possuem algum membro sem correspondência CEG na planilha de referência. Revise essas alocações com o especialista antes do uso no ANAREDE.</Notice> : null}
+        {partialCoverage.length > 0 ? <Notice tone="warning" title="Mapeamento ausente ou parcial">{partialCoverage.length} conjunto(s) não têm todas as barras confirmadas pelo cadastro. Revise as alocações com o especialista antes do uso no ANAREDE.</Notice> : null}
 
         <section className="grid gap-5 rounded-2xl border border-outline-variant/50 bg-surface-container-low p-5 shadow-sm lg:grid-cols-2 lg:p-6">
           <div>

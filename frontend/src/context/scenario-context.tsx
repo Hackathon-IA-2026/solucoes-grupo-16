@@ -75,7 +75,7 @@ export function ScenarioProvider({ children }: { children: React.ReactNode }) {
           selectedPlantIds: estimates.map((estimate) => estimate.id),
           study: {
             ...initialState.study,
-            name: `Replay ${new Date(scenario.timestamp).toLocaleString("pt-BR")}`,
+            name: `${scenario.mode === "scenario" ? "Cenário climático" : "Replay"} ${new Date(scenario.timestamp).toLocaleString("pt-BR")}`,
           },
         });
       },

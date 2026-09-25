@@ -69,6 +69,47 @@ export interface AiHistoricalReplayResponse {
   warnings: string[];
 }
 
+export interface AiClimateFileInspection {
+  row_count: number;
+  plant_count: number;
+  timestamps: string[];
+  sha256: string;
+}
+
+export interface AiClimateFileEstimate {
+  scenario_id: string;
+  subsystem: 'NE';
+  timestamp: string;
+  resolution_minutes: 60;
+  data_version: string;
+  generation_source: 'PHYSICAL_CURVE';
+  weather_source: 'USER';
+  row_count: number;
+  warnings: string[];
+  observations: Array<{
+    usina_id: string;
+    ons_id: string;
+    name: string;
+    state: string;
+    latitude: number | null;
+    longitude: number | null;
+    installed_capacity_mw: number;
+    observed_generation_mw: null;
+    estimated_generation_mw: number;
+    capacity_factor_percent: number;
+    u100: number;
+    v100: number;
+    wind_speed_mps: number;
+    wind_direction_degrees: number;
+    availability: number;
+    generation_source: 'PHYSICAL_CURVE';
+    weather_source: 'USER';
+    suggested_bus_allocations: AiHistoricalReplayResponse['observations'][number]['suggested_bus_allocations'];
+    mapping_coverage_percent: number;
+    warnings: string[];
+  }>;
+}
+
 @Injectable()
 export class AiServiceClient {
   private readonly baseUrl = (
@@ -92,6 +133,18 @@ export class AiServiceClient {
       },
       120_000,
     );
+  }
+
+  async inspectClimateFile(csvText: string): Promise<AiClimateFileInspection> {
+    return this.request<AiClimateFileInspection>('/cenario-climatico/inspecionar', {
+      method: 'POST', body: JSON.stringify({ csv_text: csvText }),
+    }, 120_000);
+  }
+
+  async estimateClimateFile(csvText: string, timestampUtc: string): Promise<AiClimateFileEstimate> {
+    return this.request<AiClimateFileEstimate>('/cenario-climatico/estimar', {
+      method: 'POST', body: JSON.stringify({ csv_text: csvText, timestamp_utc: timestampUtc }),
+    }, 120_000);
   }
 
   private async request<T>(

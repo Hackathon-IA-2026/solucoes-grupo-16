@@ -9,8 +9,7 @@ O contexto canônico para pessoas e agentes de IA está em
 possui quatro etapas:
 
 1. replay histórico — **implementado**;
-2. upload climático do usuário → geração estimada → PWF — **próxima etapa e
-   limite do MVP**;
+2. upload climático do usuário → potencial estimado → PWF — **implementação inicial em validação e limite do MVP**;
 3. escolha de hora futura → previsão de geração → PWF — pós-MVP;
 4. curtailment — por último e fora do MVP.
 
@@ -274,9 +273,7 @@ de trabalho, o snapshot de janeiro de 2024 está em
 741 horas disponíveis entre 1 e 31 de janeiro. Os dados brutos e processados são
 ignorados pelo Git e precisam ser preservados ou republicados separadamente.
 
-O upload de cenário futuro, a estimativa por IA e o classificador de
-curtailment permanecem fora deste recorte. A interface do MVP identifica
-explicitamente o fluxo atual como replay de geração observada.
+O CSV da etapa 2 é descrito em [`Docs/ML/CENARIO_CLIMATICO_FASE_2.md`](Docs/ML/CENARIO_CLIMATICO_FASE_2.md). Ele usa uma curva física genérica e não um modelo treinado de potencial. A previsão meteorológica futura e o classificador de curtailment permanecem fora deste recorte. A interface distingue o replay observado do cenário estimado.
 
 ## Preparação para AWS
 

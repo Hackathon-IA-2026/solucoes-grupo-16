@@ -1,6 +1,6 @@
 # Experimento 2 da usina 01: como executar e entender o resultado
 
-> **Estado:** preparado, ainda não executado. Este é um experimento de pesquisa.
+> **Estado:** executado e avaliado. Este é um experimento de pesquisa.
 > O replay histórico do ClimaGrid usa geração observada da ONS e não depende
 > deste modelo. Veja o [contexto do projeto](../CONTEXTO_PROJETO_IA.md).
 
@@ -83,11 +83,19 @@ Em `metadata.json`, confira `lightgbm_params.min_child_samples`: no experimento
 - `metrics.hybrid_test.overall.mae_mw`: erro médio da curva física com a correção
   do LightGBM, em MW.
 
-O experimento 1 obteve MAE de **73,77 MW** para a curva física e **72,30 MW**
-para o híbrido no teste. Seu `best_iteration` foi **640**: isso é o número de
-árvores selecionado pelo *early stopping*, não uma sugestão para mudar
-`min_child_samples`. Preencha os números do experimento 2 somente depois de
-executá-lo; hoje não há resultado para comparar.
+Os dois experimentos usaram o mesmo dataset e o mesmo teste de 54 horas:
+
+| Resultado no teste | Experimento 1 | Experimento 2 |
+| --- | ---: | ---: |
+| MAE da curva física | 73,77 MW | 73,77 MW |
+| MAE com LightGBM | 72,30 MW | 80,10 MW |
+| `best_iteration` | 640 | 60 |
+| `approved` | `true` | `false` |
+
+Reduzir `min_child_samples` para 50 piorou o MAE nesse recorte. O experimento
+2 não deve substituir o 1; ao receber seu artefato, a API usa a curva física
+porque `approved` é `false`. `best_iteration` é o número de árvores selecionado
+pelo *early stopping*, não uma sugestão para mudar `min_child_samples`.
 
 `approved: true` significa apenas que, naquele teste, o MAE do híbrido foi
 menor que o da curva física. Não significa que o modelo esteja validado para
