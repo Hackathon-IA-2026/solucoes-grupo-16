@@ -114,10 +114,14 @@ export default function HistoricalObservationsPage() {
                     <td className="px-3 py-4"><p className="text-sm font-medium text-on-surface">{plant.name}</p><p className="mt-0.5 font-mono text-[10px] text-outline">{plant.onsId}</p></td>
                     <td className="px-3 py-4 text-sm text-on-surface-variant">{plant.state}</td>
                     <td className="px-3 py-4 text-right font-mono text-sm text-on-surface-variant">{plant.installedCapacityMw.toLocaleString("pt-BR")} MW</td>
-                    <td className="px-3 py-4 text-right font-mono text-sm font-semibold text-secondary">{generationMw(plant).toLocaleString("pt-BR")} MW</td>
-                    <td className="px-3 py-4 text-right font-mono text-sm text-on-surface-variant">{plant.capacityFactorPercent?.toLocaleString("pt-BR", { maximumFractionDigits: 1 }) ?? "—"}%</td>
-                    <td className="px-3 py-4 text-right font-mono text-sm text-on-surface-variant">{plant.windSpeedMps.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} m/s</td>
-                    <td className="px-4 py-4 text-right font-mono text-sm text-on-surface-variant">{plant.windDirectionDegrees.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}°</td>
+                    <td className="px-3 py-4 text-right font-mono text-sm font-semibold text-secondary">{plant.estimatedGenerationMw.toLocaleString("pt-BR")} MW</td>
+                    <td className="px-3 py-4 text-right font-mono text-xs text-on-surface-variant">
+                      {plant.confidenceLowMw != null && plant.confidenceHighMw != null
+                        ? `${plant.confidenceLowMw.toLocaleString("pt-BR")}–${plant.confidenceHighMw.toLocaleString("pt-BR")} MW`
+                        : "Indisponível"}
+                    </td>
+                    <td className="px-3 py-4 text-right font-mono text-sm text-on-surface-variant">{plant.historicalAvailabilityPercent.toLocaleString("pt-BR")}%</td>
+                    <td className="px-4 py-4"><RiskBadge level={plant.riskLevel} reason={plant.probableReason} /></td>
                   </tr>
                 ))}
               </tbody>

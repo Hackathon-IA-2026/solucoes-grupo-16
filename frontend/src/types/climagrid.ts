@@ -31,7 +31,6 @@ export interface WindPlantEstimate {
   longitude: number | null;
   installedCapacityMw: number;
   observedGenerationMw: number | null;
-  estimatedGenerationMw: number | null;
   capacityFactorPercent: number | null;
   u100: number;
   v100: number;
@@ -41,6 +40,15 @@ export interface WindPlantEstimate {
   weatherSource: "ERA5" | "USER";
   suggestedBusAllocations: SuggestedBusAllocation[];
   mappingCoveragePercent: number;
+  estimatedGenerationMw: number;
+  confidenceLowMw: number | null;
+  confidenceHighMw: number | null;
+  confidenceLevel: "alta" | "media" | "baixa";
+  historicalAvailabilityPercent: number;
+  historicalCurtailmentPercent: number | null;
+  sampleCount?: number;
+  probableReason: CurtailmentReason | null;
+  riskLevel: RiskLevel;
   warnings?: string[];
 }
 
