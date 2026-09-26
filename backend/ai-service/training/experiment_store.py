@@ -19,8 +19,10 @@ from uuid import UUID, NAMESPACE_URL, uuid5
 
 import httpx
 
-REQUIRED = {"model.txt", "metadata.json", "residual_quantiles.json", "validation_report.json"}
-ALLOWED = REQUIRED | {"evaluation_report.json"}
+LEGACY_REQUIRED = {"model.txt", "metadata.json", "residual_quantiles.json", "validation_report.json"}
+PROTOCOL_REQUIRED = {"metadata.json", "residual_quantiles.json", "final_evaluation_report.json",
+                     "reserved_access_log.json"}
+ALLOWED = LEGACY_REQUIRED | PROTOCOL_REQUIRED | {"evaluation_report.json", "model.ubj"}
 RECEIPT = ".supabase-publication.json"
 MAX_FILE_BYTES = 64 * 1024 * 1024
 
@@ -55,14 +57,21 @@ def read_bundle(directory: Path) -> tuple[dict, dict[str, bytes]]:
             if not path.is_file() or path.stat().st_size > MAX_FILE_BYTES:
                 raise RegistryError("Artefato inválido ou acima de 64 MiB.")
             files[name] = path.read_bytes()
-    if not REQUIRED <= files.keys():
-        raise RegistryError("Bundle incompleto: faltam artefatos obrigatórios.")
     try:
         metadata = json.loads(files["metadata.json"])
-        if metadata["model_sha256"] != digest(files["model.txt"]):
+        schema = metadata.get("artifact_schema_version", "legacy-temporal-70-15-15")
+        required = LEGACY_REQUIRED if schema == "legacy-temporal-70-15-15" else PROTOCOL_REQUIRED
+        model_name = metadata.get("model_file", "model.txt")
+        if not required <= files.keys() or model_name not in files:
+            raise RegistryError("Bundle incompleto: faltam artefatos obrigatórios.")
+        if metadata["model_sha256"] != digest(files[model_name]):
             raise RegistryError("Hash do modelo difere do metadata.")
+        if schema == "temporal-protocol-v1":
+            if (metadata.get("calibration_sha256") != digest(files["residual_quantiles.json"])
+                    or metadata.get("final_report_sha256") != digest(files["final_evaluation_report.json"])):
+                raise RegistryError("Hashes de calibração ou avaliação final divergem do metadata.")
         for key in ("model_version", "target", "training_config", "metrics"):
-            if key not in metadata:
+            if key not in metadata and not (schema == "temporal-protocol-v1" and key == "metrics"):
                 raise RegistryError(f"Metadata sem {key}.")
         canonical(metadata)
     except (ValueError, TypeError, KeyError):
@@ -143,7 +152,7 @@ class ExperimentStore:
             raise RegistryError("Experimento não encontrado.")
         row = rows[0]
         manifest = row["manifest"]
-        if not isinstance(manifest, dict) or not REQUIRED <= manifest.keys() or not manifest.keys() <= ALLOWED:
+        if not isinstance(manifest, dict) or "metadata.json" not in manifest or not manifest.keys() <= ALLOWED:
             raise RegistryError("Manifesto remoto incompatível.")
         for item in manifest.values():
             if (not isinstance(item, dict) or not isinstance(item.get("sha256"), str)
@@ -179,10 +188,10 @@ class ExperimentStore:
         fingerprint = digest(canonical(manifest))
         run_id = str(uuid5(NAMESPACE_URL, "climagrid-ml:" + fingerprint))
         metadata = json.loads(files["metadata.json"])
-        row = {"id": run_id, "status": "uploading", "model_family": "lightgbm",
+        row = {"id": run_id, "status": "uploading", "model_family": metadata.get("algorithm", "lightgbm"),
                "model_version": metadata["model_version"], "target": metadata["target"],
                "parameters": metadata.get("lightgbm_params", metadata["training_config"]),
-               "metrics": metadata["metrics"], "metadata": metadata,
+               "metrics": metadata.get("metrics", {}), "metadata": metadata,
                "manifest": manifest, "manifest_sha256": fingerprint}
         # Ignore duplicate rows: retries must not regress a complete run to uploading.
         self._request("POST", "/rest/v1/ml_experiments", params={"on_conflict": "id"},

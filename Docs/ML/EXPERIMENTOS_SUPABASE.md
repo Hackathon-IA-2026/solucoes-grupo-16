@@ -65,12 +65,16 @@ Backups do banco não substituem uma política de backup dos objetos Storage.
    no SQL Editor do projeto Supabase ou pelo seu runner de migrações. O script é
    transacional e falha se os nomes já existirem, evitando mudar tabelas/buckets
    preexistentes silenciosamente. Não é necessário reexecutar `schema.sql` do PWF.
-2. A tabela usa RLS, sem acesso para `anon`/`authenticated`. O bucket é privado.
+2. Para o protocolo temporal, execute também
+   `backend/supabase/migrations/20260926_temporal_protocol.sql`. Ela cria o
+   manifesto versionado e o log imutável de acesso às reservas. O estado
+   `complete` do bundle continua significando somente backup verificado.
+3. A tabela usa RLS, sem acesso para `anon`/`authenticated`. O bucket é privado.
    Não copie políticas públicas do exemplo antigo de PWF para os experimentos.
-3. Confira políticas preexistentes em `storage.objects`: políticas genéricas
+4. Confira políticas preexistentes em `storage.objects`: políticas genéricas
    permissivas podem alcançar o novo bucket. Não remova políticas de outros
    módulos sem avaliar seu uso.
-4. Configure a credencial administrativa apenas no processo Python/servidor.
+5. Configure a credencial administrativa apenas no processo Python/servidor.
 
 Aplicação verificada em 2026-09-26 no projeto Supabase do ClimaGrid: a tabela
 `public.ml_experiments` existe com RLS ativo, o bucket `ml-experiments` existe

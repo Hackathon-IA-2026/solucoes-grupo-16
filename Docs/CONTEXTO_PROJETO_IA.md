@@ -144,6 +144,11 @@ geração observada. Os documentos `GUIA_ESTUDANTE_SINAL.md` e
   com manifesto de hashes, recuperação e limpeza local protegida. Requer aplicar
   a migração e configurar credenciais; a disponibilidade remota não é presumida.
   Consulte [`ML/EXPERIMENTOS_SUPABASE.md`](ML/EXPERIMENTOS_SUPABASE.md).
+- A infraestrutura do protocolo temporal versionado está implementada com
+  folds calendáricos, reservas separadas, hashes e gates. Sua execução
+  científica continua bloqueada pelas decisões registradas em
+  [`ML/PROTOCOLO_VALIDACAO_TEMPORAL.md`](ML/PROTOCOLO_VALIDACAO_TEMPORAL.md);
+  nenhum artefato novo foi homologado para servir.
 - `Docs/Casos de Referência/Lista_de_Usinas.xlsx`: CEG, barra e potência do
   horizonte 2040.
 

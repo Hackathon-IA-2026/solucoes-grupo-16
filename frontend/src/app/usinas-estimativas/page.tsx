@@ -17,14 +17,14 @@ export default function HistoricalObservationsPage() {
   const [stateFilter, setStateFilter] = useState("ALL");
 
   const filteredPlants = useMemo(() => {
-    const normalizedQuery = query.trim().toLocaleLowerCase("pt-BR");
+    const normalizedQuery = normalizeString(query);
     return state.estimates.filter((plant) => {
-      const matchesQuery = !normalizedQuery || `${plant.name} ${plant.onsId}`.toLocaleLowerCase("pt-BR").includes(normalizedQuery);
-      return matchesQuery && (stateFilter === "ALL" || plant.state === stateFilter);
+      const matchesQuery = !normalizedQuery || normalizeString(`${plant.name} ${plant.onsId}`).includes(normalizedQuery);
+      return matchesQuery && (stateFilter === "ALL" || plant.state?.trim() === stateFilter);
     });
   }, [query, state.estimates, stateFilter]);
   const availableStates = useMemo(
-    () => Array.from(new Set(state.estimates.map((plant) => plant.state))).sort(),
+    () => Array.from(new Set(state.estimates.map((plant) => plant.state?.trim()).filter(Boolean))).sort(),
     [state.estimates],
   );
   const selectedSet = useMemo(() => new Set(state.selectedPlantIds), [state.selectedPlantIds]);
@@ -95,11 +95,11 @@ export default function HistoricalObservationsPage() {
 
         <section className="overflow-hidden rounded-2xl border border-outline-variant/50 bg-surface-container-low shadow-sm">
           <div className="flex flex-col gap-3 border-b border-outline-variant/40 p-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="relative min-w-0 flex-1 lg:max-w-lg">
+            <div className="relative min-w-0 flex-1">
               <Icon name="search" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-outline" />
               <input className="field-input pl-10" placeholder="Buscar por nome ou ID ONS" value={query} onChange={(event) => setQuery(event.target.value)} />
             </div>
-            <select className="field-input min-w-40" value={stateFilter} onChange={(event) => setStateFilter(event.target.value)} aria-label="Filtrar por estado">
+            <select className="field-input min-w-40 lg:w-auto" value={stateFilter} onChange={(event) => setStateFilter(event.target.value)} aria-label="Filtrar por estado">
               <option value="ALL">Todos os estados</option>
               {availableStates.map((uf) => <option key={uf} value={uf}>{uf}</option>)}
             </select>
@@ -169,4 +169,8 @@ function formatPercent(value: number | null): string {
 
 function Metric({ label, value, detail }: { label: string; value: string; detail: string }) {
   return <div className="rounded-xl border border-outline-variant/40 bg-surface-container-low p-4"><p className="text-[10px] font-semibold uppercase tracking-wider text-outline">{label}</p><p className="mt-2 text-xl font-semibold text-on-surface">{value}</p><p className="mt-1 truncate text-xs text-on-surface-variant">{detail}</p></div>;
+}
+
+function normalizeString(str: string): string {
+  return str.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }

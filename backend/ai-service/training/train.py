@@ -97,6 +97,7 @@ def train(dataset: pd.DataFrame, config: TrainingConfig, artifact_dir: Path) -> 
     saved_config = config.serializable()
     saved_config["start_utc"] = report["experiment"]["start"]
     metadata = {
+        "artifact_schema_version": "legacy-temporal-70-15-15",
         "model_version": config.model_version,
         "model_scope": config.scope,
         "approved": bool(approved),

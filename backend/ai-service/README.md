@@ -13,14 +13,15 @@ O fluxo operacional desta etapa reproduz uma hora já observada: geração
 verificada da ONS e vento ERA5 alinhados por conjunto eólico do Nordeste. Ele
 não executa previsão nem usa o modelo experimental para produzir o `Pg` do PWF.
 
-O repositório também mantém um experimento reproduzível de estimativa de geração
-eólica a partir de vento. A camada de ML aprende somente o resíduo normalizado
-da curva física; ela só é usada se superar o MAE da curva física no teste
-temporal. Esse experimento é separado do replay.
+O repositório também mantém infraestrutura experimental de estimativa de geração
+eólica a partir de vento. Artefatos legados preservam o split 70/15/15 para
+reprodutibilidade. O protocolo novo separa folds de desenvolvimento, early
+stopping, calibração e teste final; nenhum resultado é servido sem homologação
+operacional explícita. Esse experimento é separado do replay.
 
-Não há classificador de curtailment, XGBoost, SHAP ou modelos por usina/cluster
-nesta fase. A integração com o NestJS está disponível, mas mantém essas
-ausências explícitas no contrato em vez de fabricar classificações.
+Há adaptadores comuns para LightGBM e XGBoost no protocolo temporal. Não há
+classificador de curtailment, SHAP ou modelos por usina/cluster nesta fase. A
+integração com o NestJS mantém essas ausências explícitas no contrato.
 
 ## Instalação e execução
 
@@ -242,6 +243,36 @@ Duplicatas exatas da chave lógica são excluídas por inteiro. Se uma linha con
 
 ## CLI
 
+### Protocolo temporal versionado
+
+`training/protocol.example.json` é apenas uma fixture de infraestrutura: suas
+datas e hashes zero não autorizam execução científica. Depois da auditoria e da
+aprovação das decisões da Fase 0, crie uma versão com limites calendáricos e
+hashes reais. O fluxo novo é deliberadamente separado do legado:
+
+```powershell
+python -m training.splits --input data/processed/snapshot.parquet --protocol protocol.json --validity validity.csv --output assignments.parquet --development-output development.parquet --calibration-output calibration.parquet --final-test-output final-test.parquet
+python -m training.tune --input development.parquet --assignments assignments.parquet --protocol protocol-frozen.json --config config.json --output tuning.json
+python -m training.train_final --input development.parquet --assignments assignments.parquet --protocol protocol-frozen.json --config config.json --tuning tuning.json --artifacts artifacts/run-v1 --output-protocol protocol-model-frozen.json
+python -m training.calibrate --input calibration.parquet --assignments assignments.parquet --protocol protocol-model-frozen.json --config config.json --artifacts artifacts/run-v1 --actor NOME --output-protocol protocol-calibration-frozen.json
+python -m training.final_evaluate --input final-test.parquet --assignments assignments.parquet --protocol protocol-calibration-frozen.json --config config.json --artifacts artifacts/run-v1 --actor NOME --output-protocol protocol-final-consumed.json
+```
+
+Cada etapa grava uma nova versão do manifesto. Os comandos recusam datasets com
+linhas fora do papel autorizado; tuning não recebe as reservas e calibração e
+teste usam arquivos fisicamente separados. Calibração requer `model_frozen`; o
+acesso à reserva é gravado antes da leitura e o teste final é recusado na
+segunda abertura. `prepare_snapshot` valida o snapshot sem usar
+`experiment_days`; a seleção temporal pertence exclusivamente ao protocolo.
+Vigências em `validity.csv` usam `usina_id,valid_from_utc,valid_to_utc` e formam
+o denominador de cobertura por bloco.
+
+Homologação operacional não é inferida pelas métricas. Ela exige chamada
+explícita a `homologate_operationally`, com referências do fluxo ponta a ponta e
+do aceite no ANAREDE. Até isso ocorrer, o `Predictor` usa a curva física.
+
+### Pipeline legado
+
 Valide e gere o dataset horário (o target é opcional aqui, mas incluí-lo amplia a validação):
 
 ```powershell
@@ -264,7 +295,7 @@ Validação e treino aceitam `--config caminho/config.json`. O treino também ge
 
 O treino não sobrescreve um `model.txt` existente: escolha outro diretório para cada versão. O hash do modelo permite detectar mistura de arquivos de artefatos diferentes no carregamento.
 
-O treino registra em `artifacts/global/v1/`: `model.txt`, `metadata.json`, `residual_quantiles.json` e `validation_report.json`. O metadata contém configuração completa, ordem de features, versões das bibliotecas, melhor iteração, períodos do split 70/15/15, hash do dataset/teste, métricas geral/por faixa de vento/por usina, cobertura do intervalo e decisão de aprovação. A avaliação verifica o período e o conteúdo do teste pelo hash; não refaz o split com os dados novos.
+O treino legado registra em `artifacts/global/v1/`: `model.txt`, `metadata.json`, `residual_quantiles.json` e `validation_report.json`, identificado por `artifact_schema_version=legacy-temporal-70-15-15`. O metadata contém configuração completa, ordem de features, versões das bibliotecas, melhor iteração, períodos do split 70/15/15, hash do dataset/teste, métricas geral/por faixa de vento/por usina, cobertura do intervalo e decisão exploratória. A avaliação verifica o período e o conteúdo do teste pelo hash; não refaz o split com os dados novos.
 
 LightGBM aprende `(target_mw - baseline_mw) / capacidade_instalada_mw`. Os parâmetros padrão são mantidos quando `lightgbm` é omitido. Essa seção do JSON aceita `learning_rate`, `n_estimators`, `num_leaves`, `min_child_samples`, `subsample`, `colsample_bytree` e `reg_lambda`; o metadata registra os valores efetivos e as métricas de validação. `subsample_freq=1` ativa a amostragem, o determinismo é habilitado e uma thread é usada por padrão. `n_jobs` é configurável. Apenas validação entra no early stopping de 100 rodadas. O teste decide aprovação por MAE estritamente menor; empate implica fallback. A aprovação é experimental, não validação de produção.
 

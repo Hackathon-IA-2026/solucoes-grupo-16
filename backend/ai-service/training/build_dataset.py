@@ -180,6 +180,47 @@ def prepare_hourly_dataset(frame: pd.DataFrame, config: TrainingConfig) -> tuple
     return hourly, report
 
 
+def prepare_snapshot(frame: pd.DataFrame, config: TrainingConfig) -> tuple[pd.DataFrame, dict]:
+    """Validate/consolidate a reusable snapshot without selecting protocol dates.
+
+    This is the v1 temporal-protocol entry point.  The legacy
+    ``prepare_hourly_dataset`` deliberately retains its experiment window for
+    reproducibility of old artifacts.
+    """
+    neutral = TrainingConfig.from_dict({**config.serializable(), "start_utc": None,
+                                        "experiment_days": 365000})
+    df, report, reasons = _inspect(frame, neutral)
+    if report["missing_required_columns"]:
+        raise DatasetValidationError(f"Campos ausentes: {report['missing_required_columns']}", report)
+    bad = pd.Series(False, index=df.index)
+    for reason, mask in reasons.items():
+        bad |= mask.fillna(True)
+        report["exclusions"][reason] = int(mask.sum())
+    df["timestamp_utc"] = df.timestamp_utc.dt.floor("h")
+    valid_keys = df[KEY].notna().all(axis=1)
+    bad_keys = pd.MultiIndex.from_frame(df.loc[bad & valid_keys, KEY])
+    bad_hour = pd.Series(pd.MultiIndex.from_frame(df[KEY]).isin(bad_keys), index=df.index)
+    clean = df.loc[~bad & ~bad_hour].copy()
+    numeric = NUMERIC + ([config.target] if config.target else [])
+    if "era5_distance_km" in clean:
+        numeric.append("era5_distance_km")
+    hourly = clean.groupby(KEY, as_index=False)[numeric].mean().sort_values(KEY[::-1]).reset_index(drop=True)
+    report.update({
+        "status": "valid" if len(hourly) else "invalid",
+        "snapshot_contract": "reusable-hourly-snapshot-v1",
+        "rows_after_validation": len(clean), "rows_excluded": len(df) - len(clean),
+        "rows_hourly": len(hourly), "hourly_duplicate_keys": int(hourly.duplicated(KEY).sum()),
+        "hourly_period_utc": _period(hourly.timestamp_utc),
+        "coverage": {"observed_hours": int(hourly.timestamp_utc.nunique()),
+                     "observed_plant_hours": len(hourly),
+                     "denominator": "deferred_to_versioned_protocol_and_validity"},
+        "aggregation": "UTC hour, arithmetic mean; no gap filling; reject whole invalid hours",
+    })
+    if not len(hourly):
+        raise DatasetValidationError("Nenhuma hora válida no snapshot.", report)
+    return hourly, report
+
+
 def write_report(report: dict, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")

@@ -6,6 +6,7 @@ import logging
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import lightgbm as lgb
 import numpy as np
@@ -21,33 +22,51 @@ from training.physical_curve import apply_physical_bounds, physical_power_mw
 @dataclass
 class Predictor:
     artifact_dir: Path
-    model: lgb.Booster | None
+    model: Any | None
     metadata: dict
     intervals: dict
 
     @classmethod
     def from_artifacts(cls, artifact_dir: Path | None = None) -> "Predictor":
         directory = artifact_dir or default_artifact_dir()
-        metadata_file, model_file, interval_file = directory / "metadata.json", directory / "model.txt", directory / "residual_quantiles.json"
-        if not (metadata_file.exists() and model_file.exists() and interval_file.exists()):
+        metadata_file, interval_file = directory / "metadata.json", directory / "residual_quantiles.json"
+        if not (metadata_file.exists() and interval_file.exists()):
             return cls(directory, None, {"model_version": "physical-curve-v1", "model_scope": "physical_fallback", "approved": False}, {})
         try:
             metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
             intervals = json.loads(interval_file.read_text(encoding="utf-8"))
+            schema = metadata.get("artifact_schema_version", "legacy-temporal-70-15-15")
+            model_file = directory / metadata.get("model_file", "model.txt")
+            if not model_file.is_file():
+                raise ValueError("Arquivo de modelo ausente.")
             if metadata.get("feature_order") != FEATURE_COLUMNS or intervals.get("unit") != "capacity_factor":
                 raise ValueError("Artefato incompatível: features ou intervalos.")
             PhysicalCurveConfig(**metadata["physical_curve"])
-            if not isinstance(metadata["approved"], bool) or not metadata["model_version"]:
+            if not metadata.get("model_version"):
                 raise ValueError("Metadata inválido.")
             if metadata.get("model_scope") != "global":
                 raise ValueError("Escopo incompatível com a Fase 1.")
             if hashlib.sha256(model_file.read_bytes()).hexdigest() != metadata["model_sha256"]:
                 raise ValueError("Modelo não corresponde ao metadata.")
-            metrics = metadata["metrics"]
-            baseline_mae = metrics["baseline_test"]["overall"]["mae_mw"]
-            hybrid_mae = metrics["hybrid_test"]["overall"]["mae_mw"]
-            if not np.isfinite([baseline_mae, hybrid_mae]).all() or metadata["approved"] != (hybrid_mae < baseline_mae):
-                raise ValueError("Decisão de aprovação incompatível com as métricas.")
+            if schema == "legacy-temporal-70-15-15":
+                if not isinstance(metadata.get("approved"), bool):
+                    raise ValueError("Metadata legado inválido.")
+                metrics = metadata["metrics"]
+                baseline_mae = metrics["baseline_test"]["overall"]["mae_mw"]
+                hybrid_mae = metrics["hybrid_test"]["overall"]["mae_mw"]
+                if not np.isfinite([baseline_mae, hybrid_mae]).all() or metadata["approved"] != (hybrid_mae < baseline_mae):
+                    raise ValueError("Decisão de aprovação incompatível com as métricas.")
+            elif schema == "temporal-protocol-v1":
+                homologation = metadata.get("operational_homologation", {})
+                if (metadata.get("state") != "operationally_homologated"
+                        or homologation.get("status") is not True
+                        or homologation.get("model_sha256") != metadata["model_sha256"]
+                        or homologation.get("calibration_sha256") != metadata.get("calibration_sha256")
+                        or hashlib.sha256(interval_file.read_bytes()).hexdigest() != metadata.get("calibration_sha256")):
+                    raise ValueError("Artefato novo sem homologação operacional compatível.")
+                metadata["approved"] = True
+            else:
+                raise ValueError("Versão de artefato desconhecida.")
             if not metadata.get("input_domain") or not metadata.get("training_usina_ids"):
                 raise ValueError("Domínio de treino ausente.")
             expected_domain = {"wind_speed_100m", "temperature_2m", "surface_pressure", "capacidade_instalada_mw", "disponibilidade"}
@@ -59,11 +78,21 @@ class Predictor:
             for quantiles in [intervals["global"], *intervals["wind_bands"].values()]:
                 if not np.isfinite([quantiles["p05"], quantiles["p95"]]).all() or quantiles["p05"] > quantiles["p95"]:
                     raise ValueError("Quantis inválidos.")
-            model = lgb.Booster(model_file=str(model_file))
-            if model.feature_name() != FEATURE_COLUMNS:
-                raise ValueError("Features do modelo incompatíveis.")
+            algorithm = metadata.get("algorithm", "lightgbm")
+            if algorithm == "lightgbm":
+                model = lgb.Booster(model_file=str(model_file))
+                if model.feature_name() != FEATURE_COLUMNS:
+                    raise ValueError("Features do modelo incompatíveis.")
+            elif algorithm == "xgboost":
+                import xgboost as xgb
+                model = xgb.XGBRegressor()
+                model.load_model(str(model_file))
+                if model.get_booster().feature_names != FEATURE_COLUMNS:
+                    raise ValueError("Features do modelo incompatíveis.")
+            else:
+                raise ValueError("Algoritmo incompatível.")
             return cls(directory, model, metadata, intervals)
-        except (OSError, ValueError, KeyError, TypeError, AttributeError, lgb.basic.LightGBMError) as exc:
+        except (OSError, ValueError, KeyError, TypeError, AttributeError, ImportError, lgb.basic.LightGBMError) as exc:
             logging.getLogger(__name__).warning("Artefato inválido; fallback físico: %s", exc)
             return cls(directory, None, {"model_version": "physical-curve-v1", "model_scope": "physical_fallback",
                                          "approved": False, "artifact_warning": "artefato_invalido: usando_curva_fisica"}, {})
@@ -115,7 +144,12 @@ class Predictor:
         correction = np.zeros(len(raw))
         if use_ml:
             try:
-                correction = np.asarray(self.model.predict(feature_matrix(raw), num_threads=1)) * request.capacidade_instalada_mw
+                matrix = feature_matrix(raw)
+                correction = np.asarray(
+                    self.model.predict(matrix, num_threads=1)
+                    if self.metadata.get("algorithm", "lightgbm") == "lightgbm"
+                    else self.model.predict(matrix)
+                ) * request.capacidade_instalada_mw
                 if correction.shape != (len(raw),) or not np.isfinite(correction).all():
                     raise ValueError("Correção inválida.")
             except (ValueError, lgb.basic.LightGBMError):
