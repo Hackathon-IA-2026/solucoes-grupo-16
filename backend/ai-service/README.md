@@ -272,6 +272,19 @@ MAE/RMSE são em MW; `nmae_cf` é a média de `abs(erro_mw) / capacidade_mw`; WA
 
 ## API
 
+### Registro de experimentos no Supabase
+
+O treino aceita `--tracking supabase` (ou `CLIMAGRID_EXPERIMENT_TRACKING=supabase`)
+para publicar automaticamente o bundle final no Postgres/Storage privado. O modo
+local permanece disponível. Sem `--artifacts`, o modo Supabase usa um diretório
+novo em `artifacts/experiments/`, sem substituir o modelo servido.
+
+O módulo `python -m training.experiments` oferece `publish`, `list`, `show`, `pull`
+e `clean`. A limpeza é uma simulação por padrão e exige backup remoto verificado.
+Migração SQL, configuração, comandos e limites estão em
+[`Docs/ML/EXPERIMENTOS_SUPABASE.md`](../../Docs/ML/EXPERIMENTOS_SUPABASE.md).
+Publicar um experimento não homologa potencial nem promove o modelo para a API.
+
 Exemplo de corpo para `POST /estimar-geracao`:
 
 ```json

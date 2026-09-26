@@ -6,6 +6,8 @@ import json
 from dataclasses import replace
 import platform
 import hashlib
+import os
+from uuid import uuid4
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -14,7 +16,7 @@ import numpy as np
 import pandas as pd
 
 from training.build_dataset import DatasetValidationError, TabularDatasetAdapter, prepare_hourly_dataset, write_report, _write_dataframe
-from training.config import ALLOWED_TARGETS, ColumnConfig, TrainingConfig, default_artifact_dir, load_config
+from training.config import ALLOWED_TARGETS, ColumnConfig, TrainingConfig, default_artifact_dir, load_config, service_root
 from training.evaluate import dataset_fingerprint, empirical_interval_table, interval_coverage, metrics_by_wind_and_plant
 from training.features import FEATURE_COLUMNS, add_features, feature_matrix
 from training.physical_curve import apply_physical_bounds, physical_power_mw
@@ -132,8 +134,27 @@ def main() -> None:
     parser.add_argument("--target", choices=ALLOWED_TARGETS)
     parser.add_argument("--config", type=Path)
     parser.add_argument("--processed", type=Path, default=Path("data/processed/hourly.csv"))
-    parser.add_argument("--artifacts", type=Path, default=default_artifact_dir())
+    parser.add_argument("--artifacts", type=Path)
+    parser.add_argument("--env-file", type=Path)
+    parser.add_argument("--tracking", choices=["local", "supabase"])
     args = parser.parse_args()
+    if args.env_file:
+        from dotenv import load_dotenv
+        load_dotenv(args.env_file, override=False)
+    tracking = args.tracking or os.getenv("CLIMAGRID_EXPERIMENT_TRACKING", "local")
+    if tracking not in ("local", "supabase"):
+        parser.error("CLIMAGRID_EXPERIMENT_TRACKING deve ser local ou supabase.")
+    if args.artifacts is None:
+        args.artifacts = (service_root() / "artifacts" / "experiments" / str(uuid4())
+                          if tracking == "supabase" else default_artifact_dir())
+    if tracking == "supabase":
+        from training.experiment_store import ExperimentStore, RegistryError
+        try:
+            # Validate configuration before an expensive training run (no network).
+            with ExperimentStore.from_env():
+                pass
+        except RegistryError as exc:
+            parser.exit(2, f"{exc}\n")
     config = load_config(args.config, args.target)
     config.target_column()
     raw = TabularDatasetAdapter().load(args.input)
@@ -145,6 +166,14 @@ def main() -> None:
     _write_dataframe(dataset, args.processed)
     metadata = train(dataset, config, args.artifacts)
     (args.artifacts / "validation_report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    if tracking == "supabase":
+        try:
+            with ExperimentStore.from_env() as store:
+                receipt = store.publish(args.artifacts)
+            print(json.dumps({"publication": receipt}, ensure_ascii=False))
+        except (RegistryError, ValueError, KeyError, OSError):
+            parser.exit(2, f"Treino concluído em {args.artifacts}; publicação não confirmada. "
+                        "Arquivos preservados. Retome com python -m training.experiments publish DIRETORIO.\n")
     print(json.dumps({"artifact_dir": str(args.artifacts), "approved": metadata["approved"], "metrics": metadata["metrics"]}, ensure_ascii=False, indent=2))
 
 

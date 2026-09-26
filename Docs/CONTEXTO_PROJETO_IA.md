@@ -140,6 +140,10 @@ geração observada. Os documentos `GUIA_ESTUDANTE_SINAL.md` e
 - `backend/`: NestJS; fachada, upload/parser/writer PWF e integração.
 - `backend/ai-service/`: FastAPI; ingestão, replay e experimento de geração.
 - `backend/ai-service/data/`: dados locais, ignorados pelo Git.
+- Experimentos ML: publicação opcional no Supabase Postgres/Storage privado,
+  com manifesto de hashes, recuperação e limpeza local protegida. Requer aplicar
+  a migração e configurar credenciais; a disponibilidade remota não é presumida.
+  Consulte [`ML/EXPERIMENTOS_SUPABASE.md`](ML/EXPERIMENTOS_SUPABASE.md).
 - `Docs/Casos de Referência/Lista_de_Usinas.xlsx`: CEG, barra e potência do
   horizonte 2040.
 
