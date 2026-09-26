@@ -16,5 +16,14 @@ data/**/*.parquet
 data/**/*.json
 artifacts/**/*.txt
 artifacts/**/*.json
+# All experiment/cache formats, including future model binaries and receipts.
+artifacts/experiments/**
+artifacts/cache/**
+artifacts/**/*.pkl
+artifacts/**/*.joblib
+artifacts/**/*.ubj
+artifacts/**/.supabase-publication.json
+.env.*
+!.env.example
 .runtime-data/*
 !.runtime-data/.gitkeep
