@@ -16,13 +16,17 @@ export default function PwfExportPage() {
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportResult, setExportResult] = useState<Omit<PwfExportResult, "blob"> | null>(null);
 
-  const selectedPlants = useMemo(
-    () => state.estimates.filter((plant) => state.selectedPlantIds.includes(plant.id)),
-    [state.estimates, state.selectedPlantIds],
-  );
   const allocationMappings = useMemo(
-    () => Object.values(state.study.mappings).filter((mapping) => state.selectedPlantIds.includes(mapping.plantId)),
+    () => Object.values(state.study.mappings).filter((mapping) => state.selectedPlantIds.includes(mapping.plantId) && mapping.included),
     [state.selectedPlantIds, state.study.mappings],
+  );
+  const includedPlantIds = useMemo(
+    () => new Set(allocationMappings.map((mapping) => mapping.plantId)),
+    [allocationMappings],
+  );
+  const selectedPlants = useMemo(
+    () => state.estimates.filter((plant) => includedPlantIds.has(plant.id)),
+    [includedPlantIds, state.estimates],
   );
   const readiness = useMemo(() => {
     const pendingMappings = allocationMappings.filter((mapping) => !mapping.busNumber);
@@ -32,16 +36,25 @@ export default function PwfExportPage() {
       (plant) => plant.mappingCoveragePercent > 0 && plant.mappingCoveragePercent < 100,
     );
     const invalidGeneration = selectedPlants.filter((plant) => plant.observedGenerationMw === null && plant.estimatedGenerationMw === null);
+    const parametersByBus = new Map<string, string>();
+    const conflictingBuses = new Set<string>();
+    allocationMappings.forEach((mapping) => {
+      const parameters = `${mapping.operation}/${mapping.state}`;
+      const previous = parametersByBus.get(mapping.busNumber);
+      if (previous && previous !== parameters) conflictingBuses.add(mapping.busNumber);
+      parametersByBus.set(mapping.busNumber, parameters);
+    });
     const blockers = [
       ...(!state.climateScenario ? ["Cenário ausente."] : []),
       ...(selectedPlants.length === 0 ? ["Nenhuma usina selecionada."] : []),
       ...(!state.study.name.trim() ? ["Nome do cenário ausente."] : []),
-      ...(!state.study.referencePwf ? ["Caso base PWF ausente."] : []),
+      ...(state.study.exportMode === "reference" && !state.study.referencePwf ? ["Caso base PWF ausente."] : []),
       ...(allocationMappings.length === 0 ? ["Distribuição por barras ausente."] : []),
       ...(pendingMappings.length > 0 ? [`${pendingMappings.length} alocação(ões) com mapeamento incompleto.`] : []),
       ...(plantsWithoutAllocations.length > 0 ? [`${plantsWithoutAllocations.length} usina(s) selecionada(s) sem alocação.`] : []),
       ...(partialMappings.length > 0 ? [`${partialMappings.length} usina(s) com cobertura PWF parcial.`] : []),
       ...(invalidGeneration.length > 0 ? [`${invalidGeneration.length} usina(s) sem geração válida.`] : []),
+      ...(conflictingBuses.size > 0 ? [`Operação/Estado divergentes nas barras ${[...conflictingBuses].join(", ")}.`] : []),
     ];
     return { blockers, isReady: blockers.length === 0 };
   }, [allocationMappings, selectedPlants, state.climateScenario, state.study]);
@@ -87,7 +100,7 @@ export default function PwfExportPage() {
         <PageHeader
           eyebrow="Etapa 4 de 4 · Exportação PWF"
           title={`Revise a geração ${isScenario ? "estimada" : "observada"} antes de gerar o PWF`}
-          description={`O arquivo final preserva o caso base e substitui somente o campo Pg das barras mapeadas pelos valores ${isScenario ? "estimados pela curva física" : "observados pela ONS"} no instante selecionado.`}
+          description={state.study.exportMode === "reference" ? `O arquivo final preserva o caso-base e altera Operação, Estado e Pg somente nas barras incluídas, com valores ${isScenario ? "estimados pela curva física" : "observados pela ONS"}.` : "O arquivo final contém um bloco DBAR de alterações para ser aplicado e validado no ANAREDE; ele não representa um caso de rede completo."}
           aside={<span className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold ${readiness.isReady ? "border-emerald-300/30 bg-emerald-300/10 text-emerald-200" : "border-amber-300/30 bg-amber-300/10 text-amber-200"}`}><span className={`h-2 w-2 rounded-full ${readiness.isReady ? "bg-emerald-300" : "bg-amber-300"}`} />{readiness.isReady ? "Pronto para exportar" : "Configuração incompleta"}</span>}
         />
 
@@ -98,15 +111,15 @@ export default function PwfExportPage() {
           <SummaryCard label="Usinas mapeadas" value={`${selectedPlants.length}`} detail="selecionadas no cenário" />
           <SummaryCard label={isScenario ? "Potencial estimado" : "Geração observada"} value={`${totalGeneration.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MW`} detail={isScenario ? "curva física e disponibilidade informada" : "valor horário da ONS"} />
           <SummaryCard label="Instante" value={state.climateScenario ? new Date(state.climateScenario.timestamp).toLocaleDateString("pt-BR") : "—"} detail={state.climateScenario ? new Date(state.climateScenario.timestamp).toLocaleTimeString("pt-BR") : "cenário pendente"} />
-          <SummaryCard label="Caso base" value={state.study.referencePwf ? "Recebido" : "Pendente"} detail={state.study.referencePwf?.name ?? "necessário para o PWF"} />
+          <SummaryCard label="Formato" value={state.study.exportMode === "reference" ? "Caso-base" : "DBAR"} detail={state.study.exportMode === "reference" ? (state.study.referencePwf?.name ?? "PWF pendente") : "arquivo de alterações"} />
         </section>
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.55fr)]">
           <section className="overflow-hidden rounded-2xl border border-outline-variant/50 bg-surface-container-low shadow-sm">
-            <div className="border-b border-outline-variant/40 p-5"><h2 className="font-semibold text-on-surface">Usinas, barras e geração</h2><p className="mt-1 text-sm text-on-surface-variant">Confira os valores que serão escritos no campo Pg.</p></div>
+            <div className="border-b border-outline-variant/40 p-5"><h2 className="font-semibold text-on-surface">Usinas, barras e geração</h2><p className="mt-1 text-sm text-on-surface-variant">Confira Número, Operação, Estado e Pg antes da geração do arquivo.</p></div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[680px] border-collapse text-left">
-                <thead className="bg-surface-container-lowest text-[10px] uppercase tracking-wider text-outline"><tr><th className="px-5 py-3">Usina</th><th className="px-3 py-3">Barra</th><th className="px-3 py-3 text-right">{isScenario ? "Pg estimado" : "Pg observado"}</th><th className="px-5 py-3">Fonte</th></tr></thead>
+                <thead className="bg-surface-container-lowest text-[10px] uppercase tracking-wider text-outline"><tr><th className="px-5 py-3">Usina</th><th className="px-3 py-3">Barra</th><th className="px-3 py-3">O / E</th><th className="px-3 py-3 text-right">{isScenario ? "Pg estimado" : "Pg observado"}</th><th className="px-5 py-3">Fonte</th></tr></thead>
                 <tbody className="divide-y divide-outline-variant/30">
                   {selectedPlants.map((plant) => {
                     const mappings = allocationMappings.filter((mapping) => mapping.plantId === plant.id);
@@ -114,6 +127,7 @@ export default function PwfExportPage() {
                       <tr key={plant.id}>
                         <td className="px-5 py-4"><p className="text-sm font-medium text-on-surface">{plant.name}</p><p className="mt-0.5 font-mono text-[10px] text-outline">{plant.onsId}</p></td>
                         <td className="px-3 py-4"><p className="font-mono text-sm text-on-surface">{mappings.map((mapping) => mapping.busNumber).join(", ") || "—"}</p><p className="text-[10px] text-outline">{mappings.length} parcela(s) de geração</p></td>
+                        <td className="px-3 py-4 font-mono text-sm text-on-surface">{mappings.map((mapping) => `${mapping.operation}/${mapping.state}`).join(", ")}</td>
                         <td className="px-3 py-4 text-right font-mono text-sm text-secondary">{generationMw(plant).toLocaleString("pt-BR")} MW</td>
                         <td className="px-5 py-4 text-xs text-on-surface-variant">{isScenario ? `Curva física · ${state.climateScenario?.weatherSource === "ERA5" ? "vento ERA5" : "vento do usuário"}` : "ONS · geração verificada"}</td>
                       </tr>
@@ -126,7 +140,7 @@ export default function PwfExportPage() {
           </section>
 
           <aside className="space-y-5">
-            <Notice title="Alteração controlada">O writer mantém tamanho, codificação e blocos do caso base, inclusive DGEI e DGER. Apenas as cinco colunas fixas de Pg no DBAR das barras selecionadas são modificadas.</Notice>
+            <Notice title="Alteração controlada">{state.study.exportMode === "reference" ? "O writer mantém tamanho, codificação e todos os campos do caso-base fora de Operação, Estado e Pg nas barras incluídas, inclusive os blocos DGEI e DGER." : "O arquivo contém somente DBAR, os registros incluídos, o terminador 99999 e FIM. Ele não contém a rede completa nem comprova convergência elétrica."}</Notice>
             <section className="rounded-2xl border border-outline-variant/50 bg-surface-container-low p-5 shadow-sm">
               <h2 className="font-semibold text-on-surface">Rastreabilidade</h2>
               <dl className="mt-4 space-y-3 text-xs">
@@ -140,7 +154,8 @@ export default function PwfExportPage() {
                 <TraceRow label="Disponibilidade" value={!isScenario ? "Não se aplica" : state.climateScenario?.traceability?.availabilitySource === "USER_GLOBAL_ASSUMPTION" ? `Hipótese do usuário · ${((state.climateScenario.traceability.availabilityValue ?? 0) * 100).toLocaleString("pt-BR")}%` : "Informada no CSV"} />
                 <TraceRow label="Geração" value={isScenario ? "Potencial físico estimado" : "ONS observada"} />
                 <TraceRow label="Vento" value={isScenario ? (state.climateScenario?.weatherSource === "ERA5" ? "Copernicus ERA5 histórico" : "Arquivo do usuário") : "ERA5"} />
-                <TraceRow label="Caso base" value={state.study.referencePwf?.name ?? "—"} />
+                <TraceRow label="Modo PWF" value={state.study.exportMode === "reference" ? "Caso-base rastreável" : "Alterações DBAR"} />
+                <TraceRow label="Caso base" value={state.study.exportMode === "reference" ? (state.study.referencePwf?.name ?? "—") : "Não utilizado"} />
               </dl>
             </section>
           </aside>
@@ -150,7 +165,7 @@ export default function PwfExportPage() {
         {exportResult ? <Notice tone="success" title="Arquivo gerado"><strong>{exportResult.filename}</strong> foi baixado em {new Date(exportResult.generatedAt).toLocaleString("pt-BR")}. Origem: geração {exportResult.generationSource === "observed" ? "observada" : "estimada"}; dados: {exportResult.dataVersion}.{exportResult.exportId ? ` Manifesto: ${exportResult.exportId}.` : ""}{exportResult.outputSha256 ? ` SHA-256: ${exportResult.outputSha256}.` : ""}</Notice> : null}
 
         <section className="flex flex-col gap-4 rounded-2xl border border-outline-variant/50 bg-surface-container-low p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-6">
-          <div><h2 className="font-semibold text-on-surface">{runtimeConfig.isDemoMode ? "Gerar artefato de demonstração" : "Gerar arquivo PWF"}</h2><p className="mt-1 text-sm text-on-surface-variant">{runtimeConfig.isDemoMode ? "Permite testar o download sem se passar por um PWF válido." : "A API preservará o caso base e alterará somente as barras mapeadas."}</p></div>
+          <div><h2 className="font-semibold text-on-surface">{runtimeConfig.isDemoMode ? "Gerar artefato de demonstração" : "Gerar arquivo PWF"}</h2><p className="mt-1 text-sm text-on-surface-variant">{runtimeConfig.isDemoMode ? "Permite testar o download sem se passar por um PWF válido." : state.study.exportMode === "reference" ? "A API preservará o caso-base e alterará somente os três campos autorizados nas barras incluídas." : "A API gerará o bloco DBAR de alterações no layout de colunas fixas confirmado."}</p></div>
           <button type="button" disabled={!readiness.isReady || isExporting} onClick={() => void handleExport()} className="button-primary shrink-0"><Icon name="download" />{isExporting ? "Gerando…" : runtimeConfig.isDemoMode ? "Baixar demonstração" : "Gerar e baixar PWF"}</button>
         </section>
 

@@ -15,7 +15,8 @@ O recorte implementado segue o documento técnico do projeto:
 1. seleção de uma hora histórica; se ela não estiver em cache, o sistema coleta
    e concilia ONS + ERA5 antes de seguir;
 2. revisão da geração ONS e do vento ERA5 por conjunto eólico do Nordeste;
-3. upload do caso PWF e validação das alocações sugeridas por CEG;
+3. escolha entre caso-base rastreável (upload/caso padrão) e arquivo de
+   alterações `DBAR`, com revisão de inclusão, barra, operação e estado;
 4. exportação do PWF, sem executar fluxo de potência no frontend.
 
 ## Execução local
@@ -74,7 +75,7 @@ O navegador conversa somente com o NestJS; o FastAPI permanece um serviço inter
 | `POST` | `/pwf/exports` | Gerar o PWF e devolver o arquivo como `Blob` |
 
 Na exportação, a API devolve os cabeçalhos `x-filename`, `x-generated-at`,
-`x-generation-source`, `x-data-version`, `x-modified-buses`, `x-export-id`,
+`x-generation-source`, `x-data-version`, `x-export-mode`, `x-modified-buses`, `x-export-id`,
 `x-output-sha256` e `x-reference-sha256`. A tela exibe os identificadores e
 hashes principais; a trilha completa pode ser consultada pelo ID do cenário.
 

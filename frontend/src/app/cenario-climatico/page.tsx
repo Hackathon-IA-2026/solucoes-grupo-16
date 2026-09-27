@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { Notice } from "@/components/ui/notice";
 import { PageHeader } from "@/components/ui/page-header";
+import { ProcessingOverlay } from "@/components/ui/processing-overlay";
 import { useScenario } from "@/context/scenario-context";
 import { useSystemStatus } from "@/context/system-context";
 import { climagridApi, runtimeConfig } from "@/lib/api";
@@ -25,6 +26,9 @@ export default function ClimateFilePage() {
   const [availability, setAvailability] = useState("1");
   const [availabilityConfirmed, setAvailabilityConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [busyKind, setBusyKind] = useState<"inspect" | "csv" | "era5" | null>(null);
+  const [loadingDismissed, setLoadingDismissed] = useState(false);
+  const [progressMessage, setProgressMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
   const csvAvailable = !runtimeConfig.isDemoMode && capabilities?.climate.fileUpload === true;
   const era5Available = !runtimeConfig.isDemoMode && capabilities?.climate.era5Scenario === true;
@@ -41,6 +45,9 @@ export default function ClimateFilePage() {
     setError(null);
     if (!selected) return;
     setBusy(true);
+    setBusyKind("inspect");
+    setLoadingDismissed(false);
+    setProgressMessage("Lendo a estrutura e validando as colunas do CSV…");
     try {
       const result = await climagridApi.inspectClimateFile(selected);
       setInspection(result);
@@ -49,16 +56,20 @@ export default function ClimateFilePage() {
       setError(cause instanceof Error ? cause.message : "Não foi possível validar o CSV.");
     } finally {
       setBusy(false);
+      setBusyKind(null);
     }
   }
 
   async function processCsv() {
     if (!file || !timestamp || !inspection) return;
     setBusy(true);
+    setBusyKind("csv");
+    setLoadingDismissed(false);
+    setProgressMessage("Validando o arquivo climático selecionado…");
     setError(null);
     try {
       const result = await climagridApi.processScenario({
-        source: "upload", file, timestamp, resolutionMinutes: 60,
+        source: "upload", file, timestamp, resolutionMinutes: 60, onProgress: setProgressMessage,
       });
       setProcessedScenario(result.scenario, result.estimates);
       router.push("/usinas-estimativas");
@@ -66,12 +77,16 @@ export default function ClimateFilePage() {
       setError(cause instanceof Error ? cause.message : "Não foi possível estimar o cenário.");
     } finally {
       setBusy(false);
+      setBusyKind(null);
     }
   }
 
   async function processEra5() {
     if (!selectedEra5Timestamp || !validAvailability || !availabilityConfirmed) return;
     setBusy(true);
+    setBusyKind("era5");
+    setLoadingDismissed(false);
+    setProgressMessage("Consultando o cache climático para a hora selecionada…");
     setError(null);
     try {
       const result = await climagridApi.processScenario({
@@ -79,6 +94,7 @@ export default function ClimateFilePage() {
         timestamp: selectedEra5Timestamp,
         resolutionMinutes: 60,
         availability: availabilityValue,
+        onProgress: setProgressMessage,
       });
       setProcessedScenario(result.scenario, result.estimates);
       router.push("/usinas-estimativas");
@@ -86,6 +102,7 @@ export default function ClimateFilePage() {
       setError(cause instanceof Error ? cause.message : "Não foi possível preparar o cenário ERA5.");
     } finally {
       setBusy(false);
+      setBusyKind(null);
     }
   }
 
@@ -97,6 +114,24 @@ export default function ClimateFilePage() {
   return (
     <AppShell>
       <div className="space-y-6">
+        <ProcessingOverlay
+          key={busyKind}
+          open={busy && !loadingDismissed}
+          title={busyKind === "inspect" ? "Validando o arquivo climático" : busyKind === "csv" ? "Estimando o cenário do CSV" : "Preparando o cenário ERA5"}
+          message={progressMessage}
+          steps={busyKind === "era5" ? [
+            progressMessage,
+            "Conectando ao Copernicus Climate Data Store…",
+            "Extraindo o vento ERA5 para os conjuntos cadastrados…",
+            "Calculando o potencial e registrando a proveniência…",
+          ] : busyKind === "csv" ? [
+            progressMessage,
+            "Conciliando os identificadores com o catálogo por CEG…",
+            "Aplicando a curva física e a disponibilidade informada…",
+            "Persistindo o cenário e sua rastreabilidade…",
+          ] : [progressMessage, "Conferindo timestamps, unidades e duplicidades…"]}
+          onDismiss={() => setLoadingDismissed(true)}
+        />
         <PageHeader
           eyebrow="Etapa 2 do MVP · Cenário climático"
           title="Escolha a origem do vento"
@@ -111,7 +146,7 @@ export default function ClimateFilePage() {
           </Notice>
         ) : null}
 
-        <section className="space-y-5 rounded-2xl border border-outline-variant/50 bg-surface-container-low p-6">
+        <section className="space-y-5 rounded-3xl border border-secondary/20 bg-gradient-to-br from-surface-container-low to-surface-container-lowest p-6 shadow-xl shadow-black/10 sm:p-7">
           <div className="flex flex-wrap gap-3" role="group" aria-label="Origem dos dados climáticos">
             <button type="button" className={mode === "era5" ? "button-primary" : "button-secondary"} onClick={() => selectMode("era5")}>
               Buscar no Copernicus ERA5

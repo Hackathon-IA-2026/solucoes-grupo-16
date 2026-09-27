@@ -26,6 +26,7 @@ interface ProcessScenarioInput {
   file?: File;
   rowCount?: number;
   availability?: number;
+  onProgress?: (message: string) => void;
 }
 
 class ApiError extends Error {
@@ -68,12 +69,13 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
 
 async function processScenario(input: ProcessScenarioInput): Promise<ProcessScenarioResult> {
   if (input.source === "upload") {
+    input.onProgress?.("Validando o CSV e conciliando os conjuntos com o cadastro…");
     if (!apiBaseUrl) throw new Error("O cenário climático exige a API do ClimaGrid.");
     if (!input.file) throw new Error("Selecione um arquivo CSV.");
     const formData = new FormData();
     formData.append("file", input.file);
     formData.append("timestamp", input.timestamp);
-    const result = await requestJson<{scenario: ClimateScenario; observations: ProcessScenarioResult["estimates"]}>(
+    const result = await requestJson<{ scenario: ClimateScenario; observations: ProcessScenarioResult["estimates"] }>(
       "/climate-scenarios/file/estimate", { method: "POST", body: formData },
     );
     return { scenario: result.scenario, estimates: result.observations };
@@ -91,6 +93,7 @@ async function processScenario(input: ProcessScenarioInput): Promise<ProcessScen
       timestamp: new Date(input.timestamp).toISOString(),
       availability: input.availability,
     });
+    input.onProgress?.("Consultando o cache climático para a hora selecionada…");
     for (let attempt = 0; attempt < 240; attempt += 1) {
       let result: Era5Result;
       try {
@@ -103,8 +106,10 @@ async function processScenario(input: ProcessScenarioInput): Promise<ProcessScen
         continue;
       }
       if (!("status" in result)) {
+        input.onProgress?.("Calculando o potencial eólico dos conjuntos…");
         return { scenario: result.scenario, estimates: result.observations };
       }
+      input.onProgress?.(result.message || "Baixando e normalizando os dados do ERA5…");
       await waitForPreparationRetry();
     }
     throw new Error("A coleta do ERA5 demorou mais de 20 minutos. Tente novamente; os arquivos já baixados serão reutilizados.");
@@ -144,6 +149,7 @@ async function processScenario(input: ProcessScenarioInput): Promise<ProcessScen
     timestamp: new Date(input.timestamp).toISOString(),
     resolutionMinutes: input.resolutionMinutes,
   });
+  input.onProgress?.("Consultando as horas ONS + ERA5 já armazenadas…");
   for (let attempt = 0; attempt < 240; attempt += 1) {
     let result: HistoricalResult;
     try {
@@ -156,8 +162,10 @@ async function processScenario(input: ProcessScenarioInput): Promise<ProcessScen
       continue;
     }
     if (!("status" in result)) {
+      input.onProgress?.("Conciliação concluída. Preparando as usinas…");
       return { scenario: result.scenario, estimates: result.observations };
     }
+    input.onProgress?.(result.message || "Coletando e conciliando os dados ONS + ERA5…");
     await waitForPreparationRetry();
   }
   throw new Error("A coleta histórica demorou mais de 20 minutos. Tente novamente; os arquivos já baixados serão reutilizados.");
@@ -176,13 +184,13 @@ async function exportPwf(request: PwfExportRequest): Promise<PwfExportResult> {
   if (!apiBaseUrl) {
     await new Promise((resolve) => window.setTimeout(resolve, 500));
     const generatedAt = new Date().toISOString();
-    const mappedPlants = Object.values(request.study.mappings).map((mapping) => {
+    const mappedPlants = Object.values(request.study.mappings).filter((mapping) => mapping.included).map((mapping) => {
       const plant = request.estimates.find((estimate) => estimate.id === mapping.plantId);
       return `${plant?.onsId ?? mapping.plantId};${mapping.busNumber};${mapping.generationMw}`;
     });
     const content = [
       "CLIMAGRID — ARQUIVO DEMONSTRATIVO SEM VALIDADE PARA O ANAREDE",
-      "A geração PWF definitiva depende do backend e de um caso base validado.",
+      "A geração PWF definitiva depende do backend e do modo de exportação validado.",
       `CENARIO;${request.study.name}`,
       `GERADO_EM;${generatedAt}`,
       "ID_ONS;BARRA;GERACAO_ESTIMADA_MW",
@@ -195,6 +203,7 @@ async function exportPwf(request: PwfExportRequest): Promise<PwfExportResult> {
       generatedAt,
       generationSource: request.climateScenario.mode === "replay" ? "observed" : "estimated",
       dataVersion: request.climateScenario.snapshotDate ?? request.climateScenario.fileName ?? "upload-local",
+      exportMode: request.study.exportMode,
       isDemonstration: true,
     };
   }
@@ -205,6 +214,7 @@ async function exportPwf(request: PwfExportRequest): Promise<PwfExportResult> {
     body: JSON.stringify({
       scenarioId: request.climateScenario.id,
       studyName: request.study.name,
+      exportMode: request.study.exportMode,
       referencePwfId: request.study.referencePwf?.id,
       generationSource: request.climateScenario.mode === "replay" ? "observed" : "estimated",
       dataVersion:
@@ -212,8 +222,8 @@ async function exportPwf(request: PwfExportRequest): Promise<PwfExportResult> {
         request.climateScenario.snapshotDate ??
         request.climateScenario.fileName ??
         "unknown",
-      selectedPlantIds: request.selectedPlantIds,
-      plants: Object.values(request.study.mappings).map((mapping) => {
+      selectedPlantIds: [...new Set(Object.values(request.study.mappings).filter((mapping) => mapping.included).map((mapping) => mapping.plantId))],
+      plants: Object.values(request.study.mappings).filter((mapping) => mapping.included).map((mapping) => {
         const estimate = request.estimates.find((item) => item.id === mapping.plantId);
         return {
           plantId: mapping.plantId,
@@ -239,6 +249,7 @@ async function exportPwf(request: PwfExportRequest): Promise<PwfExportResult> {
         ? "estimated"
         : "observed",
     dataVersion: response.headers.get("x-data-version") ?? "informada-pela-api",
+    exportMode: response.headers.get("x-export-mode") === "dbar" ? "dbar" : "reference",
     exportId: response.headers.get("x-export-id") ?? undefined,
     outputSha256: response.headers.get("x-output-sha256") ?? undefined,
     referenceSha256: response.headers.get("x-reference-sha256") ?? undefined,
@@ -293,11 +304,20 @@ async function getPwfGenerationTargets(referencePwfId: string): Promise<PwfGener
   return result.items;
 }
 
+async function getReferencePwfMetadata(referencePwfId: string): Promise<ReferencePwf> {
+  return requestJson<ReferencePwf>(`/pwf/reference-cases/${referencePwfId}`);
+}
+
 async function getCapabilities(): Promise<SystemCapabilities> {
   if (!apiBaseUrl) {
     return {
       backend: { available: false },
-      pwf: { upload: false, generationTargets: false, export: false },
+      pwf: {
+        upload: false,
+        generationTargets: false,
+        export: false,
+        defaultReferenceCaseId: null,
+      },
       aiService: { available: false },
       climate: {
         historicalReplay: false,
@@ -330,6 +350,7 @@ export const climagridApi = {
   inspectClimateFile,
   uploadReferencePwf,
   getPwfGenerationTargets,
+  getReferencePwfMetadata,
   getCapabilities,
   getExperimentalInsights,
   exportPwf,

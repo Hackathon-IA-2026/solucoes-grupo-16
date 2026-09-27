@@ -34,6 +34,7 @@ export class PwfExportController {
       'X-Generated-At': result.generatedAt,
       'X-Generation-Source': result.generationSource,
       'X-Data-Version': result.dataVersion,
+      'X-Export-Mode': result.exportMode,
       'X-Modified-Buses': result.modifiedBuses.join(','),
       ...(result.exportId ? { 'X-Export-Id': result.exportId } : {}),
       ...(result.outputSha256

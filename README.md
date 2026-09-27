@@ -2,7 +2,8 @@
 
 Aplicação para reproduzir uma hora histórica de geração eólica do Nordeste,
 combinar a geração verificada da ONS com o vento ERA5, mapear os conjuntos para
-as barras de um caso ANAREDE e exportar uma cópia do PWF com o `Pg` observado.
+as barras de um caso ANAREDE e exportar uma cópia rastreável do PWF ou um
+arquivo `DBAR` de alterações para a geração do instante.
 
 O contexto canônico para pessoas e agentes de IA está em
 [`Docs/CONTEXTO_PROJETO_IA.md`](Docs/CONTEXTO_PROJETO_IA.md). O roadmap oficial

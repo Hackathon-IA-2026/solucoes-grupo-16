@@ -24,11 +24,16 @@ export interface PwfExportPlant {
     nominalVoltageKv: string;
     area: string;
     allocationFactor?: number;
+    operation?: 'A' | 'E' | 'M';
+    state?: '0' | '1' | '2';
   };
 }
 
+export type PwfExportMode = 'reference' | 'dbar';
+
 export interface PwfExportRequest {
-  referencePwfId: string;
+  exportMode?: PwfExportMode;
+  referencePwfId?: string;
   scenarioId: string;
   studyName: string;
   generationSource: 'observed' | 'estimated';
@@ -43,6 +48,7 @@ export interface PwfExportResult {
   generatedAt: string;
   generationSource: 'observed' | 'estimated';
   dataVersion: string;
+  exportMode: PwfExportMode;
   modifiedBuses: number[];
   exportId?: string;
   outputSha256?: string;
@@ -59,6 +65,7 @@ export class PwfExportService {
 
   async export(payload: PwfExportRequest): Promise<PwfExportResult> {
     validatePayload(payload);
+    const exportMode = payload.exportMode ?? 'reference';
 
     let plants = payload.plants;
     let scenario: ClimateScenarioManifest | undefined;
@@ -76,77 +83,123 @@ export class PwfExportService {
       ));
     }
 
-    const [metadata, index, original] = await Promise.all([
-      this.storage.getMetadata(payload.referencePwfId),
-      this.storage.getIndex(payload.referencePwfId),
-      this.storage.getOriginalPwf(payload.referencePwfId),
-    ]);
-    const output = Buffer.from(original);
-    const busesByNumber = new Map(index.buses.map((bus) => [bus.number, bus]));
-    const modifiedBuses: number[] = [];
     const generationByBus = new Map<
       number,
-      { generationMw: number; plantLabels: string[] }
+      {
+        generationMw: number;
+        plantLabels: string[];
+        busName: string;
+        operation?: 'A' | 'E' | 'M';
+        state?: '0' | '1' | '2';
+      }
     >();
 
     for (const plant of plants) {
       const busNumber = Number(plant.mapping.busNumber);
-      if (!Number.isSafeInteger(busNumber) || busNumber <= 0) {
+      if (!Number.isSafeInteger(busNumber) || busNumber <= 0 || busNumber >= 99999) {
         throw new BadRequestException(
           `A barra informada para ${plant.onsId || plant.plantId} é inválida.`,
         );
       }
+      const operation = plant.mapping.operation;
+      const state = plant.mapping.state;
       const accumulated = generationByBus.get(busNumber) ?? {
         generationMw: 0,
         plantLabels: [],
+        busName: plant.mapping.busName,
+        operation,
+        state,
       };
+      if (accumulated.operation !== operation || accumulated.state !== state) {
+        throw new BadRequestException(
+          `As alocações da barra ${busNumber} devem usar a mesma operação e o mesmo estado.`,
+        );
+      }
       accumulated.generationMw += plant.generationMw;
       accumulated.plantLabels.push(plant.onsId || plant.plantId);
       generationByBus.set(busNumber, accumulated);
     }
 
-    for (const [busNumber, allocation] of generationByBus) {
-      const bus = busesByNumber.get(busNumber);
-      if (!bus) {
-        throw new UnprocessableEntityException(
-          `A barra ${busNumber} não existe no caso PWF de referência.`,
+    let output: Buffer;
+    let filename: string;
+    let reference:
+      | { id: string; name: string; sha256: string }
+      | null = null;
+    if (exportMode === 'reference') {
+      const referencePwfId = payload.referencePwfId!;
+      const [metadata, index, original] = await Promise.all([
+        this.storage.getMetadata(referencePwfId),
+        this.storage.getIndex(referencePwfId),
+        this.storage.getOriginalPwf(referencePwfId),
+      ]);
+      output = Buffer.from(original);
+      const busesByNumber = new Map(index.buses.map((bus) => [bus.number, bus]));
+      for (const [busNumber, allocation] of generationByBus) {
+        const bus = busesByNumber.get(busNumber);
+        if (!bus) {
+          throw new UnprocessableEntityException(
+            `A barra ${busNumber} não existe no caso PWF de referência.`,
+          );
+        }
+        if (bus.status === 'D' || bus.type === 2) {
+          throw new UnprocessableEntityException(
+            `A barra ${busNumber} não é editável (desligada ou barra swing).`,
+          );
+        }
+        if (
+          bus.activeGenerationMaximumMw !== undefined &&
+          allocation.generationMw > bus.activeGenerationMaximumMw + 1e-6
+        ) {
+          throw new UnprocessableEntityException(
+            `A geração agregada de ${allocation.generationMw} MW excede o limite de ${bus.activeGenerationMaximumMw} MW da barra ${busNumber}.`,
+          );
+        }
+        if (allocation.operation !== undefined) {
+          writeTextField(
+            output,
+            bus.operationField ?? {
+              byteOffset: bus.activeGenerationField.byteOffset - 27,
+              width: 1,
+            },
+            allocation.operation,
+            busNumber,
+          );
+        }
+        if (allocation.state !== undefined) {
+          writeTextField(
+            output,
+            bus.stateField ?? {
+              byteOffset: bus.activeGenerationField.byteOffset - 26,
+              width: 1,
+            },
+            allocation.state,
+            busNumber,
+          );
+        }
+        writeTextField(
+          output,
+          bus.activeGenerationField,
+          formatFixedWidthNumber(
+            allocation.generationMw,
+            bus.activeGenerationField.width,
+            bus.activeGenerationField.rawValue,
+          ),
+          busNumber,
         );
       }
-      if (bus.status === 'D' || bus.type === 2) {
-        throw new UnprocessableEntityException(
-          `A barra ${busNumber} não é editável (desligada ou barra swing).`,
-        );
-      }
-      if (
-        bus.activeGenerationMaximumMw !== undefined &&
-        allocation.generationMw > bus.activeGenerationMaximumMw + 1e-6
-      ) {
-        throw new UnprocessableEntityException(
-          `A geração agregada de ${allocation.generationMw} MW excede o limite de ${bus.activeGenerationMaximumMw} MW da barra ${busNumber}.`,
-        );
-      }
-
-      const field = bus.activeGenerationField;
-      const formatted = formatFixedWidthNumber(
-        allocation.generationMw,
-        field.width,
-        field.rawValue,
-      );
-      const fieldEnd = field.byteOffset + field.width;
-      if (field.byteOffset < 0 || fieldEnd > output.length) {
-        throw new UnprocessableEntityException(
-          `O índice da barra ${busNumber} não corresponde ao arquivo PWF armazenado.`,
-        );
-      }
-      output.write(formatted, field.byteOffset, field.width, 'latin1');
-      modifiedBuses.push(busNumber);
+      const extension = extname(metadata.name) || '.pwf';
+      const stem = safeFilenameStem(basename(metadata.name, extension));
+      filename = `${stem || 'cenario'}_climagrid${extension.toLowerCase()}`;
+      reference = {
+        id: metadata.id,
+        name: metadata.name,
+        sha256: metadata.sha256,
+      };
+    } else {
+      output = createDbarChangeFile(generationByBus);
+      filename = `${safeFilenameStem(payload.studyName) || 'cenario'}_climagrid_dbar.pwf`;
     }
-
-    const extension = extname(metadata.name) || '.pwf';
-    const stem = basename(metadata.name, extension)
-      .replace(/[^a-zA-Z0-9._-]+/g, '_')
-      .slice(0, 120);
-    const filename = `${stem || 'cenario'}_climagrid${extension.toLowerCase()}`;
+    const modifiedBuses = [...generationByBus.keys()].sort((a, b) => a - b);
     const generatedAt = new Date().toISOString();
     const outputSha256 = createHash('sha256').update(output).digest('hex');
 
@@ -155,16 +208,13 @@ export class PwfExportService {
       exportId = randomUUID();
       const selected = new Set(selectedPlantIds);
       await this.scenarios.saveExport({
-        schemaVersion: 'climagrid-pwf-export-v1',
+        schemaVersion: 'climagrid-pwf-export-v2',
         id: exportId,
         scenarioId: scenario.id,
         createdAt: generatedAt,
         studyName: payload.studyName,
-        referencePwf: {
-          id: metadata.id,
-          name: metadata.name,
-          sha256: metadata.sha256,
-        },
+        exportMode,
+        referencePwf: reference,
         output: {
           filename,
           sizeBytes: output.length,
@@ -176,7 +226,9 @@ export class PwfExportService {
           unselectedPlantIds: scenario.observations
             .map((observation) => observation.id)
             .filter((id) => !selected.has(id)),
-          unselectedPlantBehavior: 'preserve_reference_pwf_pg',
+          unselectedPlantBehavior: exportMode === 'reference'
+            ? 'preserve_reference_pwf_pg'
+            : 'omit_from_dbar_change_file',
         },
         allocations: plants.map((plant) => ({
           plantId: plant.plantId,
@@ -184,6 +236,8 @@ export class PwfExportService {
           busNumber: Number(plant.mapping.busNumber),
           allocationFactor: plant.mapping.allocationFactor!,
           generationMw: plant.generationMw,
+          operation: plant.mapping.operation ?? 'M',
+          state: plant.mapping.state ?? '0',
         })),
       }, output);
     }
@@ -194,10 +248,11 @@ export class PwfExportService {
       generatedAt,
       generationSource: payload.generationSource,
       dataVersion: payload.dataVersion,
+      exportMode,
       modifiedBuses,
       exportId,
       outputSha256,
-      referenceSha256: metadata.sha256,
+      referenceSha256: reference?.sha256,
     };
   }
 }
@@ -302,15 +357,20 @@ function validatePayload(payload: PwfExportRequest): void {
   if (!payload || typeof payload !== 'object') {
     throw new BadRequestException('Corpo da exportação ausente.');
   }
-  for (const field of [
-    'referencePwfId',
-    'scenarioId',
-    'studyName',
-    'dataVersion',
-  ] as const) {
+  const exportMode = payload.exportMode ?? 'reference';
+  if (!['reference', 'dbar'].includes(exportMode)) {
+    throw new BadRequestException('O campo exportMode deve ser reference ou dbar.');
+  }
+  for (const field of ['scenarioId', 'studyName', 'dataVersion'] as const) {
     if (typeof payload[field] !== 'string' || !payload[field].trim()) {
       throw new BadRequestException(`O campo ${field} é obrigatório.`);
     }
+  }
+  if (
+    exportMode === 'reference' &&
+    (typeof payload.referencePwfId !== 'string' || !payload.referencePwfId.trim())
+  ) {
+    throw new BadRequestException('O campo referencePwfId é obrigatório no modo reference.');
   }
   if (!['observed', 'estimated'].includes(payload.generationSource)) {
     throw new BadRequestException(
@@ -330,7 +390,89 @@ function validatePayload(payload: PwfExportRequest): void {
     ) {
       throw new BadRequestException('Há uma usina com dados de exportação inválidos.');
     }
+    if (
+      plant.mapping.operation !== undefined &&
+      !['A', 'E', 'M'].includes(plant.mapping.operation)
+    ) {
+      throw new BadRequestException('Há uma operação DBAR inválida.');
+    }
+    if (
+      plant.mapping.state !== undefined &&
+      !['0', '1', '2'].includes(plant.mapping.state)
+    ) {
+      throw new BadRequestException('Há um estado DBAR inválido.');
+    }
   }
+}
+
+const DBAR_HEADER = '(Num)OETGb(   nome   )Gl( V)( A)( Pg)( Qg)( Qn)( Qm)(Bc  )( Pl)( Ql)( Sh)Are(Vf)M(1)(2)(3)(4)(5)(6)(7)(8)(9)(10';
+
+function createDbarChangeFile(
+  generationByBus: Map<number, {
+    generationMw: number;
+    busName: string;
+    operation?: 'A' | 'E' | 'M';
+    state?: '0' | '1' | '2';
+  }>,
+): Buffer {
+  const records = [...generationByBus.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([busNumber, allocation]) => {
+      const record = Array<string>(DBAR_HEADER.length).fill(' ');
+      putFixed(record, 0, 5, String(busNumber), 'right');
+      putFixed(record, 5, 6, allocation.operation ?? 'M');
+      putFixed(record, 6, 7, allocation.state ?? '0');
+      putFixed(record, 10, 22, allocation.busName || `BARRA ${busNumber}`);
+      putFixed(
+        record,
+        32,
+        37,
+        formatFixedWidthNumber(allocation.generationMw, 5, '0.0'),
+      );
+      return record.join('').trimEnd();
+    });
+  return Buffer.from(
+    ['DBAR', DBAR_HEADER, ...records, '99999', '', 'FIM', ''].join('\r\n'),
+    'latin1',
+  );
+}
+
+function putFixed(
+  output: string[],
+  start: number,
+  end: number,
+  value: string,
+  alignment: 'left' | 'right' = 'left',
+): void {
+  const width = end - start;
+  const normalized = value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const formatted = alignment === 'right'
+    ? normalized.padStart(width)
+    : normalized.padEnd(width);
+  output.splice(start, width, ...formatted.slice(0, width));
+}
+
+function writeTextField(
+  output: Buffer,
+  field: { byteOffset: number; width: number },
+  value: string,
+  busNumber: number,
+): void {
+  const fieldEnd = field.byteOffset + field.width;
+  if (field.byteOffset < 0 || fieldEnd > output.length || value.length !== field.width) {
+    throw new UnprocessableEntityException(
+      `O índice da barra ${busNumber} não corresponde ao arquivo PWF armazenado.`,
+    );
+  }
+  output.write(value, field.byteOffset, field.width, 'latin1');
+}
+
+function safeFilenameStem(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9._-]+/g, '_')
+    .slice(0, 120);
 }
 
 export function formatFixedWidthNumber(

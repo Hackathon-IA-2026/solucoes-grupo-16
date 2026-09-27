@@ -65,6 +65,89 @@ describe('PwfExportService', () => {
     expect(formatFixedWidthNumber(9, 5, '100.0')).toBe('  9.0');
   });
 
+  it('gera um arquivo DBAR de alterações sem exigir caso-base', async () => {
+    const storage = {
+      getMetadata: vi.fn(),
+      getIndex: vi.fn(),
+      getOriginalPwf: vi.fn(),
+    } as unknown as PwfStorageService;
+    const service = new PwfExportService(storage);
+
+    const result = await service.export({
+      exportMode: 'dbar',
+      scenarioId: 'cenario-1',
+      studyName: 'Cenário Nordeste',
+      generationSource: 'observed',
+      dataVersion: 'snapshot-teste',
+      plants: [{
+        plantId: 'plant-1',
+        onsId: 'ONS_1',
+        generationMw: 87.5,
+        mapping: {
+          busNumber: '300',
+          busName: 'PARQUE EOL',
+          nominalVoltageKv: '',
+          area: '',
+          operation: 'A',
+          state: '1',
+        },
+      }],
+    });
+
+    const lines = result.buffer.toString('latin1').split('\r\n');
+    expect(lines[0]).toBe('DBAR');
+    expect(lines[1]).toContain('(Num)OETGb');
+    expect(lines[2].slice(0, 7)).toBe('  300A1');
+    expect(lines[2].slice(10, 22)).toBe('PARQUE EOL  ');
+    expect(lines[2].slice(32, 37)).toBe(' 87.5');
+    expect(lines.slice(-4)).toEqual(['99999', '', 'FIM', '']);
+    expect(result.exportMode).toBe('dbar');
+    expect(result.referenceSha256).toBeUndefined();
+    expect(storage.getOriginalPwf).not.toHaveBeenCalled();
+  });
+
+  it('altera operação, estado e Pg no caso-base quando informados', async () => {
+    const original = Buffer.from(`${' '.repeat(5)}AL${' '.repeat(25)}100.0${' '.repeat(8)}`, 'latin1');
+    const storage = {
+      getMetadata: vi.fn().mockResolvedValue({
+        id: '12345678-1234-1234-1234-123456789abc',
+        name: 'caso-base.pwf',
+        sha256: 'a'.repeat(64),
+      }),
+      getIndex: vi.fn().mockResolvedValue({
+        buses: [{
+          number: 123,
+          status: 'L',
+          type: 1,
+          activeGenerationField: { value: 100, byteOffset: 32, width: 5, rawValue: '100.0' },
+        }],
+        generatorGroups: [],
+      }),
+      getOriginalPwf: vi.fn().mockResolvedValue(original),
+    } as unknown as PwfStorageService;
+    const service = new PwfExportService(storage);
+
+    const result = await service.export({
+      exportMode: 'reference',
+      referencePwfId: '12345678-1234-1234-1234-123456789abc',
+      scenarioId: 'cenario-1',
+      studyName: 'Cenário teste',
+      generationSource: 'observed',
+      dataVersion: 'snapshot-teste',
+      plants: [{
+        plantId: 'plant-1', onsId: 'ONS_1', generationMw: 87.5,
+        mapping: {
+          busNumber: '123', busName: 'PARQUE', nominalVoltageKv: '230', area: '5',
+          operation: 'M', state: '0',
+        },
+      }],
+    });
+
+    expect(result.buffer.subarray(5, 7).toString('latin1')).toBe('M0');
+    expect(result.buffer.subarray(32, 37).toString('latin1')).toBe(' 87.5');
+    expect(original.subarray(5, 7).toString('latin1')).toBe('AL');
+  });
+
   it('soma parcelas de diferentes conjuntos associadas à mesma barra', async () => {
     const storage = {
       getMetadata: vi.fn().mockResolvedValue({ name: 'caso-base.pwf' }),

@@ -50,7 +50,12 @@ export class IntegrationController {
       const capabilities = await this.ai.capabilities();
       return {
         backend: { available: true },
-        pwf: { upload: true, generationTargets: true, export: true },
+        pwf: {
+          upload: true,
+          generationTargets: true,
+          export: true,
+          defaultReferenceCaseId: defaultReferenceCaseId(),
+        },
         aiService: { available: true },
         climate: {
           historicalReplay: capabilities.features.historical_replay,
@@ -88,7 +93,12 @@ export class IntegrationController {
     } catch {
       return {
         backend: { available: true },
-        pwf: { upload: true, generationTargets: true, export: true },
+        pwf: {
+          upload: true,
+          generationTargets: true,
+          export: true,
+          defaultReferenceCaseId: defaultReferenceCaseId(),
+        },
         aiService: { available: false },
         climate: {
           historicalReplay: false,
@@ -368,6 +378,11 @@ export class IntegrationController {
     await this.scenarios.saveScenario(manifest, input);
     return { scenario, observations };
   }
+}
+
+function defaultReferenceCaseId(): string | null {
+  const value = process.env.PWF_DEFAULT_REFERENCE_ID?.trim();
+  return value && /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(value) ? value : null;
 }
 
 function validatedCsv(file?: UploadedClimateFile): string {

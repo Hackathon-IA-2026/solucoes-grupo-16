@@ -70,7 +70,12 @@ export interface PlantBusMapping {
   busName: string;
   nominalVoltageKv: string;
   area: string;
+  included: boolean;
+  operation: "A" | "E" | "M";
+  state: "0" | "1" | "2";
 }
+
+export type PwfExportMode = "reference" | "dbar";
 
 export interface ReferencePwf {
   id?: string;
@@ -120,6 +125,7 @@ export interface PwfGenerationTarget {
 
 export interface StudyDraft {
   name: string;
+  exportMode: PwfExportMode;
   referencePwf: ReferencePwf | null;
   generationTargets: PwfGenerationTarget[];
   mappings: Record<string, PlantBusMapping>;
@@ -173,6 +179,7 @@ export interface PwfExportResult {
   generatedAt: string;
   generationSource: "observed" | "estimated";
   dataVersion: string;
+  exportMode: PwfExportMode;
   exportId?: string;
   outputSha256?: string;
   referenceSha256?: string;
@@ -181,7 +188,12 @@ export interface PwfExportResult {
 
 export interface SystemCapabilities {
   backend: { available: boolean };
-  pwf: { upload: boolean; generationTargets: boolean; export: boolean };
+  pwf: {
+    upload: boolean;
+    generationTargets: boolean;
+    export: boolean;
+    defaultReferenceCaseId?: string | null;
+  };
   aiService: { available: boolean };
   climate: {
     historicalReplay: boolean;

@@ -341,13 +341,15 @@ function parseBuses(
     }
 
     const baseVoltageGroup = parseOptionalIdentifier(line.text.slice(8, 10));
+    const operation = textField(line, 5, 6, 'A');
+    const state = textField(line, 6, 7, 'L');
     const activeGeneration = numericField(line, 32, 37, 0);
     const limits = generatorLimits.get(number);
 
     return {
       number,
       name: line.text.slice(10, 22).trimEnd(),
-      status: line.text.slice(6, 7).trim() || 'L',
+      status: state.value,
       type: typeValue as 0 | 1 | 2 | 3,
       baseVoltageGroup,
       baseVoltageKv:
@@ -366,6 +368,8 @@ function parseBuses(
       reactiveLoadMvar: parseOptionalNumber(line.text.slice(63, 68)) ?? 0,
       area: parseOptionalInteger(line.text.slice(73, 76)),
       lineNumber: line.lineNumber,
+      operationField: operation,
+      stateField: state,
       activeGenerationField: activeGeneration,
     };
   });
@@ -428,6 +432,21 @@ function numericField(
   const rawValue = line.text.slice(start, end);
   return {
     value: parseOptionalNumber(rawValue) ?? defaultValue,
+    byteOffset: line.startByte + start,
+    width: end - start,
+    rawValue,
+  };
+}
+
+function textField(
+  line: BufferLine,
+  start: number,
+  end: number,
+  defaultValue: string,
+): PwfFieldReference<string> {
+  const rawValue = line.text.slice(start, end);
+  return {
+    value: rawValue.trim() || defaultValue,
     byteOffset: line.startByte + start,
     width: end - start,
     rawValue,

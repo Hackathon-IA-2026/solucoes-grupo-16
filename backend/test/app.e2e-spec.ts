@@ -177,6 +177,40 @@ describe('AppController (e2e)', () => {
     });
   });
 
+  it('exports a standalone DBAR change file without a reference case', async () => {
+    const exported = await request(app.getHttpServer())
+      .post('/pwf/exports')
+      .send({
+        exportMode: 'dbar',
+        scenarioId: 'cenario-dbar',
+        studyName: 'Alterações Nordeste',
+        generationSource: 'observed',
+        dataVersion: 'snapshot-teste',
+        plants: [{
+          plantId: 'usina-1', onsId: 'ONS_1', generationMw: 87.5,
+          mapping: {
+            busNumber: '300', busName: 'PARQUE EOL',
+            nominalVoltageKv: '', area: '', operation: 'M', state: '0',
+          },
+        }],
+      })
+      .buffer(true)
+      .parse((response, callback) => {
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk: Buffer) => chunks.push(chunk));
+        response.on('end', () => callback(null, Buffer.concat(chunks)));
+      })
+      .expect(201);
+
+    expect(exported.headers['x-export-mode']).toBe('dbar');
+    expect(exported.headers['x-reference-sha256']).toBeUndefined();
+    const lines = (exported.body as Buffer).toString('latin1').split('\r\n');
+    expect(lines[0]).toBe('DBAR');
+    expect(lines[2].slice(0, 7)).toBe('  300M0');
+    expect(lines[2].slice(32, 37)).toBe(' 87.5');
+    expect(lines.slice(-4)).toEqual(['99999', '', 'FIM', '']);
+  });
+
   it('exports an estimated scenario into a real 2040 PWF', async () => {
     const original = await readFile(join(
       process.cwd(), '..', 'Docs', 'Casos de Referência', 'pwfs',

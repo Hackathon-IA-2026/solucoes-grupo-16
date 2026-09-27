@@ -1,12 +1,12 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Icon } from "@/components/ui/icon";
 import { runtimeConfig } from "@/lib/api";
 import { workflowSteps } from "@/lib/workflow";
 import { useSystemStatus } from "@/context/system-context";
+import { BrandLogo } from "./brand-logo";
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -24,9 +24,21 @@ export function Sidebar() {
     <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col justify-between border-r border-outline-variant/50 bg-surface-container-low lg:flex">
       <div>
         <div className="flex h-20 items-center border-b border-outline-variant/40 bg-surface-container-lowest px-5">
-          <Image src="/logo.svg" alt="ClimaGrid" width={184} height={46} priority />
+          <BrandLogo />
         </div>
         <div className="px-4 py-5">
+          <Link
+            href="/cenario-climatico"
+            className={`mb-5 block overflow-hidden rounded-2xl border p-4 transition-all ${
+              pathname.startsWith("/cenario-climatico")
+                ? "border-secondary/60 bg-secondary/15 shadow-lg shadow-secondary/5"
+                : "border-secondary/25 bg-gradient-to-br from-primary-container/20 to-tertiary-container/10 hover:-translate-y-0.5 hover:border-secondary/50"
+            }`}
+          >
+            <span className="inline-flex rounded-full bg-secondary/15 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-secondary">Principal · MVP</span>
+            <span className="mt-3 flex items-center gap-2 text-sm font-semibold text-on-surface"><Icon name="wind" className="h-4 w-4 text-secondary" />Cenário climático</span>
+            <span className="mt-1 block text-[11px] leading-4 text-on-surface-variant">Estime o potencial e prepare um PWF.</span>
+          </Link>
           <p className="px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-outline">Fluxo do estudo</p>
           <nav className="mt-3 space-y-1" aria-label="Etapas do estudo">
           {workflowSteps.map((step, index) => {

@@ -33,7 +33,9 @@ Fluxo implementado:
 4. ERA5 horário no ponto de grade de cada membro do conjunto;
 5. união por `usina_id + timestamp_utc`;
 6. relação CEG → uma ou mais barras da planilha PWF;
-7. exportação de uma cópia do PWF alterando somente o `Pg`.
+7. exportação em um de dois modos: cópia rastreável de um caso-base, alterando
+   `Operação`, `Estado` e `Pg` apenas nas barras incluídas, ou arquivo isolado
+   de alterações `DBAR` sem rede elétrica embutida.
 
 Estado dos dados locais nesta cópia: julho e agosto de 2024 foram preparados
 sob demanda, com 1.485 horas distintas em cache. Agosto está completo nas
@@ -69,8 +71,8 @@ Fluxo:
 4. serviço valida cadastro/capacidade para a hora, calcula a geração esperada
    de cada conjunto/usina e persiste CSV, proveniência e observações;
 5. usuário revisa usinas e alocações de barras;
-6. backend recupera a estimativa persistida, valida seleção/fatores e gera um
-   PWF para aquela hora;
+6. backend recupera a estimativa persistida, valida seleção/fatores e gera uma
+   cópia de um PWF rastreável ou um arquivo `DBAR` de alterações para a hora;
 7. backend persiste o PWF e seu manifesto de exportação;
 8. especialista abre o arquivo no ANAREDE.
 
@@ -204,6 +206,16 @@ geração observada. Os documentos `GUIA_ESTUDANTE_SINAL.md` e
   meses. A evidência espacial é mais fraca: WAPE usina-hora de 34,60% e MAE de
   30,29 MW. Consulte
   [`ML/BACKTEST_ANUAL_2024_10_A_2025_09.md`](ML/BACKTEST_ANUAL_2024_10_A_2025_09.md).
+  Uma auditoria contrafactual posterior manteve essas 1.149.341 previsões
+  congeladas e apenas as comparou à geração verificada ONS do mesmo par
+  usina-hora. No total horário, o LightGBM original teve WAPE de 17,48%, erro
+  anual de +8,26% e MAE de 1.751 MW; o candidato calibrado teve 17,97%, +11,40%
+  e 1.799 MW; o DML teve 21,74%, -5,80% e 2.176 MW. A referência ONS somou
+  100,633 TWh e a geração verificada 87,708 TWh, distância de 12,925 TWh ou
+  12,84% da referência. Isso não converte o modelo em preditor de geração
+  entregue: a subestimação do potencial pode compensar o descolamento
+  operacional. Consulte
+  [`ML/AUDITORIA_GERACAO_VERIFICADA_ANUAL.md`](ML/AUDITORIA_GERACAO_VERIFICADA_ANUAL.md).
   A execução local de agosto de 2024 materializou 90.185 linhas elegíveis e
   comparou 67.883 linhas futuras pareadas: MAE de 49,29 MW na curva física,
   22,55 MW no LightGBM fixo e 21,68 MW no DML, com 99,89% de cobertura do
@@ -234,6 +246,9 @@ Endpoints operacionais dos fluxos atuais:
   visíveis ao especialista.
 - A planilha de barras representa 2040; outro PWF pode não conter as mesmas
   barras. O upload deve validar cada alvo.
+- O arquivo `DBAR` genérico não é um caso elétrico completo: ele deve ser
+  aplicado a um caso compatível e validado no ANAREDE. Somente o modo com
+  upload/caso padrão conserva hash e conteúdo integral do caso-base.
 - Os casos PWF reais disponíveis não contêm `DGEI`/`DGER`; a preservação desses
   blocos foi coberta por teste sintético, mas o aceite final deve ocorrer no
   ANAREDE com um caso representativo.
@@ -245,8 +260,8 @@ Endpoints operacionais dos fluxos atuais:
   Isso mantém a trilha após reinícios do Render Free; política de retenção e
   expurgo ainda não foi definida.
 - Mapeamento PWF parcial é bloqueado. Cobertura 0% permite uma alocação manual
-  completa; essa decisão e a permanência do `Pg` do caso base para conjuntos
-  ausentes/desmarcados ainda precisam de aprovação do domínio.
+  completa. No modo caso-base, conjuntos desmarcados preservam o registro
+  original; no modo `DBAR`, eles são omitidos do arquivo de alterações.
 - Os experimentos multiusina 3 a 6 estão documentados, mas seus dados,
   relatórios e artefatos são locais e não estão presentes neste checkout.
 

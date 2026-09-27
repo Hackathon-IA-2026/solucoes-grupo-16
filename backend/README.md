@@ -27,6 +27,12 @@ imutável, acompanhado de metadados, SHA-256 e um índice interpretado. Por
 padrão, os dados ficam em `data/pwf`; a variável `PWF_STORAGE_ROOT` permite
 trocar o diretório.
 
+Depois de enviar e validar um caso, o operador pode definir seu UUID em
+`PWF_DEFAULT_REFERENCE_ID`. A interface então oferece esse caso persistido como
+alternativa ao upload. O padrão continua sendo um PWF real e versionado; o
+sistema não fabrica uma rede elétrica mínima nem remove a rastreabilidade do
+caso-base.
+
 ```http
 GET /pwf/reference-cases/:id
 GET /pwf/reference-cases/:id/generation-targets
@@ -37,11 +43,21 @@ O parser suporta estruturalmente `TITU`, `DBAR`, `DGBT`, `DGER` e `DGEI`. A
 versão homologada nesta etapa é ANAREDE 12.03.04. Outras versões podem ser
 interpretadas, mas são devolvidas como `unverified`.
 
-`POST /pwf/exports` recebe as parcelas de geração observada e o de-para de
-barras. Parcelas destinadas à mesma barra são somadas. O writer copia o caso
-original e altera somente o campo de geração ativa (`Pg`) do registro `DBAR`;
-barras inexistentes, desligadas, swing, valores acima do limite ou que não
-cabem no campo fixo são rejeitados. Os blocos `DGER` e `DGEI` são preservados.
+`POST /pwf/exports` recebe as parcelas de geração observada/estimada, a seleção
+de conjuntos e os campos `Número`, `Operação` (`A/E/M`) e `Estado` (`0/1/2`).
+Parcelas destinadas à mesma barra são somadas e devem usar os mesmos parâmetros.
+
+No modo `reference`, o writer copia o caso original e altera somente `Operação`,
+`Estado` e geração ativa (`Pg`) nos registros `DBAR` incluídos. Barras
+inexistentes, desligadas, swing, valores acima do limite ou que não cabem no
+campo fixo são rejeitados; `DGER`, `DGEI` e todos os demais bytes são
+preservados. O caso pode vir do upload do usuário ou de
+`PWF_DEFAULT_REFERENCE_ID`, mantendo nome, ID e SHA-256 na trilha.
+
+No modo `dbar`, a rota não exige `referencePwfId` e cria um arquivo de
+alterações com `DBAR`, cabeçalho de colunas fixas, registros selecionados,
+`99999` e `FIM`. Esse arquivo não contém a rede completa e não representa
+convergência; precisa ser aplicado e validado no ANAREDE.
 
 ## Integração com o serviço de IA
 
@@ -75,8 +91,8 @@ hashes, versões, observações e avisos. Na exportação estimada, o backend bu
 cenário pelo `scenarioId`, recalcula a geração por barra e rejeita dados
 adulterados, alocações incompletas e cobertura cadastral parcial.
 
-Cada exportação persiste o PWF final e outro manifesto com o PWF base, seleção,
-alocações, barras modificadas e hashes. `GET /climate-scenarios/:id` recupera a
+Cada exportação persiste o PWF final e outro manifesto com o modo, PWF base
+quando aplicável, seleção, alocações, barras modificadas e hashes. `GET /climate-scenarios/:id` recupera a
 trilha e verifica os arquivos armazenados. Por padrão, esses dados ficam em
 `data/scenarios`; `SCENARIO_STORAGE_ROOT` permite trocar o diretório. No
 Compose, `/app/data/scenarios` pertence ao volume `backend-data`. Quando

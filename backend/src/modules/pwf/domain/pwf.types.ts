@@ -28,6 +28,8 @@ export interface PwfBus {
   reactiveLoadMvar: number;
   area?: number;
   lineNumber: number;
+  operationField: PwfFieldReference<string>;
+  stateField: PwfFieldReference<string>;
   activeGenerationField: PwfFieldReference<number>;
 }
 

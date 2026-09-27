@@ -35,20 +35,28 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (runtimeConfig.isDemoMode) return;
     let active = true;
-    climagridApi.getCapabilities().then(
-      (nextCapabilities) => {
-        if (!active) return;
-        setCapabilities(nextCapabilities);
-        setIsLoading(false);
-      },
-      (loadError: unknown) => {
-        if (!active) return;
-        setError(loadError instanceof Error ? loadError.message : 'Backend indisponível.');
-        setIsLoading(false);
-      },
-    );
+    const load = (showLoading: boolean) => {
+      if (showLoading) setIsLoading(true);
+      climagridApi.getCapabilities().then(
+        (nextCapabilities) => {
+          if (!active) return;
+          setCapabilities(nextCapabilities);
+          setError(null);
+          setIsLoading(false);
+        },
+        (loadError: unknown) => {
+          if (!active) return;
+          setCapabilities(null);
+          setError(loadError instanceof Error ? loadError.message : "Backend indisponível.");
+          setIsLoading(false);
+        },
+      );
+    };
+    load(true);
+    const interval = window.setInterval(() => load(false), 30_000);
     return () => {
       active = false;
+      window.clearInterval(interval);
     };
   }, []);
 
