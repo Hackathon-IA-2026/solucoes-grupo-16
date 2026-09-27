@@ -176,7 +176,25 @@ geração observada. Os documentos `GUIA_ESTUDANTE_SINAL.md` e
   6 h: nas 103.801 linhas primárias, o WAPE por usina-hora foi 54,35% na curva
   física, 23,62% no LightGBM e 25,46% no DML; no total horário, 46,00%, 7,88% e
   13,29%, respectivamente. O LightGBM generalizou melhor; o DML não foi
-  promovido nem retunado com setembro.
+  promovido. Por decisão explícita posterior, setembro deixou de ser reserva e
+  passou a dado exposto de adaptação; o relatório original permanece imutável,
+  mas setembro não pode mais sustentar alegação de holdout para escolhas feitas
+  depois dessa decisão.
+  O experimento sequencial seguinte está em
+  `training/causal/iterative_residual.py`: mantém agosto como desenvolvimento,
+  aprende em setembro, mede janeiro de 2026 antes de expô-lo, aprende o resíduo
+  de janeiro e mede abril de 2026 sem retuning. Janeiro materializou 92.973
+  linhas/744 h/126 conjuntos e abril 89.272 linhas/720 h/124 conjuntos, ambos
+  com 100% de associação ONS--ERA5. A busca residual flexível escolheu não
+  corrigir em setembro; uma correção aprendida em janeiro piorou o WAPE horário
+  de abril de 11,73% para 17,40%. A alternativa de baixa variância aprendeu um
+  fator agregado de `1,03` em setembro e reduziu o WAPE horário do LightGBM para
+  12,83% em janeiro (antes 14,48%) e 10,96% em abril (antes 11,73%). Os ganhos
+  foram sustentados por bootstrap pareado em blocos de dia: +1,65 p.p.
+  (IC95% 1,24 a 1,99) e +0,77 p.p. (IC95% 0,27 a 1,23). Uma segunda calibração
+  aprendida em janeiro piorou abril para 12,06% e foi rejeitada. O candidato
+  congelado para o próximo backtest anual é, portanto, LightGBM de agosto com
+  calibração `1,03` de setembro; abril agora é período exposto de validação.
   A execução local de agosto de 2024 materializou 90.185 linhas elegíveis e
   comparou 67.883 linhas futuras pareadas: MAE de 49,29 MW na curva física,
   22,55 MW no LightGBM fixo e 21,68 MW no DML, com 99,89% de cobertura do

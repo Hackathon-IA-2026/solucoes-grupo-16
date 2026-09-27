@@ -194,9 +194,57 @@ em que a referência não ultrapassa a capacidade disponível, o WAPE horário f
 41,67%, 5,18% e 9,10%.
 
 O resultado independente contradiz a pequena vantagem do DML observada dentro
-de agosto. O LightGBM fixo é o melhor candidato deste teste; setembro não pode
-ser reutilizado para escolher novos hiperparâmetros. O DML permanece challenger
-de pesquisa e nenhum artefato foi promovido para o `Predictor`.
+de agosto. O LightGBM fixo é o melhor candidato deste teste. Naquele protocolo,
+setembro não podia ser reutilizado para escolher novos hiperparâmetros sem
+perder o papel de holdout. O DML permanece challenger de pesquisa e nenhum
+artefato foi promovido para o `Predictor`.
+
+#### Adaptação sequencial em setembro, janeiro e abril
+
+Depois do relatório acima ser congelado, a equipe decidiu explicitamente
+reclassificar setembro como dado exposto de adaptação e reservar janeiro e
+abril de 2026 como checkpoints posteriores. Essa decisão não altera o placar
+histórico do holdout, mas impede usar setembro como evidência independente para
+qualquer escolha posterior.
+
+O módulo `training/causal/iterative_residual.py` executa a sequência:
+
+1. treina LightGBM residual e DML apenas em agosto de 2024;
+2. busca seis famílias de correção LightGBM, quatro intensidades e o guardrail
+   sem correção no bloco final de setembro, com gap de 6 h;
+3. aprende também uma calibração de baixa variância com um único fator agregado
+   na grade congelada de 0,70 a 1,40;
+4. mede janeiro de 2026 antes de usar seu target em qualquer adaptação;
+5. repete as duas buscas sobre o resíduo restante em janeiro;
+6. mede todos os candidatos congelados em abril, que não participa de treino ou
+   seleção de parâmetros;
+7. estima a diferença de WAPE por bootstrap pareado em blocos de dia UTC, com
+   2.000 reamostragens.
+
+Janeiro forneceu 92.973 linhas fisicamente válidas, 744 horas e 126 conjuntos;
+abril forneceu 89.272 linhas, 720 horas e 124 conjuntos. A cobertura da junção
+ONS--ERA5 foi 100% nos dois meses. A métrica primária reteve todas as linhas,
+inclusive 5.000 referências acima da capacidade disponível em janeiro e 2.342
+em abril após a validação final.
+
+A correção flexível de setembro escolheu o guardrail sem correção. A correção
+flexível aprendida em janeiro pareceu boa dentro do próprio mês, mas piorou o
+WAPE horário de abril de 11,73% para 17,40%; a piora foi de 5,67 p.p., com IC95%
+de -7,16 a -4,00 p.p. para a suposta melhora. Esse candidato foi rejeitado.
+
+A calibração escalar escolheu `1,03` em setembro. Em janeiro, reduziu o WAPE
+horário do LightGBM de 14,48% para 12,83%, ganho de 1,65 p.p. (IC95% 1,24 a
+1,99). Em abril, reduziu 11,73% para 10,96%, ganho de 0,77 p.p. (IC95% 0,27 a
+1,23). A calibração seguinte, `1,10` aprendida em janeiro, piorou abril para
+12,06% e também foi rejeitada. Logo, o candidato a congelar para um backtest
+anual é o LightGBM de agosto multiplicado por `1,03`, preservando os limites
+físicos já aplicados. Isso ainda é evidência exploratória e não promove o modelo
+para o `Predictor`.
+
+O relatório e as previsões imutáveis ficam em
+`artifacts/causal/iterative-residual-calibrated-2026-04/`. Abril passa a ser
+período exposto; um teste anual deve usar meses ainda não empregados na escolha
+do candidato ou um protocolo walk-forward pré-registrado.
 
 Depois de gerar `assignments.parquet` e a partição `development.parquet` pelo
 protocolo temporal:

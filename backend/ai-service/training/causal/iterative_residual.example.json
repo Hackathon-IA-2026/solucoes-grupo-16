@@ -1,0 +1,58 @@
+{
+  "candidates": [
+    {
+      "candidate_id": "conservative",
+      "n_estimators": 250,
+      "learning_rate": 0.025,
+      "num_leaves": 15,
+      "min_child_samples": 200,
+      "reg_lambda": 10.0
+    },
+    {
+      "candidate_id": "balanced",
+      "n_estimators": 350,
+      "learning_rate": 0.04,
+      "num_leaves": 31,
+      "min_child_samples": 100,
+      "reg_lambda": 5.0
+    },
+    {
+      "candidate_id": "flexible",
+      "n_estimators": 500,
+      "learning_rate": 0.035,
+      "num_leaves": 63,
+      "min_child_samples": 50,
+      "reg_lambda": 5.0
+    },
+    {
+      "candidate_id": "smooth_long",
+      "n_estimators": 650,
+      "learning_rate": 0.02,
+      "num_leaves": 31,
+      "min_child_samples": 150,
+      "reg_lambda": 10.0
+    },
+    {
+      "candidate_id": "fast_regularized",
+      "n_estimators": 250,
+      "learning_rate": 0.06,
+      "num_leaves": 31,
+      "min_child_samples": 150,
+      "reg_lambda": 10.0
+    },
+    {
+      "candidate_id": "wide_regularized",
+      "n_estimators": 400,
+      "learning_rate": 0.03,
+      "num_leaves": 63,
+      "min_child_samples": 100,
+      "reg_lambda": 15.0
+    }
+  ],
+  "scales": [0.25, 0.5, 0.75, 1.0],
+  "calibration_factor_grid": {
+    "start": 0.7,
+    "stop": 1.4,
+    "step": 0.01
+  }
+}

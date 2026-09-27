@@ -392,9 +392,42 @@ O holdout de setembro de 2024 já foi consumido contra desenvolvimento em
 agosto. Na população primária de 103.801 usina-horas, o WAPE foi 54,35% na
 curva física, 23,62% no LightGBM e 25,46% no DML. No total agregado por hora,
 os valores foram 46,00%, 7,88% e 13,29%. Assim, o LightGBM generalizou melhor e
-o DML não foi promovido nem deve ser retunado usando setembro. O relatório
-imutável está em
+o DML não foi promovido. O relatório imutável está em
 `artifacts/causal/independent-holdout-2024-09/holdout_report.json`.
+
+Depois de congelar esse resultado, setembro pode ser reclassificado
+explicitamente como adaptação, perdendo o papel de holdout para decisões
+posteriores. O experimento sequencial usa janeiro de 2026 como primeiro
+checkpoint e, somente depois de medi-lo, como segunda adaptação; abril de 2026
+é o checkpoint final intocado:
+
+```bash
+python -m training.causal.iterative_residual \
+  --development data/processed/training/holdout/development_2024_08.parquet \
+  --september data/processed/training/holdout/holdout_2024_09.parquet \
+  --january data/processed/training/iterative/january_2026.parquet \
+  --april data/processed/training/iterative/april_2026.parquet \
+  --config training/causal/hackathon.example.json \
+  --estimand training/causal/estimand.example.json \
+  --search-space training/causal/iterative_residual.example.json \
+  --gap-hours 6 --bootstrap-samples 2000 \
+  --output-dir artifacts/causal/iterative-residual-calibrated-2026-04
+```
+
+O job compara curva física, LightGBM de agosto, DML, correções residuais
+sequenciais e calibrações escalares de baixa variância. A seleção usa WAPE do
+total agregado por hora, alinhado ao estudo da rede; WAPE por usina-hora e erro
+assinado continuam no relatório. O guardrail sem correção participa da busca.
+Abril nunca entra no ajuste.
+
+Na execução de 27 de setembro de 2026, a correção flexível de setembro escolheu
+o guardrail e a correção flexível aprendida em janeiro piorou abril para 17,40%
+de WAPE horário. A calibração `1,03`, aprendida em setembro, generalizou: reduziu
+janeiro de 14,48% para 12,83% e abril de 11,73% para 10,96%, com IC95% de ganho
+positivo nos dois checkpoints. A calibração adicional de janeiro piorou abril
+para 12,06% e foi rejeitada. O candidato congelado para o próximo backtest anual
+é o LightGBM de agosto com fator `1,03`; ele continua exploratório e fora do
+`Predictor`.
 
 ### Pipeline legado
 
