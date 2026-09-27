@@ -73,7 +73,11 @@ Cada exportação persiste o PWF final e outro manifesto com o PWF base, seleç�
 alocações, barras modificadas e hashes. `GET /climate-scenarios/:id` recupera a
 trilha e verifica os arquivos armazenados. Por padrão, esses dados ficam em
 `data/scenarios`; `SCENARIO_STORAGE_ROOT` permite trocar o diretório. No
-Compose, `/app/data/scenarios` pertence ao volume `backend-data`.
+Compose, `/app/data/scenarios` pertence ao volume `backend-data`. Quando
+`SUPABASE_URL`, `SUPABASE_KEY` e `SUPABASE_BUCKET` estão configurados, o backend
+também grava e lê a trilha completa em `climate-scenarios/<uuid>/` no Supabase
+Storage. Isso permite usar o backend no Render Free sem depender do filesystem
+efêmero da instância.
 
 O corpo JSON de exportação aceita até 2 MB para comportar centenas de parcelas
 usina–barra em um único replay.

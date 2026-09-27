@@ -132,7 +132,9 @@ seleção, comportamento das usinas não selecionadas, alocações e hashes. A r
 `GET /climate-scenarios/:id` verifica os arquivos contra os manifestos antes de
 devolver a trilha. No Compose, os dados ficam no volume `backend-data`; fora
 dele, o diretório padrão é `backend/data/scenarios` e pode ser alterado por
-`SCENARIO_STORAGE_ROOT`.
+`SCENARIO_STORAGE_ROOT`. Com Supabase configurado, CSV, manifesto, PWF final e
+manifesto de exportação também são gravados no Storage e recuperados dali após
+um restart do backend no Render Free.
 
 ### Cobertura parcial
 
@@ -194,9 +196,9 @@ sem executar o ANAREDE.
   download, além dos testes HTTP isolados.
 - Tornar o status de capacidade mais rigoroso: a simples existência do arquivo
   de catálogo não garante schema válido, cobertura ou mapeamento utilizável.
-- Definir retenção, privacidade, backup e armazenamento compartilhado dos
-  arquivos e manifestos. A implementação atual é durável no disco/volume local,
-  mas não replica cenários no Supabase e não possui política de expurgo.
+- Definir retenção e expurgo dos arquivos e manifestos. A implementação já
+  replica a trilha da fase 2 em bucket privado do Supabase quando configurado,
+  mas ainda não remove cenários antigos automaticamente.
 
 ### P2 — modelo treinado, depois do contrato operacional
 

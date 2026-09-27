@@ -46,4 +46,11 @@ describe('SupabaseService', () => {
     const result = await service.downloadFile('test.txt');
     expect(result).toBeNull();
   });
+
+  it('returns null when listFolder is called without client', async () => {
+    const service = new SupabaseService();
+    service.onModuleInit();
+    const result = await service.listFolder('climate-scenarios');
+    expect(result).toBeNull();
+  });
 });
