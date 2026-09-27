@@ -134,7 +134,10 @@ class HistoricalScenarioService:
         series = []
         for path in paths:
             try:
-                series.append(pd.read_parquet(path, columns=sorted(REQUIRED_SNAPSHOT_COLUMNS))["timestamp_utc"])
+                # Availability is queried while an on-demand partition may be
+                # using most of the service memory. Reading the other replay
+                # columns here creates avoidable allocations on every poll.
+                series.append(pd.read_parquet(path, columns=["timestamp_utc"])["timestamp_utc"])
             except (KeyError, OSError, ValueError):
                 continue
         if not series:
@@ -301,7 +304,7 @@ class HistoricalScenarioService:
                 continue
             try:
                 hours = pd.to_datetime(
-                    pd.read_parquet(path, columns=sorted(REQUIRED_SNAPSHOT_COLUMNS))["timestamp_utc"], utc=True
+                    pd.read_parquet(path, columns=["timestamp_utc"])["timestamp_utc"], utc=True
                 )
             except (OSError, KeyError, ValueError):
                 continue

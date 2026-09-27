@@ -183,9 +183,15 @@ def prepare_replay_partition(data_root: Path, timestamp: pd.Timestamp) -> Path:
         # then require the selected hour explicitly below instead of 99% per-plant coverage.
         extract_file(raw, catalog, weather, weather_manifest, request_hash=request.request_hash,
                      catalog_hash=catalog_hash)
+    del catalog
+    gc.collect()
 
-    joined, join_report = join_ons_era5(ons_hourly, read_tabular(weather))
-    selected_ons = ons_hourly.loc[ons_hourly["timestamp_utc"].eq(timestamp)]
+    weather_hourly = read_tabular(weather)
+    joined, join_report = join_ons_era5(ons_hourly, weather_hourly)
+    del weather_hourly
+    selected_ons = ons_hourly.loc[ons_hourly["timestamp_utc"].eq(timestamp)].copy()
+    del ons_hourly
+    gc.collect()
     selected_joined = joined.loc[joined["timestamp_utc"].eq(timestamp)]
     if selected_ons.empty or selected_joined.empty:
         raise ValueError("A hora solicitada não possui geração ONS e vento ERA5 conciliados.")
