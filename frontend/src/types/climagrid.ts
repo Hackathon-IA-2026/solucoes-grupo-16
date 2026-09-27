@@ -22,6 +22,8 @@ export interface ClimateScenario {
     catalogSha256: string;
     mappingSha256: string | null;
     estimatorVersion: string;
+    modelRows?: number;
+    physicalFallbackRows?: number;
     weatherDataVersion?: string;
     era5Sha256?: string;
     availabilitySource?: "USER_FILE" | "USER_GLOBAL_ASSUMPTION";

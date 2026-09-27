@@ -34,6 +34,10 @@ export default function HistoricalObservationsPage() {
     0,
   );
   const isScenario = state.climateScenario?.mode === "scenario";
+  const scenarioUsesModel = isScenario && state.climateScenario?.generationSource === "MODEL";
+  const estimatorLabel = scenarioUsesModel
+    ? `LightGBM ${state.climateScenario?.traceability?.estimatorVersion ?? "experimental"}`
+    : "curva física genérica";
   const scenarioUsesEra5 = isScenario && state.climateScenario?.weatherSource === "ERA5";
   const scenarioWindLabel = scenarioUsesEra5 ? "ERA5 histórico" : "arquivo do usuário";
   const excludedEra5Plants = state.climateScenario?.traceability?.excludedPlantIds ?? [];
@@ -72,13 +76,14 @@ export default function HistoricalObservationsPage() {
         <PageHeader
           eyebrow={isScenario ? "Etapa 2 de 4 · Potencial estimado" : "Etapa 2 de 4 · Observações históricas"}
           title="Selecione as usinas do estudo"
-          description={isScenario ? `Os valores abaixo são estimativas físicas para o vento do ${scenarioWindLabel}. Selecione os conjuntos que serão associados ao PWF.` : "Os valores abaixo são medições horárias da ONS, acompanhadas pelo vento ERA5 da mesma hora. Selecione somente as usinas que serão associadas ao PWF."}
+          description={isScenario ? `Os valores abaixo são estimativas do ${estimatorLabel} para o vento do ${scenarioWindLabel}. Selecione os conjuntos que serão associados ao PWF.` : "Os valores abaixo são medições horárias da ONS, acompanhadas pelo vento ERA5 da mesma hora. Selecione somente as usinas que serão associadas ao PWF."}
           aside={<div className="rounded-xl bg-surface-container-lowest px-4 py-3 text-right"><p className="text-[10px] font-semibold uppercase tracking-wider text-outline">Selecionadas</p><p className="mt-1 text-xl font-semibold text-secondary">{state.selectedPlantIds.length} de {state.estimates.length}</p></div>}
         />
 
         {runtimeConfig.isDemoMode ? <Notice tone="warning" title="Resultados simulados">A API não está configurada; estes valores servem apenas para navegar pelo fluxo.</Notice> : null}
-        <Notice tone={isScenario ? "warning" : "success"} title={isScenario ? "Potencial estimado pela curva física" : "Geração observada, não estimada"}>
-          Instante: <strong>{new Date(state.climateScenario.timestamp).toLocaleString("pt-BR")}</strong>. Fonte de geração: {isScenario ? "curva física genérica" : "ONS"}; fonte de vento: {isScenario ? scenarioWindLabel : "ERA5"}.
+        <Notice tone={isScenario ? "warning" : "success"} title={isScenario ? `Potencial estimado por ${estimatorLabel}` : "Geração observada, não estimada"}>
+          Instante: <strong>{new Date(state.climateScenario.timestamp).toLocaleString("pt-BR")}</strong>. Fonte de geração: {isScenario ? estimatorLabel : "ONS"}; fonte de vento: {isScenario ? scenarioWindLabel : "ERA5"}.
+          {scenarioUsesModel && state.climateScenario.traceability?.physicalFallbackRows ? ` ${state.climateScenario.traceability.physicalFallbackRows} conjunto(s) permaneceram no fallback físico.` : ""}
         </Notice>
         {scenarioUsesEra5 && excludedEra5Plants.length > 0 ? (
           <Notice tone="warning" title="Cobertura cadastral parcial, sem ocultação">
@@ -128,6 +133,7 @@ export default function HistoricalObservationsPage() {
                     <td className="px-3 py-4 text-right font-mono text-sm text-on-surface-variant">{plant.installedCapacityMw.toLocaleString("pt-BR")} MW</td>
                     <td className="px-3 py-4 text-right font-mono text-sm font-semibold text-secondary">
                       {formatMw(plant.observedGenerationMw ?? plant.estimatedGenerationMw)}
+                      {isScenario ? <p className="mt-1 text-[10px] font-normal text-outline">{plant.generationSource === "MODEL" ? "LightGBM" : "Curva física"}</p> : null}
                     </td>
                     <td className="px-3 py-4 text-right font-mono text-xs text-on-surface-variant">
                       {formatPercent(plant.capacityFactorPercent)}

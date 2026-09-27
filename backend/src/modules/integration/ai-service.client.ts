@@ -124,7 +124,7 @@ export interface AiClimateFileEstimate {
   timestamp: string;
   resolution_minutes: 60;
   data_version: string;
-  generation_source: 'PHYSICAL_CURVE';
+  generation_source: 'PHYSICAL_CURVE' | 'MODEL';
   weather_source: 'USER' | 'ERA5';
   row_count: number;
   normalized_csv?: string;
@@ -135,6 +135,8 @@ export interface AiClimateFileEstimate {
     catalog_sha256: string;
     mapping_sha256: string | null;
     estimator_version: string;
+    model_rows?: number;
+    physical_fallback_rows?: number;
     availability_source?: 'USER_FILE' | 'USER_GLOBAL_ASSUMPTION';
     availability_value?: number;
     weather_data_version?: string;
@@ -163,7 +165,7 @@ export interface AiClimateFileEstimate {
     wind_speed_mps: number;
     wind_direction_degrees: number;
     availability: number;
-    generation_source: 'PHYSICAL_CURVE';
+    generation_source: 'PHYSICAL_CURVE' | 'MODEL';
     weather_source: 'USER' | 'ERA5';
     suggested_bus_allocations: AiHistoricalReplayResponse['observations'][number]['suggested_bus_allocations'];
     mapping_coverage_percent: number;

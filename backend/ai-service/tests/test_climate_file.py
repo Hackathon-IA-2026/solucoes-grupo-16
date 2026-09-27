@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -59,6 +60,44 @@ def test_climate_file_estimates_only_selected_hour_and_tracks_provenance(tmp_pat
         assert observation["warnings"] == [
             "most_nao_aplicado: usando_vento_era5_a_100m", "mapeamento_pwf_ausente"
         ]
+
+
+def test_climate_file_uses_configured_predictor_and_exposes_model_source(tmp_path, monkeypatch):
+    csv_text = (
+        "timestamp_utc,usina_id,u100,v100,disponibilidade,temperature_2m,surface_pressure\n"
+        "2024-01-01T03:00:00Z,ONS_1,8,0,0.5,298,101325\n"
+    )
+    monkeypatch.setenv("CLIMAGRID_PLANT_CATALOG", str(_catalog(tmp_path)))
+    monkeypatch.setenv("CLIMAGRID_PWF_MAPPING", str(tmp_path / "missing.parquet"))
+
+    class ModelPredictor:
+        approved = True
+        version = "lightgbm-test"
+
+        @staticmethod
+        def estimate(request):
+            assert request.usina_id == "ONS_1"
+            return SimpleNamespace(
+                model_scope="global",
+                predicoes=[SimpleNamespace(
+                    geracao_estimada_mw=42.0,
+                    warnings=["intervalo_empirico: sem_garantia_probabilistica"],
+                )],
+            )
+
+    with TestClient(create_app(tmp_path)) as client:
+        client.app.state.historical.predictor = ModelPredictor()
+        body = client.post("/cenario-climatico/estimar", json={
+            "csv_text": csv_text,
+            "timestamp_utc": "2024-01-01T03:00:00Z",
+        }).json()
+
+    assert body["generation_source"] == "MODEL"
+    assert body["provenance"]["estimator_version"] == "lightgbm-test"
+    assert body["provenance"]["model_rows"] == 1
+    assert body["provenance"]["physical_fallback_rows"] == 0
+    assert body["observations"][0]["generation_source"] == "MODEL"
+    assert body["observations"][0]["estimated_generation_mw"] == 42
 
 
 def test_climate_file_rejects_duplicate_and_invalid_availability():

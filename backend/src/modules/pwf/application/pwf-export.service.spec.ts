@@ -152,6 +152,35 @@ describe('PwfExportService', () => {
       }],
     })).rejects.toThrow('mapeamento PWF parcial');
   });
+
+  it('exporta a estimativa persistida de um cenário LightGBM', async () => {
+    const storage = exportStorage();
+    const scenario = estimatedScenario(87.5, 100, 'MODEL');
+    const scenarios = {
+      getScenario: vi.fn().mockResolvedValue(scenario),
+      saveExport: vi.fn(),
+    } as unknown as ClimateScenarioStorageService;
+    const service = new PwfExportService(storage, scenarios);
+
+    const result = await service.export({
+      referencePwfId: '12345678-1234-1234-1234-123456789abc',
+      scenarioId: scenario.id,
+      studyName: 'Cenário LightGBM',
+      generationSource: 'estimated',
+      dataVersion: scenario.dataVersion,
+      selectedPlantIds: ['ONS_1'],
+      plants: [{
+        plantId: 'ONS_1', onsId: 'ONS_1', generationMw: 87.5,
+        mapping: {
+          busNumber: '123', busName: 'PARQUE', nominalVoltageKv: '230',
+          area: '5', allocationFactor: 1,
+        },
+      }],
+    });
+
+    expect(result.buffer.toString('latin1')).toBe('prefixo 87.5sufixo');
+    expect(scenarios.saveExport).toHaveBeenCalledOnce();
+  });
 });
 
 function exportStorage(): PwfStorageService {
@@ -181,6 +210,7 @@ function exportStorage(): PwfStorageService {
 function estimatedScenario(
   estimatedGenerationMw: number,
   mappingCoveragePercent = 100,
+  generationSource: 'PHYSICAL_CURVE' | 'MODEL' = 'PHYSICAL_CURVE',
 ): ClimateScenarioManifest {
   return {
     schemaVersion: 'climagrid-climate-scenario-v1',
@@ -189,7 +219,7 @@ function estimatedScenario(
     subsystem: 'NE',
     timestamp: '2024-01-15T12:00:00+00:00',
     resolutionMinutes: 60,
-    generationSource: 'PHYSICAL_CURVE',
+    generationSource,
     weatherSource: 'USER',
     dataVersion: 'user-csv-sha256-test',
     input: {

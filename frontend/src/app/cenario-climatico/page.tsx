@@ -23,7 +23,6 @@ export default function ClimateFilePage() {
   const [timestamp, setTimestamp] = useState("");
   const [era5Timestamp, setEra5Timestamp] = useState("");
   const [availability, setAvailability] = useState("1");
-  const [availabilityConfirmed, setAvailabilityConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const csvAvailable = !runtimeConfig.isDemoMode && capabilities?.climate.fileUpload === true;
@@ -70,7 +69,7 @@ export default function ClimateFilePage() {
   }
 
   async function processEra5() {
-    if (!selectedEra5Timestamp || !validAvailability || !availabilityConfirmed) return;
+    if (!selectedEra5Timestamp || !validAvailability) return;
     setBusy(true);
     setError(null);
     try {
@@ -102,8 +101,13 @@ export default function ClimateFilePage() {
           title="Escolha a origem do vento"
           description="Use uma hora histórica do Copernicus ERA5 ou envie seu próprio CSV. Em ambos os casos, o ClimaGrid estima o potencial eólico e prepara um PWF daquela hora."
         />
-        <Notice tone="warning" title="Estimativa física, ainda sem modelo de IA validado">
-          O resultado não é geração observada nem previsão meteorológica. A curva é genérica e deve ser revisada pelo especialista antes do uso no ANAREDE.
+        <Notice
+          tone="warning"
+          title={capabilities?.model?.approved
+            ? `LightGBM experimental ativo · ${capabilities.model.version}`
+            : "Curva física de fallback ativa"}
+        >
+          O resultado não é geração observada nem previsão meteorológica. O LightGBM é usado nas linhas elegíveis; entradas incompatíveis permanecem identificadas como fallback físico. Revise o cenário antes do uso no ANAREDE.
         </Notice>
         {runtimeConfig.isDemoMode ? (
           <Notice tone="error" title="API necessária">
@@ -160,29 +164,16 @@ export default function ClimateFilePage() {
                   className="field-input"
                   value={availability}
                   disabled={!era5Available || busy}
-                  onChange={(event) => {
-                    setAvailability(event.target.value);
-                    setAvailabilityConfirmed(false);
-                  }}
+                  onChange={(event) => setAvailability(event.target.value)}
                 />
                 <p className="mt-2 text-xs text-on-surface-variant">
                   Use uma fração entre 0 e 1. Este valor não vem do ERA5 e será registrado como hipótese do usuário.
                 </p>
               </div>
-              <label className="flex items-start gap-3 text-sm text-on-surface-variant">
-                <input
-                  type="checkbox"
-                  className="mt-1"
-                  checked={availabilityConfirmed}
-                  disabled={!era5Available || busy || !validAvailability}
-                  onChange={(event) => setAvailabilityConfirmed(event.target.checked)}
-                />
-                Confirmo que a disponibilidade informada é uma hipótese deste cenário e será aplicada a todos os conjuntos retornados pelo ERA5.
-              </label>
               <button
                 type="button"
                 className="button-primary"
-                disabled={!era5Available || !selectedEra5Timestamp || !validAvailability || !availabilityConfirmed || busy}
+                disabled={!era5Available || !selectedEra5Timestamp || !validAvailability || busy}
                 onClick={() => void processEra5()}
               >
                 {busy ? "Baixando e processando ERA5…" : "Obter vento e estimar potencial"}

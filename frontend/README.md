@@ -2,7 +2,8 @@
 
 > Leia [`../Docs/CONTEXTO_PROJETO_IA.md`](../Docs/CONTEXTO_PROJETO_IA.md) antes de
 > alterar o fluxo. A etapa 1 está implementada; o protótipo da etapa 2 aceita
-> CSV normalizado ou busca ERA5 histórico e calcula potencial eólico com curva física genérica. As
+> CSV normalizado ou busca ERA5 histórico e calcula potencial eólico com o
+> LightGBM experimental configurado, mantendo fallback físico explícito. As
 > pendências estão em
 > [`../Docs/ML/AUDITORIA_FASE_2.md`](../Docs/ML/AUDITORIA_FASE_2.md).
 
@@ -66,8 +67,8 @@ O navegador conversa somente com o NestJS; o FastAPI permanece um serviço inter
 | `GET` | `/experimental-insights` | Exibir comparação exploratória e pareada do challenger DML |
 | `POST` | `/climate-scenarios/historical` | Reproduzir uma hora observada do snapshot ONS + ERA5 |
 | `POST` | `/climate-scenarios/file/inspect` | Validar CSV climático e listar horas |
-| `POST` | `/climate-scenarios/file/estimate` | Estimar potencial físico para uma hora do CSV |
-| `POST` | `/climate-scenarios/era5/estimate` | Buscar ERA5 histórico e estimar potencial com disponibilidade informada |
+| `POST` | `/climate-scenarios/file/estimate` | Estimar potencial para uma hora do CSV com modelo/fallback |
+| `POST` | `/climate-scenarios/era5/estimate` | Buscar ERA5 histórico e estimar potencial com modelo/fallback |
 | `GET` | `/climate-scenarios/:id` | Consultar manifesto e exportações persistidas |
 | `POST` | `/pwf/reference-cases` | Armazenar e validar o caso base `.pwf` |
 | `GET` | `/pwf/reference-cases/:id/generation-targets` | Listar barras geradoras do caso base |
@@ -82,9 +83,10 @@ Os tipos compartilhados pelo frontend ficam em `src/types/climagrid.ts`. A regra
 
 A rota `/insights-experimentais` fica na seção Laboratório, fora das quatro
 etapas do estudo. Ela mostra curva física, LightGBM fixo e DML nas mesmas linhas
-de avaliação, com hashes e limitações; não oferece ação de promover o modelo.
+de avaliação, com hashes e limitações. A liberação do LightGBM no cenário é
+configurada no AI service; a tela não promove artefatos.
 
-O formato e as limitações do CSV estão em [`Docs/ML/CENARIO_CLIMATICO_FASE_2.md`](../Docs/ML/CENARIO_CLIMATICO_FASE_2.md). A curva física ainda não é um modelo treinado de potencial. A previsão meteorológica para uma hora futura e a classificação de curtailment permanecem fora desta etapa. Não há queda silenciosa do replay real para dados previstos ou fictícios.
+O formato e as limitações do CSV estão em [`Docs/ML/CENARIO_CLIMATICO_FASE_2.md`](../Docs/ML/CENARIO_CLIMATICO_FASE_2.md). A interface identifica `MODEL` ou `PHYSICAL_CURVE` em cada conjunto e mostra a versão do estimador. A previsão meteorológica para uma hora futura e a classificação de curtailment permanecem fora desta etapa. Não há queda silenciosa do replay real para dados previstos ou fictícios.
 
 Roadmap da interface:
 

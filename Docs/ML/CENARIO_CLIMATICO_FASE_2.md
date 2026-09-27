@@ -2,8 +2,9 @@
 
 O usuário envia vento horário de conjuntos eólicos do Nordeste ou escolhe uma
 hora histórica para busca no Copernicus ERA5. Em seguida recebe uma estimativa
-de **potencial pelo vento** para preparar um PWF. Este fluxo usa uma curva física
-genérica. Ele não usa o modelo LightGBM dos experimentos, não reproduz a geração
+de **potencial pelo vento** para preparar um PWF. Este fluxo usa o LightGBM
+experimental configurado nas linhas elegíveis e uma curva física genérica como
+fallback explícito. Ele não reproduz a geração
 observada da ONS e não prevê o vento futuro.
 
 O estado de implementação, as evidências executadas e as pendências bloqueantes

@@ -37,8 +37,8 @@ export default function ExperimentalInsightsPage() {
           aside={<StatusBadge available={report?.available === true} loading={!report && !error} />}
         />
 
-        <Notice tone="warning" title="Resultado exploratório, não homologado">
-          A geração operacional continua vindo da curva física. O target ONS usado aqui é uma proxy de geração sem limitação e ainda requer validação de domínio antes de qualquer promoção do modelo.
+        <Notice tone="warning" title="Resultado exploratório, liberado para demonstração">
+          O cenário climático pode usar o LightGBM experimental quando o backend estiver configurado com o artefato. Entradas não elegíveis permanecem na curva física e são identificadas como fallback.
         </Notice>
 
         {error ? <Notice tone="error" title="Relatório indisponível">{error}</Notice> : null}

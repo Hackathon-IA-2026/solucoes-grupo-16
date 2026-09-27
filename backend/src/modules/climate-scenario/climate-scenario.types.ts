@@ -13,7 +13,7 @@ export interface ClimateScenarioManifest {
   subsystem: 'NE';
   timestamp: string;
   resolutionMinutes: 60;
-  generationSource: 'PHYSICAL_CURVE';
+  generationSource: 'PHYSICAL_CURVE' | 'MODEL';
   weatherSource: 'USER' | 'ERA5';
   dataVersion: string;
   input: {
@@ -29,6 +29,8 @@ export interface ClimateScenarioManifest {
     catalogSha256: string;
     mappingSha256: string | null;
     estimatorVersion: string;
+    modelRows?: number;
+    physicalFallbackRows?: number;
     weatherDataVersion?: string;
     era5Sha256?: string;
     availabilitySource?: 'USER_FILE' | 'USER_GLOBAL_ASSUMPTION';

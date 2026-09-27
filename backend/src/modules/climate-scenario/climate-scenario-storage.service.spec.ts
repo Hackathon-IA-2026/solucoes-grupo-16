@@ -119,6 +119,23 @@ describe('ClimateScenarioStorageService', () => {
       exports: [exported],
     });
   });
+
+  it('mantém o cenário local quando a réplica Supabase é recusada', async () => {
+    const supabase = {
+      isConfigured: () => true,
+      getBucketName: () => 'pwf',
+      uploadFile: async () => {
+        throw new Error('row-level security policy');
+      },
+      downloadFile: async () => null,
+    } as unknown as SupabaseService;
+    service = new ClimateScenarioStorageService(supabase);
+    const csv = Buffer.from('timestamp_utc,usina_id\n2024-01-01T00:00:00Z,A\n');
+    const scenario = sampleScenario(scenarioId, csv);
+
+    await expect(service.saveScenario(scenario, csv)).resolves.toBeUndefined();
+    await expect(service.getScenario(scenarioId)).resolves.toEqual(scenario);
+  });
 });
 
 function sampleExport(

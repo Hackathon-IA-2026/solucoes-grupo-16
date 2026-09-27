@@ -10,7 +10,9 @@ services:
       - path: ./backend/ai-service/.env
         required: false
     environment:
-      CLIMAGRID_ARTIFACT_DIR: /service/artifacts/global/v1
+      # Candidato experimental liberado para o MVP: melhor artefato LightGBM
+      # servível documentado nos experimentos multiusina (exp-003).
+      CLIMAGRID_ARTIFACT_DIR: /service/artifacts/experiments/multiusina-exp-003
       CLIMAGRID_DML_INSIGHTS_PATH: /service/artifacts/causal/hackathon/insights.json
       CLIMAGRID_INDEPENDENT_HOLDOUT_PATH: /service/artifacts/causal/independent-holdout-2024-09/holdout_report.json
       CLIMAGRID_HISTORICAL_SNAPSHOT: /service/data/processed/historical/observations.parquet

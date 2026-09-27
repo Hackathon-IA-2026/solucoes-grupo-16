@@ -90,8 +90,9 @@ Em 27 de setembro de 2026 foi implementada a evolução descrita em
 [`IMPLEMENTACAO_TARGET_WALK_FORWARD_MOST_ROLLING.md`](IMPLEMENTACAO_TARGET_WALK_FORWARD_MOST_ROLLING.md):
 target novo restrito à referência ONS, vínculo do lookback ao protocolo,
 features causais de 3/6 h e MOST opcional. Essa mudança amplia a infraestrutura
-experimental, mas não altera a conclusão operacional desta auditoria: nenhum
-modelo novo foi homologado e a curva física continua sendo servida na fase 2.
+experimental. Nenhum modelo novo foi homologado; depois desta auditoria, o
+LightGBM legado 003 foi liberado para demonstração nas linhas elegíveis, com
+fallback físico explícito.
 
 A tabela abaixo registra a execução da auditoria original e não deve ser lida
 como evidência da suíte posterior.
@@ -220,8 +221,8 @@ sem executar o ANAREDE.
   um procedimento reproduzível que os obtenha.
 - Coletar vários meses e avaliar por mês, conjunto e faixa de vento com splits
   temporais ainda não usados para decisão.
-- Publicar um artefato somente após aprovação e integrar o cenário climático ao
-  `Predictor`. O endpoint atual chama diretamente a curva física.
+- O cenário climático agora chama o `Predictor`. A configuração atual usa o
+  artefato legado 003 para demonstração, sem representar homologação.
 - Se o modelo usar temperatura, pressão ou distância ao ponto ERA5, tornar
   esses campos parte efetiva do cenário e da proveniência.
 

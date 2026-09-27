@@ -14,6 +14,7 @@ from uuid import uuid4
 import pandas as pd
 
 from app.historical import HistoricalScenarioService
+from app.schemas import EstimationRequest
 from ingestion.ons.hourly import _capacity_by_hour
 from training.config import FeatureConfig, PhysicalCurveConfig
 from training.features import add_features
@@ -175,12 +176,16 @@ class ClimateFileService:
         observations = []
         global_warnings: set[str] = set()
         curve = PhysicalCurveConfig()
+        predictor = self.historical.predictor
+        model_rows = 0
+        fallback_rows = 0
         selected = add_features(selected, FeatureConfig(most_enabled=True))
         for row in selected.sort_values("usina_id").itertuples(index=False):
             speed = float(row.wind_speed_hub_m)
             generation = float(physical_power_mw(
                 speed, row.capacidade_instalada_mw, row.disponibilidade, curve
             ))
+            generation_source = "PHYSICAL_CURVE"
             direction = (math.degrees(math.atan2(-row.u100, -row.v100)) + 360) % 360
             plant = metadata.get(row.usina_id, {})
             allocation = allocations.get(row.usina_id, {})
@@ -188,6 +193,37 @@ class ClimateFileService:
             warnings = []
             if not row.most_applied:
                 warnings.append("most_nao_aplicado: usando_vento_era5_a_100m")
+            temperature = getattr(row, "temperature_2m", None)
+            pressure = getattr(row, "surface_pressure", None)
+            model_inputs_available = (
+                temperature is not None and pressure is not None
+                and math.isfinite(float(temperature)) and math.isfinite(float(pressure))
+            )
+            if predictor.approved and model_inputs_available:
+                prediction = predictor.estimate(EstimationRequest.model_validate({
+                    "usina_id": row.usina_id,
+                    "capacidade_instalada_mw": row.capacidade_instalada_mw,
+                    "disponibilidade": row.disponibilidade,
+                    "registros": [{
+                        "timestamp_utc": timestamp,
+                        "u100": row.u100,
+                        "v100": row.v100,
+                        "temperature_2m": temperature,
+                        "surface_pressure": pressure,
+                        "disponibilidade": row.disponibilidade,
+                    }],
+                }))
+                predicted = prediction.predicoes[0]
+                generation = float(predicted.geracao_estimada_mw)
+                warnings.extend(predicted.warnings)
+                if prediction.model_scope != "physical_fallback":
+                    generation_source = "MODEL"
+                    model_rows += 1
+                else:
+                    fallback_rows += 1
+            elif predictor.approved:
+                warnings.append("modelo_requer_temperatura_e_pressao: usando_curva_fisica")
+                fallback_rows += 1
             if not allocation.get("allocations"):
                 warnings.append("mapeamento_pwf_ausente")
                 global_warnings.add("ha_usinas_sem_mapeamento_pwf")
@@ -202,24 +238,28 @@ class ClimateFileService:
                 "capacity_factor_percent": round(generation / row.capacidade_instalada_mw * 100, 3),
                 "u100": row.u100, "v100": row.v100, "wind_speed_mps": round(speed, 6),
                 "wind_direction_degrees": round(direction, 3), "availability": row.disponibilidade,
-                "generation_source": "PHYSICAL_CURVE", "weather_source": weather_source,
+                "generation_source": generation_source, "weather_source": weather_source,
                 "suggested_bus_allocations": [{"bus_number": item["bus_number"], "bus_name": item["bus_name"],
                     "allocation_factor": round(item["allocation_factor"], 9),
                     "allocated_generation_mw": round(generation * item["allocation_factor"], 6)}
                     for item in allocation.get("allocations", [])],
                 "mapping_coverage_percent": round(coverage, 3), "warnings": warnings})
         digest = hashlib.sha256(csv_text.encode("utf-8")).hexdigest()
+        if model_rows and fallback_rows:
+            global_warnings.add("ha_usinas_em_fallback_fisico")
         data_prefix = "user-csv" if weather_source == "USER" else "era5-generated-csv"
         provenance = {"input_schema_version": INPUT_SCHEMA_VERSION,
             "input_sha256": digest, "catalog_sha256": _sha256_file(catalog_path),
             "mapping_sha256": _sha256_file(self.historical.mapping_path),
-            "estimator_version": ESTIMATOR_VERSION,
+            "estimator_version": predictor.version if model_rows else ESTIMATOR_VERSION,
+            "model_rows": model_rows,
+            "physical_fallback_rows": fallback_rows,
             "availability_source": "USER_FILE" if weather_source == "USER" else "USER_GLOBAL_ASSUMPTION",
             "physical_curve": asdict(curve)}
         provenance.update(source_provenance or {})
         return {"scenario_id": str(uuid4()), "subsystem": "NE", "timestamp": timestamp.isoformat(),
             "resolution_minutes": 60, "data_version": f"{data_prefix}-sha256-{digest}",
-            "generation_source": "PHYSICAL_CURVE", "weather_source": weather_source,
+            "generation_source": "MODEL" if model_rows else "PHYSICAL_CURVE", "weather_source": weather_source,
             "row_count": len(frame), "observations": observations, "warnings": sorted(global_warnings),
             "provenance": provenance}
 

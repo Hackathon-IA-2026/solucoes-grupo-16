@@ -18,8 +18,9 @@ O protótipo ponta a ponta da etapa 2 e as pendências para encerrá-la estão e
 enviar um CSV ou escolher uma hora histórica para busca direta no Copernicus
 ERA5. Nos dois caminhos, o servidor produz e persiste um CSV normalizado por
 conjunto ONS, schema `normalized-ons-hourly-v1`; upload de NetCDF/GRIB ainda não
-é suportado. O backend persiste o CSV, a estimativa e cada PWF exportado em
-manifestos verificáveis por hash.
+é suportado. O backend persiste localmente o CSV, a estimativa e cada PWF
+exportado em manifestos verificáveis por hash; a réplica Supabase é adicional
+e uma recusa remota não derruba o cenário já salvo localmente.
 
 A infraestrutura experimental de ML agora restringe novos treinos a
 `geracao_referencia_mw`, oferece validação walk-forward versionada, features
@@ -29,10 +30,13 @@ científico dependem de aprovação e dados reais. A implementação e suas
 evidências estão em
 [`Docs/ML/IMPLEMENTACAO_TARGET_WALK_FORWARD_MOST_ROLLING.md`](Docs/ML/IMPLEMENTACAO_TARGET_WALK_FORWARD_MOST_ROLLING.md).
 
-Para o pitch, há uma trilha isolada que coleta a proxy de potencial da ONS e o
-ERA5, compara curva física, LightGBM residual e DML em folds temporais pareados
-e mostra os resultados em **Insights DML**. Ela não promove artefatos, não muda
-o `Predictor` e não altera a fonte do `Pg`. O procedimento de nove passos está
+Para o pitch, há uma trilha que coleta a proxy de potencial da ONS e o ERA5,
+compara curva física, LightGBM residual e DML em folds temporais pareados e
+mostra os resultados em **Insights DML**. O DML permanece somente leitura. Para
+a demonstração local, o Compose carrega o artefato legado
+`multiusina-exp-003` e o cenário climático usa o `Predictor`, com fallback
+físico explícito por linha. Isso não constitui homologação do modelo. O
+procedimento de nove passos está
 em [`Docs/ML/MODELO_DML_CAUSAL.md`](Docs/ML/MODELO_DML_CAUSAL.md).
 
 ## Arquitetura local
@@ -312,7 +316,7 @@ materializados em `backend/ai-service/data/processed/historical/`.
 Dados brutos e processados são ignorados pelo Git e precisam ser preservados
 ou republicados separadamente. A coleta nova exige credencial CDS no AI service.
 
-O CSV da etapa 2 é descrito em [`Docs/ML/CENARIO_CLIMATICO_FASE_2.md`](Docs/ML/CENARIO_CLIMATICO_FASE_2.md). Ele usa uma curva física genérica e não um modelo treinado de potencial. A previsão meteorológica futura e o classificador de curtailment permanecem fora deste recorte. A interface distingue o replay observado do cenário estimado.
+O CSV da etapa 2 é descrito em [`Docs/ML/CENARIO_CLIMATICO_FASE_2.md`](Docs/ML/CENARIO_CLIMATICO_FASE_2.md). Quando o artefato configurado está disponível, ele usa o LightGBM experimental nas linhas elegíveis e a curva física nas demais. A previsão meteorológica futura e o classificador de curtailment permanecem fora deste recorte. A interface distingue o replay observado do cenário estimado e identifica modelo/fallback.
 
 ## Preparação para AWS
 

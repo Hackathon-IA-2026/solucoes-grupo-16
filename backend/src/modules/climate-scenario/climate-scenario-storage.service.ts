@@ -51,21 +51,27 @@ export class ClimateScenarioStorageService {
 
     if (this.supabase?.isConfigured()) {
       const basePath = this.scenarioPath(manifest.id);
-      await Promise.all([
-        this.supabase.uploadFile(
-          `${basePath}/input.csv`,
-          inputCsv,
-          'text/csv; charset=utf-8',
-        ),
-        this.supabase.uploadFile(
-          `${basePath}/manifest.json`,
-          storedManifest,
-          'application/json',
-        ),
-      ]);
-      this.logger.log(
-        `Cenário ${manifest.id} sincronizado no bucket "${this.supabase.getBucketName()}" do Supabase Storage.`,
-      );
+      try {
+        await Promise.all([
+          this.supabase.uploadFile(
+            `${basePath}/input.csv`,
+            inputCsv,
+            'text/csv; charset=utf-8',
+          ),
+          this.supabase.uploadFile(
+            `${basePath}/manifest.json`,
+            storedManifest,
+            'application/json',
+          ),
+        ]);
+        this.logger.log(
+          `Cenário ${manifest.id} sincronizado no bucket "${this.supabase.getBucketName()}" do Supabase Storage.`,
+        );
+      } catch (error) {
+        this.logger.warn(
+          `Cenário ${manifest.id} foi persistido localmente, mas a réplica no Supabase falhou: ${(error as Error).message}`,
+        );
+      }
     }
   }
 
@@ -133,21 +139,27 @@ export class ClimateScenarioStorageService {
 
     if (this.supabase?.isConfigured()) {
       const basePath = `${this.scenarioPath(manifest.scenarioId)}/exports/${manifest.id}`;
-      await Promise.all([
-        this.supabase.uploadFile(
-          `${basePath}/output.pwf`,
-          output,
-          'text/plain; charset=latin1',
-        ),
-        this.supabase.uploadFile(
-          `${basePath}/manifest.json`,
-          storedManifest,
-          'application/json',
-        ),
-      ]);
-      this.logger.log(
-        `Exportação ${manifest.id} do cenário ${manifest.scenarioId} sincronizada no Supabase Storage.`,
-      );
+      try {
+        await Promise.all([
+          this.supabase.uploadFile(
+            `${basePath}/output.pwf`,
+            output,
+            'text/plain; charset=latin1',
+          ),
+          this.supabase.uploadFile(
+            `${basePath}/manifest.json`,
+            storedManifest,
+            'application/json',
+          ),
+        ]);
+        this.logger.log(
+          `Exportação ${manifest.id} do cenário ${manifest.scenarioId} sincronizada no Supabase Storage.`,
+        );
+      } catch (error) {
+        this.logger.warn(
+          `Exportação ${manifest.id} foi persistida localmente, mas a réplica no Supabase falhou: ${(error as Error).message}`,
+        );
+      }
     }
   }
 

@@ -155,7 +155,9 @@ geração observada. Os documentos `GUIA_ESTUDANTE_SINAL.md` e
   proxy cuja semântica e elegibilidade dependem de aprovação ONS. O pipeline
   possui features climáticas causais de 3/6 h e MOST opcional; sua execução
   científica continua bloqueada por histórico, cadastro de altura/rugosidade e
-  contrato do alvo. A curva física permanece o estimador servido na fase 2.
+  contrato do alvo. Para a demonstração do MVP, o cenário climático chama o
+  `Predictor` com o LightGBM legado configurado e mantém fallback físico por
+  linha; isso não equivale à homologação do protocolo novo.
   Consulte o registro verificável em
   [`ML/IMPLEMENTACAO_TARGET_WALK_FORWARD_MOST_ROLLING.md`](ML/IMPLEMENTACAO_TARGET_WALK_FORWARD_MOST_ROLLING.md).
 - O challenger DML exploratório de densidade do ar respeita o mesmo contrato de
@@ -165,8 +167,10 @@ geração observada. Os documentos `GUIA_ESTUDANTE_SINAL.md` e
   disponibilidade. O fluxo de hackathon já consegue coletar a proxy ONS e o
   ERA5, registrar exclusões, comparar curva física, LightGBM fixo e DML em
   linhas futuras pareadas e publicar um relatório somente leitura na tela
-  **Insights DML**. Nenhum deles está conectado ao `Predictor`; o relatório
-  exige `scientifically_approved=false`. Consulte
+  **Insights DML**. O DML continua fora do `Predictor`; o relatório exige
+  `scientifically_approved=false`. O Compose local aponta explicitamente para
+  o artefato servível `multiusina-exp-003`, referência provisória dos
+  experimentos legados. Consulte
   [`ML/MODELO_DML_CAUSAL.md`](ML/MODELO_DML_CAUSAL.md).
   Há também um job de holdout mensal independente que treina em um arquivo
   anterior, aplica gap temporal e avalia um segundo snapshot sem retreino. Sua
@@ -195,6 +199,8 @@ geração observada. Os documentos `GUIA_ESTUDANTE_SINAL.md` e
   aprendida em janeiro piorou abril para 12,06% e foi rejeitada. O candidato
   congelado para o próximo backtest anual é, portanto, LightGBM de agosto com
   calibração `1,03` de setembro; abril agora é período exposto de validação.
+  Esse candidato calibrado não foi materializado no formato do `Predictor`; a
+  demonstração usa o artefato legado 003, sem aplicar automaticamente o fator.
   A execução local de agosto de 2024 materializou 90.185 linhas elegíveis e
   comparou 67.883 linhas futuras pareadas: MAE de 49,29 MW na curva física,
   22,55 MW no LightGBM fixo e 21,68 MW no DML, com 99,89% de cobertura do
@@ -232,14 +238,21 @@ Endpoints operacionais dos fluxos atuais:
   NetCDF/GRIB não está implementado, mas o servidor pode buscar e normalizar
   ERA5 histórico sob demanda.
 - Cenários estimados e seus PWFs são persistidos no disco/volume local com
-  manifestos e hashes e, quando configurado, replicados no Supabase Storage.
-  Isso mantém a trilha após reinícios do Render Free; política de retenção e
-  expurgo ainda não foi definida.
+  manifestos e hashes e, quando configurado e autorizado, replicados no
+  Supabase Storage. Uma falha da réplica remota não invalida a persistência
+  local e fica registrada nos logs. A réplica mantém a trilha após reinícios
+  do Render Free; política de retenção e expurgo ainda não foi definida.
+- O LightGBM experimental só é usado nas linhas elegíveis. Conjuntos
+  desconhecidos, entradas fora do domínio e arquivos sem temperatura/pressão
+  permanecem explicitamente na curva física. Os artefatos são locais,
+  ignorados pelo Git e excluídos da imagem; o Compose deste checkout os recebe
+  pelo volume montado, mas produção precisa provisioná-los separadamente.
 - Mapeamento PWF parcial é bloqueado. Cobertura 0% permite uma alocação manual
   completa; essa decisão e a permanência do `Pg` do caso base para conjuntos
   ausentes/desmarcados ainda precisam de aprovação do domínio.
-- Os experimentos multiusina 3 a 6 estão documentados, mas seus dados,
-  relatórios e artefatos são locais e não estão presentes neste checkout.
+- Os experimentos multiusina 3 a 6 estão documentados e seus artefatos estão
+  presentes neste diretório de trabalho, mas são locais e ignorados pelo Git;
+  não estarão disponíveis automaticamente em outro checkout ou na imagem.
 
 ## Orientação para futuras IAs
 

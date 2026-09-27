@@ -208,7 +208,7 @@ function authoritativeEstimatedPlants(
 ): { plants: PwfExportPlant[]; selectedPlantIds: string[] } {
   if (
     payload.dataVersion !== scenario.dataVersion ||
-    scenario.generationSource !== 'PHYSICAL_CURVE'
+    !['PHYSICAL_CURVE', 'MODEL'].includes(scenario.generationSource)
   ) {
     throw new BadRequestException(
       'A proveniência informada não corresponde ao cenário climático persistido.',
