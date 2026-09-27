@@ -63,6 +63,7 @@ O navegador conversa somente com o NestJS; o FastAPI permanece um serviço inter
 | Método | Endpoint | Responsabilidade |
 | --- | --- | --- |
 | `GET` | `/system/capabilities` | Informar disponibilidade do NestJS, IA, ONS, ERA5 e modelo |
+| `GET` | `/experimental-insights` | Exibir comparação exploratória e pareada do challenger DML |
 | `POST` | `/climate-scenarios/historical` | Reproduzir uma hora observada do snapshot ONS + ERA5 |
 | `POST` | `/climate-scenarios/file/inspect` | Validar CSV climático e listar horas |
 | `POST` | `/climate-scenarios/file/estimate` | Estimar potencial físico para uma hora do CSV |
@@ -78,6 +79,10 @@ Na exportação, a API devolve os cabeçalhos `x-filename`, `x-generated-at`,
 hashes principais; a trilha completa pode ser consultada pelo ID do cenário.
 
 Os tipos compartilhados pelo frontend ficam em `src/types/climagrid.ts`. A regra de negócio permanece no backend; as validações locais existem para feedback rápido e não substituem a validação oficial dos dados ou do PWF.
+
+A rota `/insights-experimentais` fica na seção Laboratório, fora das quatro
+etapas do estudo. Ela mostra curva física, LightGBM fixo e DML nas mesmas linhas
+de avaliação, com hashes e limitações; não oferece ação de promover o modelo.
 
 O formato e as limitações do CSV estão em [`Docs/ML/CENARIO_CLIMATICO_FASE_2.md`](../Docs/ML/CENARIO_CLIMATICO_FASE_2.md). A curva física ainda não é um modelo treinado de potencial. A previsão meteorológica para uma hora futura e a classificação de curtailment permanecem fora desta etapa. Não há queda silenciosa do replay real para dados previstos ou fictícios.
 

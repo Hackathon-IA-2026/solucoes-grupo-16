@@ -100,6 +100,66 @@ observados e não garante melhoria preditiva.
 
 ## Execução
 
+### Fluxo pré-hackathon em nove passos
+
+O caminho curto para produzir evidência de pitch, sem confundi-la com
+homologação, está implementado assim:
+
+1. baixar o mês de restrição eólica ONS, que contém a proxy
+   `geracao_referencia_mw`;
+2. baixar os meses ERA5 necessários, inclusive a partição seguinte para cobrir
+   a virada UTC; a extração adicional fica isolada em
+   `data/processed/training/era5-spillover/`, sem relaxar a partição operacional;
+3. conciliar ONS, catálogo e ERA5 por conjunto e hora;
+4. materializar elegibilidade e exclusões num relatório auditável;
+5. calcular a curva física nas mesmas linhas futuras;
+6. ajustar um LightGBM residual fixo como baseline de ML;
+7. ajustar o DML com cross-fitting temporal e diagnóstico de overlap;
+8. comparar os três modelos em folds futuros pareados e persistir predições,
+   métricas, hashes e limitações;
+9. publicar o JSON somente leitura na tela **Insights DML**, mantendo o
+   `Predictor` e o PWF na curva física.
+
+Na raiz do serviço, um mês real pode ser preparado e avaliado com:
+
+```bash
+python -m training.causal.prepare_data \
+  --year 2024 --month 8 --collect-missing \
+  --output data/processed/training/hackathon_2024_08.parquet \
+  --report data/processed/training/hackathon_2024_08.report.json
+
+python -m training.causal.hackathon \
+  --input data/processed/training/hackathon_2024_08.parquet \
+  --config training/causal/hackathon.example.json \
+  --estimand training/causal/estimand.example.json \
+  --output-dir artifacts/causal/hackathon
+```
+
+O segundo comando não sobrescreve um resultado existente. Para outra execução,
+use um diretório versionado e só atualize `CLIMAGRID_DML_INSIGHTS_PATH` depois de
+conferir o relatório. A API expõe `GET /insights-experimentais`; a fachada
+NestJS expõe `GET /experimental-insights`.
+
+### Resultado local materializado para o pitch
+
+Em 27 de setembro de 2026, o fluxo acima foi executado sobre agosto de 2024:
+
+- 239.328 registros ONS de meia hora produziram 107.894 linhas horárias válidas;
+- a junção dessas linhas com ERA5 teve 100% de cobertura;
+- 90.185 linhas ficaram elegíveis após excluir 109 targets inválidos/acima da
+  capacidade instalada e 17.709 referências acima da capacidade disponível;
+- a comparação futura pareada usou 67.883 linhas, 558 horas e 140 conjuntos;
+- a cobertura DML foi 99,89%; 76 linhas de conjuntos inéditos usaram fallback;
+- MAE: curva física 49,29 MW, LightGBM 22,55 MW e DML 21,68 MW;
+- o DML reduziu o MAE em 56,02% contra a curva física e 3,88% contra o
+  LightGBM fixo.
+
+Esses números são evidência exploratória sobre a proxy ONS, não uma estimativa
+de desempenho operacional homologada. O menor fold possui apenas um cluster
+semanal de inferência; portanto os intervalos causais são subpotentes. O ganho
+preditivo pode ser mostrado no pitch, mas não deve ser apresentado como prova
+causal nem como desempenho de uma previsão meteorológica futura.
+
 Depois de gerar `assignments.parquet` e a partição `development.parquet` pelo
 protocolo temporal:
 

@@ -4,6 +4,25 @@ import type { AiServiceClient } from './ai-service.client.js';
 import type { ClimateScenarioStorageService } from '../climate-scenario/climate-scenario-storage.service.js';
 
 describe('IntegrationController historical preparation', () => {
+  it('forwards the experimental report without changing its scientific status', async () => {
+    const experimentalInsights = vi.fn().mockResolvedValue({
+      available: true,
+      status: 'exploratory_evidence',
+      scientifically_approved: false,
+    });
+    const controller = new IntegrationController(
+      { experimentalInsights } as unknown as AiServiceClient,
+      {} as ClimateScenarioStorageService,
+    );
+
+    await expect(controller.experimentalInsights()).resolves.toEqual({
+      available: true,
+      status: 'exploratory_evidence',
+      scientifically_approved: false,
+    });
+    expect(experimentalInsights).toHaveBeenCalledOnce();
+  });
+
   it('passes the background collection state to the client', async () => {
     const replayHistorical = vi.fn().mockResolvedValue({
       status: 'preparing',

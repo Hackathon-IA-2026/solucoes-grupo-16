@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.climate_file import ClimateFileError, ClimateFileService
+from app.experimental_insights import ExperimentalInsightsService
 from app.historical import HistoricalDataUnavailable, HistoricalScenarioService
 from app.predictor import Predictor
 from app.schemas import (
@@ -36,6 +37,7 @@ def create_app(artifact_dir: Path | None = None) -> FastAPI:
         application.state.predictor = Predictor.from_artifacts(artifact_dir)
         application.state.historical = HistoricalScenarioService.from_environment(application.state.predictor)
         application.state.climate_file = ClimateFileService(application.state.historical)
+        application.state.experimental_insights = ExperimentalInsightsService()
         yield
 
     application = FastAPI(title="ClimaGrid AI Service", version="1.0.0", lifespan=lifespan)
@@ -50,7 +52,18 @@ def create_app(artifact_dir: Path | None = None) -> FastAPI:
 
     @application.get("/capabilities")
     def capabilities(request: Request) -> dict:
-        return request.app.state.historical.capabilities()
+        result = request.app.state.historical.capabilities()
+        result["features"]["experimental_insights"] = (
+            request.app.state.experimental_insights.available()
+        )
+        return result
+
+    @application.get("/insights-experimentais")
+    def experimental_insights(request: Request) -> dict:
+        try:
+            return request.app.state.experimental_insights.read()
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @application.get("/historico/disponibilidade", response_model=HistoricalAvailabilityResponse)
     def historical_availability(request: Request) -> HistoricalAvailabilityResponse:

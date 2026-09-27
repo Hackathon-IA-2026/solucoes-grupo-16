@@ -189,6 +189,7 @@ export interface SystemCapabilities {
     historicalEstimates: boolean;
     fileUpload: boolean;
     era5Scenario?: boolean;
+    experimentalInsights?: boolean;
   };
   model: {
     version: string;
@@ -208,4 +209,79 @@ export interface SystemCapabilities {
     historicalLatestTimestamp: string | null;
     historicalInstantCount: number;
   } | null;
+}
+
+export interface ExperimentalMetric {
+  mae_mw: number;
+  rmse_mw: number;
+  nmae_cf: number;
+  wape: number | null;
+  bias_mw: number;
+  bias_normalized: number;
+  p95_abs_error_mw: number;
+  p95_abs_error_normalized: number;
+  rows: number;
+  mae_gain_vs_physical?: number | null;
+  mae_gain_vs_lightgbm?: number | null;
+}
+
+export interface ExperimentalInsights {
+  available: boolean;
+  status: "not_materialized" | "exploratory_evidence";
+  message: string;
+  schema_version?: string;
+  scientifically_approved?: false;
+  operational_model?: "physical_curve";
+  experimental_challenger?: "dml_air_density";
+  target?: "geracao_referencia_mw";
+  target_semantics?: string;
+  comparison?: {
+    paired: boolean;
+    rows: number;
+    hours: number;
+    plants: number;
+    comparison_sha256: string;
+    outer_split_strategy: string;
+    outer_splits: number;
+  };
+  coverage?: {
+    evaluation_rows: number;
+    model_rows: number;
+    fallback_rows: number;
+    fallback_unknown_plant_rows: number;
+    fallback_incomplete_context_rows: number;
+    model_fraction: number;
+    note: string;
+  };
+  overall_metrics?: {
+    physical: ExperimentalMetric;
+    lightgbm: ExperimentalMetric;
+    dml: ExperimentalMetric;
+  };
+  charts?: {
+    fold_performance: Array<{
+      fold_id: string;
+      physical_mae_mw: number;
+      lightgbm_mae_mw: number;
+      dml_mae_mw: number;
+    }>;
+    density_response: Array<{
+      label: string;
+      density: number;
+      physical_error_mw: number;
+      dml_correction_mw: number;
+      rows: number;
+    }>;
+    wind_performance: Array<{
+      label: string;
+      physical_mae_mw: number;
+      lightgbm_mae_mw: number;
+      dml_mae_mw: number;
+      rows: number;
+    }>;
+  };
+  limitations?: string[];
+  estimand_sha256?: string;
+  input_sha256?: string;
+  predictions_sha256?: string;
 }

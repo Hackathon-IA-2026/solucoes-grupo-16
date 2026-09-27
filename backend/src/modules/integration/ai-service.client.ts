@@ -31,7 +31,41 @@ export interface AiCapabilities {
     climate_file_upload: boolean;
     climate_era5_scenario?: boolean;
     physical_fallback: boolean;
+    experimental_insights?: boolean;
   };
+}
+
+export interface AiExperimentalInsights {
+  available: boolean;
+  status: string;
+  message: string;
+  scientifically_approved?: false;
+  operational_model?: string;
+  experimental_challenger?: string;
+  target?: string;
+  comparison?: {
+    paired: boolean;
+    rows: number;
+    hours: number;
+    plants: number;
+    comparison_sha256: string;
+  };
+  coverage?: {
+    evaluation_rows: number;
+    model_rows: number;
+    fallback_rows: number;
+    fallback_unknown_plant_rows: number;
+    fallback_incomplete_context_rows: number;
+    model_fraction: number;
+    note: string;
+  };
+  overall_metrics?: Record<string, Record<string, number | null>>;
+  folds?: Array<Record<string, unknown>>;
+  charts?: Record<string, unknown>;
+  limitations?: string[];
+  estimand_sha256?: string;
+  input_sha256?: string;
+  predictions_sha256?: string;
 }
 
 export interface AiHistoricalReplayResponse {
@@ -189,6 +223,10 @@ export class AiServiceClient {
       },
       120_000,
     );
+  }
+
+  async experimentalInsights(): Promise<AiExperimentalInsights> {
+    return this.request<AiExperimentalInsights>('/insights-experimentais');
   }
 
   private async request<T>(

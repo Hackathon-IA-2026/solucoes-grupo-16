@@ -49,6 +49,7 @@ Configure `AI_SERVICE_URL` (padrão `http://127.0.0.1:8000`) e use:
 
 ```http
 GET /system/capabilities
+GET /experimental-insights
 POST /climate-scenarios/historical
 POST /climate-scenarios/file/inspect
 POST /climate-scenarios/file/estimate
@@ -61,6 +62,11 @@ catálogo, ONS bruto, partições ERA5 e snapshot observado. Uma hora fora do ca
 inicia a coleta ONS/ERA5 no AI service quando a credencial CDS está configurada.
 O cliente recebe `status: preparing` enquanto a partição é construída e repete
 a consulta até obter o replay; falhas de fonte ou de conciliação retornam `409`.
+
+`GET /experimental-insights` encaminha um relatório DML pré-calculado para o
+painel do pitch. A resposta é evidência exploratória, declara explicitamente
+`scientifically_approved: false` e não participa da estimativa nem da exportação
+PWF.
 
 As rotas `file/inspect` e `file/estimate` aceitam o CSV climático normalizado
 `normalized-ons-hourly-v1`, não ERA5 NetCDF/GRIB nativo. A estimativa atual usa

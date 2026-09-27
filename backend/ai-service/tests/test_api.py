@@ -147,3 +147,22 @@ def test_historical_routes_without_snapshot(tmp_path, monkeypatch):
         })
         assert response.status_code == 409
         assert "CDSAPI_KEY" in response.json()["detail"]
+
+
+def test_experimental_insights_endpoint_is_read_only_and_explicit(tmp_path, monkeypatch):
+    report_path = tmp_path / "insights.json"
+    report_path.write_text(
+        '{"schema_version":"climagrid-dml-hackathon-insights-v1",'
+        '"status":"exploratory_evidence","scientifically_approved":false,'
+        '"message":"Somente para pitch."}',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CLIMAGRID_DML_INSIGHTS_PATH", str(report_path))
+    with TestClient(create_app(tmp_path)) as client:
+        capabilities = client.get("/capabilities").json()
+        response = client.get("/insights-experimentais")
+
+    assert capabilities["features"]["experimental_insights"] is True
+    assert response.status_code == 200
+    assert response.json()["available"] is True
+    assert response.json()["scientifically_approved"] is False

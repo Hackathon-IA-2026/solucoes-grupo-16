@@ -59,6 +59,8 @@ export class IntegrationController {
           fileUpload: capabilities.features.climate_file_upload,
           era5Scenario:
             capabilities.features.climate_era5_scenario ?? false,
+          experimentalInsights:
+            capabilities.features.experimental_insights ?? false,
         },
         model: {
           version: capabilities.model.model_version,
@@ -94,11 +96,20 @@ export class IntegrationController {
           historicalEstimates: false,
           fileUpload: false,
           era5Scenario: false,
+          experimentalInsights: false,
         },
         model: null,
         data: null,
       };
     }
+  }
+
+  @Get('experimental-insights')
+  @ApiOperation({
+    summary: 'Consultar evidências exploratórias do challenger DML para o pitch',
+  })
+  async experimentalInsights() {
+    return this.ai.experimentalInsights();
   }
 
   @Post('climate-scenarios/era5/estimate')

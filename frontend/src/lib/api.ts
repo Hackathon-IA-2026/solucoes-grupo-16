@@ -3,6 +3,7 @@ import type {
   ClimateScenario,
   ClimateSource,
   ClimateFileInspection,
+  ExperimentalInsights,
   ProcessScenarioResult,
   PwfExportRequest,
   PwfExportResult,
@@ -266,6 +267,7 @@ async function getCapabilities(): Promise<SystemCapabilities> {
         historicalEstimates: false,
         fileUpload: false,
         era5Scenario: false,
+        experimentalInsights: false,
       },
       model: null,
       data: null,
@@ -274,11 +276,23 @@ async function getCapabilities(): Promise<SystemCapabilities> {
   return requestJson<SystemCapabilities>("/system/capabilities");
 }
 
+async function getExperimentalInsights(): Promise<ExperimentalInsights> {
+  if (!apiBaseUrl) {
+    return {
+      available: false,
+      status: "not_materialized",
+      message: "Os insights experimentais exigem o backend e um relatório DML materializado.",
+    };
+  }
+  return requestJson<ExperimentalInsights>("/experimental-insights");
+}
+
 export const climagridApi = {
   processScenario,
   inspectClimateFile,
   uploadReferencePwf,
   getPwfGenerationTargets,
   getCapabilities,
+  getExperimentalInsights,
   exportPwf,
 };

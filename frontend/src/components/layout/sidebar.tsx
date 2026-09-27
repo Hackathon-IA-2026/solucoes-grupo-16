@@ -52,6 +52,25 @@ export function Sidebar() {
             );
           })}
           </nav>
+          <div className="mt-6 border-t border-outline-variant/40 pt-5">
+            <p className="px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-outline">Laboratório</p>
+            <Link
+              href="/insights-experimentais"
+              className={`mt-3 flex items-center gap-3 rounded-xl px-3 py-3 transition-colors ${
+                pathname.startsWith("/insights-experimentais")
+                  ? "bg-tertiary-container text-on-tertiary-container"
+                  : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+              }`}
+            >
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-container">
+                <Icon name="network" className="h-4 w-4" />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-medium">Insights DML</span>
+                <span className="block truncate text-[11px] text-outline">Evidência exploratória</span>
+              </span>
+            </Link>
+          </div>
         </div>
       </div>
       <div className="m-4 rounded-xl border border-outline-variant/50 bg-surface-container-lowest p-4">

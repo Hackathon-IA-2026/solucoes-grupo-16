@@ -24,12 +24,18 @@ def regression_metrics(actual: Iterable[float], predicted: Iterable[float], capa
     cap = np.asarray(list(capacity), dtype=float)
     error = yhat - y
     absolute = np.abs(error)
+    normalized = error / cap
     denominator = np.abs(y).sum()
     return {
         "mae_mw": float(absolute.mean()),
         "rmse_mw": float(np.sqrt(np.mean(error**2))),
-        "nmae_cf": float(np.mean(absolute / cap)),
+        "nmae_cf": float(np.mean(np.abs(normalized))),
         "wape": None if denominator == 0 else float(absolute.sum() / denominator),
+        "bias_mw": float(error.mean()),
+        "bias_normalized": float(normalized.mean()),
+        "p95_abs_error_mw": float(np.quantile(absolute, 0.95)),
+        "p95_abs_error_normalized": float(np.quantile(np.abs(normalized), 0.95)),
+        "rows": int(len(y)),
     }
 
 

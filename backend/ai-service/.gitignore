@@ -16,6 +16,7 @@ data/**/*.parquet
 data/**/*.json
 artifacts/**/*.txt
 artifacts/**/*.json
+artifacts/**/*.parquet
 # All experiment/cache formats, including future model binaries and receipts.
 artifacts/experiments/**
 artifacts/cache/**

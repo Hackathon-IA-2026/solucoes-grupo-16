@@ -36,6 +36,14 @@ de 3/6 h, incluindo uma ablação explícita da disponibilidade. A execução ex
 o mesmo target científico, manifesto temporal e hashes do protocolo. Consulte
 [`Docs/ML/MODELO_DML_CAUSAL.md`](../../Docs/ML/MODELO_DML_CAUSAL.md).
 
+Para o hackathon, `training.causal.prepare_data` coleta e une a proxy ONS de
+geração sem limitação com ERA5, registrando todas as exclusões. Em seguida,
+`training.causal.hackathon` executa uma comparação futura e pareada entre curva
+física, LightGBM residual fixo e DML. O resultado fica em
+`artifacts/causal/hackathon/insights.json` e é servido somente para leitura por
+`GET /insights-experimentais`. Esse endpoint não carrega o bundle no
+`Predictor`, não muda o PWF e sempre exige `scientifically_approved=false`.
+
 ## Instalação e execução
 
 O ambiente homologado usa Python 3.13. Não reutilize um ambiente virtual criado
@@ -57,6 +65,7 @@ Em Linux/macOS, use `python3.13 -m venv .venv` e
 Python correto e o `compose.yaml` da raiz inicia toda a aplicação.
 
 Com a API ativa, consulte `GET /health`, `GET /capabilities`,
+`GET /insights-experimentais`,
 `GET /historico/disponibilidade`, `POST /replay-historico` e
 `POST /estimar-geracao` em
 `http://127.0.0.1:8000/docs`.

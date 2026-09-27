@@ -29,6 +29,12 @@ científico dependem de aprovação e dados reais. A implementação e suas
 evidências estão em
 [`Docs/ML/IMPLEMENTACAO_TARGET_WALK_FORWARD_MOST_ROLLING.md`](Docs/ML/IMPLEMENTACAO_TARGET_WALK_FORWARD_MOST_ROLLING.md).
 
+Para o pitch, há uma trilha isolada que coleta a proxy de potencial da ONS e o
+ERA5, compara curva física, LightGBM residual e DML em folds temporais pareados
+e mostra os resultados em **Insights DML**. Ela não promove artefatos, não muda
+o `Predictor` e não altera a fonte do `Pg`. O procedimento de nove passos está
+em [`Docs/ML/MODELO_DML_CAUSAL.md`](Docs/ML/MODELO_DML_CAUSAL.md).
+
 ## Arquitetura local
 
 - `frontend/`: Next.js, sempre conectado ao NestJS;

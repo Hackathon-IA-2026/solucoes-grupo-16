@@ -162,14 +162,24 @@ geração observada. Os documentos `GUIA_ESTUDANTE_SINAL.md` e
   target e features, usa purge interno mínimo de 6 h quando o histórico é
   obrigatório e persiste MOST/lookback no bundle. O estimando v1 preserva o
   conjunto legado; um v2 temporal/MOST separado permite ablação com e sem
-  disponibilidade. Nenhum deles está conectado ao `Predictor`. Consulte
+  disponibilidade. O fluxo de hackathon já consegue coletar a proxy ONS e o
+  ERA5, registrar exclusões, comparar curva física, LightGBM fixo e DML em
+  linhas futuras pareadas e publicar um relatório somente leitura na tela
+  **Insights DML**. Nenhum deles está conectado ao `Predictor`; o relatório
+  exige `scientifically_approved=false`. Consulte
   [`ML/MODELO_DML_CAUSAL.md`](ML/MODELO_DML_CAUSAL.md).
+  A execução local de agosto de 2024 materializou 90.185 linhas elegíveis e
+  comparou 67.883 linhas futuras pareadas: MAE de 49,29 MW na curva física,
+  22,55 MW no LightGBM fixo e 21,68 MW no DML, com 99,89% de cobertura do
+  challenger. Esses números são exploratórios; o target é proxy e a inferência
+  causal mensal tem poucos clusters temporais.
 - `Docs/Casos de Referência/Lista_de_Usinas.xlsx`: CEG, barra e potência do
   horizonte 2040.
 
 Endpoints operacionais dos fluxos atuais:
 
 - `GET /system/capabilities`;
+- `GET /experimental-insights` (evidência DML exploratória, fora do PWF);
 - `POST /climate-scenarios/historical`;
 - `POST /climate-scenarios/file/inspect` e `POST /climate-scenarios/file/estimate`;
 - `POST /climate-scenarios/era5/estimate`;
