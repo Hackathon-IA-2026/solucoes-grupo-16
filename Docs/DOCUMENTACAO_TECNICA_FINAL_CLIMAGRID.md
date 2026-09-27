@@ -8,6 +8,12 @@
 > (`DOCUMENTACAO_TECNICA_COMPLETA_CLIMAGRID.md` e `ANALISE_CODIGO_VS_DOC.md`),
 > com base na leitura integral do código-fonte do frontend, backend e AI service.
 
+> **Atualização posterior — 27 de setembro de 2026:** as seções que descrevem
+> exatamente 15 features e o split 70/15/15 representam o caminho legado. O
+> caminho novo restringe o target a `geracao_referencia_mw`, acrescenta rolling
+> causal e MOST opcional e usa o protocolo walk-forward versionado. Consulte
+> [`ML/IMPLEMENTACAO_TARGET_WALK_FORWARD_MOST_ROLLING.md`](ML/IMPLEMENTACAO_TARGET_WALK_FORWARD_MOST_ROLLING.md).
+
 ---
 
 ## 1. Visão geral do produto

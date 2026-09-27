@@ -1,11 +1,15 @@
 # Plano de evolução da validação temporal
 
-**Status:** infraestrutura implementada; execução científica bloqueada pelas
-decisões da Fase 0. Nenhuma etapa deste documento implica aprovação científica
-ou homologação operacional.  
+**Status:** infraestrutura local implementada; auditoria remota e execução
+científica bloqueadas pelas autorizações/decisões descritas abaixo. Nenhuma
+etapa deste documento implica aprovação científica ou homologação operacional.
 **Escopo:** estimador vento → potência do cenário climático da fase 2.  
 **Fora de escopo:** replay observado, previsão meteorológica futura,
 curtailment e cálculo elétrico do ANAREDE.
+
+O registro das mudanças de target, MOST e features causais implementadas em
+27 de setembro de 2026 está em
+[`IMPLEMENTACAO_TARGET_WALK_FORWARD_MOST_ROLLING.md`](IMPLEMENTACAO_TARGET_WALK_FORWARD_MOST_ROLLING.md).
 
 ## 1. Objetivo
 
@@ -476,7 +480,8 @@ Reversão operacional:
 
 ## 15. Decisões pendentes
 
-- contrato e fonte de verdade do target;
+- aprovação semântica, versão da fonte e contrato final do target já escolhido
+  (`geracao_referencia_mw`);
 - política para referência acima da disponibilidade;
 - critérios de elegibilidade ONS;
 - cobertura mínima por conjunto, mês e fold;
@@ -512,9 +517,21 @@ Implementado em 26 de setembro de 2026, sem consumir reservas reais:
   `backend/supabase/migrations/20260926_temporal_protocol.sql`;
 - fixtures de painel irregular, fronteiras, estabilidade e gates em
   `tests/test_temporal_protocol.py`.
+- contrato de novos treinos restrito a `geracao_referencia_mw`; geração
+  verificada permanece somente em replay/auditoria e artefatos legados;
+- features causais de vento com janelas exatas de 3/6 h e gradientes de
+  1/3/6 h, com fallback operacional quando faltam seis horas de contexto;
+- extrapolação MOST opcional, sem inventar altura/rugosidade/estabilidade, e
+  validação do lookback entre configuração e manifesto;
+- rejeição de teste final que intersecta um período declarado como exposto;
+  agosto de 2024 consta assim no manifesto de infraestrutura.
 
 Não implementado por depender de decisão/aprovação externa: datas científicas,
-contrato final do target, política ONS de elegibilidade, mínimos de cobertura,
+aprovação semântica do contrato do target, política ONS de elegibilidade, mínimos de cobertura,
 lista final de candidatos, critérios numéricos de aceite, execução com dados
-reais e aceite no ANAREDE. O arquivo `training/protocol.example.json` permanece
-deliberadamente em `infrastructure_test`, com hashes placeholder.
+reais e aceite no ANAREDE. A emissão automática dos eventos de acesso para o
+Supabase também não está habilitada: o bundle mantém primeiro o log local
+imutável e a migração prepara o registro remoto, mas a escrita externa exige
+configuração/autorização operacional específica. O arquivo
+`training/protocol.example.json` permanece deliberadamente em
+`infrastructure_test`, com hashes placeholder.

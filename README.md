@@ -21,6 +21,14 @@ conjunto ONS, schema `normalized-ons-hourly-v1`; upload de NetCDF/GRIB ainda nã
 é suportado. O backend persiste o CSV, a estimativa e cada PWF exportado em
 manifestos verificáveis por hash.
 
+A infraestrutura experimental de ML agora restringe novos treinos a
+`geracao_referencia_mw`, oferece validação walk-forward versionada, features
+causais de vento de 3/6 h e extrapolação MOST opcional. Isso ainda não promove
+um modelo para a aplicação: alvo, histórico, cadastro MOST e calendário
+científico dependem de aprovação e dados reais. A implementação e suas
+evidências estão em
+[`Docs/ML/IMPLEMENTACAO_TARGET_WALK_FORWARD_MOST_ROLLING.md`](Docs/ML/IMPLEMENTACAO_TARGET_WALK_FORWARD_MOST_ROLLING.md).
+
 ## Arquitetura local
 
 - `frontend/`: Next.js, sempre conectado ao NestJS;

@@ -1,6 +1,6 @@
 # Contexto canônico do projeto ClimaGrid
 
-**Atualizado em:** 25 de setembro de 2026  
+**Atualizado em:** 27 de setembro de 2026
 **Escopo geográfico:** conjuntos eólicos do subsistema Nordeste (NE)  
 **Fonte de verdade deste documento:** código e validações do repositório atual
 
@@ -149,6 +149,13 @@ geração observada. Os documentos `GUIA_ESTUDANTE_SINAL.md` e
   científica continua bloqueada pelas decisões registradas em
   [`ML/PROTOCOLO_VALIDACAO_TEMPORAL.md`](ML/PROTOCOLO_VALIDACAO_TEMPORAL.md);
   nenhum artefato novo foi homologado para servir.
+- Novos treinos aceitam somente `geracao_referencia_mw`, ainda tratada como
+  proxy cuja semântica e elegibilidade dependem de aprovação ONS. O pipeline
+  possui features climáticas causais de 3/6 h e MOST opcional; sua execução
+  científica continua bloqueada por histórico, cadastro de altura/rugosidade e
+  contrato do alvo. A curva física permanece o estimador servido na fase 2.
+  Consulte o registro verificável em
+  [`ML/IMPLEMENTACAO_TARGET_WALK_FORWARD_MOST_ROLLING.md`](ML/IMPLEMENTACAO_TARGET_WALK_FORWARD_MOST_ROLLING.md).
 - `Docs/Casos de Referência/Lista_de_Usinas.xlsx`: CEG, barra e potência do
   horizonte 2040.
 

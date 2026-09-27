@@ -15,7 +15,8 @@ import pandas as pd
 
 from app.historical import HistoricalScenarioService
 from ingestion.ons.hourly import _capacity_by_hour
-from training.config import PhysicalCurveConfig
+from training.config import FeatureConfig, PhysicalCurveConfig
+from training.features import add_features
 from training.physical_curve import physical_power_mw
 
 
@@ -93,13 +94,24 @@ def parse_climate_csv(csv_text: str) -> pd.DataFrame:
         availability = _number(raw["disponibilidade"], "disponibilidade", row_number)
         if math.hypot(u100, v100) > 50 or not 0 <= availability <= 1:
             raise ClimateFileError(f"Linha {row_number}: vento ou disponibilidade fora do intervalo aceito.")
-        for optional, lower, upper in (("temperature_2m", 150, 350), ("surface_pressure", 50_000, 120_000)):
+        parsed = {"usina_id": plant_id, "timestamp_utc": timestamp,
+                  "u100": u100, "v100": v100, "disponibilidade": availability}
+        for optional, lower, upper in (("temperature_2m", 150, 350), ("surface_pressure", 50_000, 120_000),
+                                       ("hub_height_m", 10, 300), ("surface_roughness_m", 0, 10)):
             if optional in raw and raw[optional] and raw[optional].strip():
                 value = _number(raw[optional], optional, row_number)
-                if not lower <= value <= upper:
+                if not lower <= value <= upper or optional == "surface_roughness_m" and value == 0:
                     raise ClimateFileError(f"Linha {row_number}: {optional} fora do intervalo aceito.")
-        rows.append({"usina_id": plant_id, "timestamp_utc": timestamp,
-                     "u100": u100, "v100": v100, "disponibilidade": availability})
+                parsed[optional] = value
+        if "monin_obukhov_length_m" in raw and raw["monin_obukhov_length_m"] and raw["monin_obukhov_length_m"].strip():
+            length = _number(raw["monin_obukhov_length_m"], "monin_obukhov_length_m", row_number)
+            if length == 0:
+                raise ClimateFileError(f"Linha {row_number}: monin_obukhov_length_m não pode ser zero.")
+            parsed["monin_obukhov_length_m"] = length
+        most = [parsed.get(name) for name in ("hub_height_m", "surface_roughness_m", "monin_obukhov_length_m")]
+        if any(value is not None for value in most) and not all(value is not None for value in most):
+            raise ClimateFileError(f"Linha {row_number}: MOST exige altura, rugosidade e comprimento juntos.")
+        rows.append(parsed)
     if not rows:
         raise ClimateFileError("O CSV não contém registros climáticos.")
     return pd.DataFrame(rows)
@@ -163,8 +175,9 @@ class ClimateFileService:
         observations = []
         global_warnings: set[str] = set()
         curve = PhysicalCurveConfig()
+        selected = add_features(selected, FeatureConfig(most_enabled=True))
         for row in selected.sort_values("usina_id").itertuples(index=False):
-            speed = math.hypot(row.u100, row.v100)
+            speed = float(row.wind_speed_hub_m)
             generation = float(physical_power_mw(
                 speed, row.capacidade_instalada_mw, row.disponibilidade, curve
             ))
@@ -173,6 +186,8 @@ class ClimateFileService:
             allocation = allocations.get(row.usina_id, {})
             coverage = float(allocation.get("coverage", 0))
             warnings = []
+            if not row.most_applied:
+                warnings.append("most_nao_aplicado: usando_vento_era5_a_100m")
             if not allocation.get("allocations"):
                 warnings.append("mapeamento_pwf_ausente")
                 global_warnings.add("ha_usinas_sem_mapeamento_pwf")

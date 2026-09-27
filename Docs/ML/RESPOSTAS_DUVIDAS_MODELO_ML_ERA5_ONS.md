@@ -95,21 +95,24 @@ u100
 v100
 temperature_2m
 surface_pressure
-geracao_referencia_mw ou geracao_verificada_mw
+geracao_referencia_mw
 ```
 
 `era5_distance_km` é uma feature, mas pode ficar ausente; nesse caso será marcada como desconhecida. Se os nomes das suas colunas forem diferentes, mapeie-os em `columns` no JSON:
 
 ```json
 {
-  "target": "geracao_verificada_mw",
+  "target": "geracao_referencia_mw",
   "columns": {
     "usina_id": "codigo_da_usina",
     "timestamp_utc": "data_hora",
-    "geracao_verificada_mw": "geracao_medida"
+    "geracao_referencia_mw": "geracao_referencia_ons"
   }
 }
 ```
+
+Novos treinos recusam `geracao_verificada_mw`. Essa coluna continua útil no
+replay e em auditorias, mas não pode ser target nem feature do estimador.
 
 À direita ficam os nomes do seu arquivo; à esquerda, os nomes canônicos.
 

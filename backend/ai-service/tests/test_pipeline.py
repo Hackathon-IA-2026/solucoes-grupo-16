@@ -19,12 +19,14 @@ from training.physical_curve import physical_power_mw
 from training.train import train
 
 
-def request_body(frame):
+def request_body(frame, history_hours=0):
     row = frame.iloc[10]
+    rows = frame.iloc[10 - history_hours:11]
     return {"usina_id": str(row.usina_id), "capacidade_instalada_mw": float(row.capacidade_instalada_mw),
             "disponibilidade": float(row.disponibilidade), "registros": [{
-                "timestamp_utc": row.timestamp_utc.isoformat(), "u100": float(row.u100), "v100": float(row.v100),
-                "temperature_2m": float(row.temperature_2m), "surface_pressure": float(row.surface_pressure)}]}
+                "timestamp_utc": item.timestamp_utc.isoformat(), "u100": float(item.u100), "v100": float(item.v100),
+                "temperature_2m": float(item.temperature_2m), "surface_pressure": float(item.surface_pressure)}
+                for item in rows.itertuples(index=False)]}
 
 
 @pytest.mark.parametrize("improve", [True, False])
@@ -53,11 +55,11 @@ def test_real_lightgbm_training_artifacts_evaluation_and_api(synthetic_frame, tm
     report = evaluate_artifact(dataset, tmp_path)
     assert report["hybrid_test"]["overall"]["mae_mw"] == pytest.approx(metadata["metrics"]["hybrid_test"]["overall"]["mae_mw"])
     with TestClient(create_app(tmp_path)) as client:
-        body = request_body(dataset)
+        body = request_body(dataset, history_hours=6)
         result = client.post("/estimar-geracao", json=body)
         assert result.status_code == 200
-        assert result.json()["model_scope"] == ("global" if improve else "physical_fallback")
-        prediction = result.json()["predicoes"][0]
+        assert result.json()["model_scope"] == ("mixed" if improve else "physical_fallback")
+        prediction = result.json()["predicoes"][-1]
         assert 0 <= prediction["geracao_estimada_mw"] <= 95
         assert (prediction["limite_inferior_mw"] is not None) is improve
         body["registros"][0]["u100"] = 40
@@ -143,7 +145,7 @@ def test_lightgbm_config_roundtrip_and_training(synthetic_frame, tmp_path):
         LightGBMConfig(min_child_samples=0)
 
 
-def test_cli_roundtrip_custom_verified_target(synthetic_frame, tmp_path):
+def test_cli_rejects_verified_generation_as_training_target(synthetic_frame, tmp_path):
     source = tmp_path / "source.csv"
     synthetic_frame.rename(columns={"geracao_referencia_mw": "campo_alvo_validado"}).to_csv(source, index=False)
     config_file = tmp_path / "config.json"
@@ -154,13 +156,9 @@ def test_cli_roundtrip_custom_verified_target(synthetic_frame, tmp_path):
     result = subprocess.run([sys.executable, "-m", "training.train", "--input", str(source),
         "--config", str(config_file), "--artifacts", str(artifact), "--processed", str(processed)],
         capture_output=True, text=True, timeout=90)
-    assert result.returncode == 0, result.stderr
-    assert processed.exists()
-    result = subprocess.run([sys.executable, "-m", "training.evaluate", "--input", str(source),
-        "--target", "geracao_verificada_mw", "--artifacts", str(artifact)],
-        capture_output=True, text=True, timeout=90)
-    assert result.returncode == 0, result.stderr
-    assert (artifact / "evaluation_report.json").exists()
+    assert result.returncode != 0
+    assert not processed.exists()
+    assert not artifact.exists()
 
 
 def test_api_rejects_infinite_capacity(synthetic_frame):

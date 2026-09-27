@@ -35,6 +35,7 @@ alter table public.ml_temporal_protocols enable row level security;
 alter table public.ml_temporal_access_log enable row level security;
 revoke all on public.ml_temporal_protocols, public.ml_temporal_access_log from anon, authenticated;
 grant select, insert on public.ml_temporal_protocols, public.ml_temporal_access_log to service_role;
+grant usage, select on sequence public.ml_temporal_access_log_id_seq to service_role;
 
 -- Immutable audit records: no update/delete grant is issued.
 commit;

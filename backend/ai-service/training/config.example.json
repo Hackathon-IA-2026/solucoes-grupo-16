@@ -7,6 +7,13 @@
   "n_jobs": 1,
   "min_interval_samples": 20,
   "columns": {},
+  "features": {
+    "rolling_windows_hours": [3, 6],
+    "require_complete_history": true,
+    "most_enabled": false,
+    "most_required": false,
+    "most_neutral_length_m": 100000.0
+  },
   "physical_curve": {
     "cut_in_ms": 3.0,
     "rated_ms": 12.0,

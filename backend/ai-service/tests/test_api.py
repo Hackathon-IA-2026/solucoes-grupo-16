@@ -100,6 +100,39 @@ def test_per_record_availability_and_calibrated_bounds(tmp_path, hybrid):
     assert [p["limite_superior_mw"] for p in predictions] == ([20, 90, 0, 50] if hybrid else [None] * 4)
 
 
+def test_new_model_uses_only_records_with_six_hour_context(tmp_path):
+    import numpy as np
+    from app.predictor import Predictor
+
+    class Model:
+        def predict(self, features, **kwargs):
+            assert len(features) == 1
+            assert features.temporal_context_complete.tolist() == [1]
+            return np.array([0.05])
+
+    predictor = Predictor(tmp_path, Model(), {
+        "model_version": "causal-v1", "model_scope": "global", "approved": True,
+        "required_history_hours": 6, "most_required": False,
+        "training_usina_ids": ["ONS_123"],
+        "input_domain": {"wind_speed_100m": {"min": 0, "max": 20}},
+    }, {"global": {"p05": -0.1, "p95": 0.1}, "wind_bands": {}})
+    body = payload()
+    base = body["registros"][0]
+    body["registros"] = [
+        {**base, "timestamp_utc": f"2026-08-01T{hour:02d}:00:00Z"}
+        for hour in range(8, 15)
+    ]
+    with TestClient(create_app(tmp_path)) as client:
+        client.app.state.predictor = predictor
+        response = client.post("/estimar-geracao", json=body)
+    assert response.status_code == 200
+    result = response.json()
+    assert result["model_scope"] == "mixed"
+    assert [item["confianca"] for item in result["predicoes"]] == ["baixa"] * 6 + ["media"]
+    assert all(item["limite_inferior_mw"] is None for item in result["predicoes"][:6])
+    assert result["predicoes"][-1]["limite_inferior_mw"] is not None
+
+
 def test_historical_routes_without_snapshot(tmp_path, monkeypatch):
     monkeypatch.setattr("app.historical.on_demand_configured", lambda: False)
     monkeypatch.setenv("CLIMAGRID_HISTORICAL_SNAPSHOT", str(tmp_path / "missing.parquet"))

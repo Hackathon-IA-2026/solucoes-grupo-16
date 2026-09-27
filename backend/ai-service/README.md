@@ -19,9 +19,16 @@ reprodutibilidade. O protocolo novo separa folds de desenvolvimento, early
 stopping, calibração e teste final; nenhum resultado é servido sem homologação
 operacional explícita. Esse experimento é separado do replay.
 
+Target exclusivo, rolling causal, MOST, compatibilidade de artefatos e
+evidências da mudança estão registrados em
+[`Docs/ML/IMPLEMENTACAO_TARGET_WALK_FORWARD_MOST_ROLLING.md`](../../Docs/ML/IMPLEMENTACAO_TARGET_WALK_FORWARD_MOST_ROLLING.md).
+
 Há adaptadores comuns para LightGBM e XGBoost no protocolo temporal. Não há
 classificador de curtailment, SHAP ou modelos por usina/cluster nesta fase. A
 integração com o NestJS mantém essas ausências explícitas no contrato.
+O ambiente instala a distribuição oficial `xgboost-cpu`, pois o protocolo não
+usa algoritmos GPU ou aprendizado federado; o módulo Python continua sendo
+importado normalmente como `xgboost`.
 
 ## Instalação e execução
 
@@ -212,7 +219,9 @@ O snapshot CSV/Parquet unido usa os nomes canônicos abaixo (ou exige adaptaçã
 - ONS tratado, com `usina_id`, `timestamp_utc`, `disponibilidade` e o target escolhido;
 - ERA5 horário com `u100`, `v100`, `temperature_2m` (K) e `surface_pressure` (Pa);
 - cadastro de usinas para `capacidade_instalada_mw` e, futuramente, latitude/longitude e `era5_distance_km`;
-- definição semântica validada de **um** target: `geracao_referencia_mw` ou `geracao_verificada_mw`.
+- `geracao_referencia_mw` como único target aceito por novos treinos. A geração
+  verificada continua no replay e pode permanecer no snapshot para auditoria,
+  mas é recusada como target e nunca entra nas features.
 
 `timestamp_utc` é convertido para UTC e os dados são consolidados em hora, pela chave lógica `usina_id + timestamp_utc`. Timestamps sem timezone são excluídos, a menos que `source_timezone` esteja explicitamente configurado após validar o fuso da fonte. Não há imputação de target, disponibilidade ou lacunas. A distância ERA5 permanece ausente quando não fornecida.
 
@@ -235,7 +244,20 @@ Use `training/config.example.json` como ponto de partida. O target inicia em `nu
 }
 ```
 
-Em `columns`, cada chave é o nome canônico e cada valor é o nome confirmado no seu snapshot. O mapeamento inclui os dois targets. Não renomeie campos sem conferir unidade e semântica. Com `usina_id: null`, só são aceitos dados de uma única usina por padrão. Para um experimento multiusina explícito, use `allow_multiple_plants: true` e deixe `usina_id: null`; a cobertura registra tanto horas distintas quanto pares usina–hora. Com `start_utc: null`, a janela começa na primeira hora encontrada. São selecionados 30 dias por padrão, com exclusões e cobertura registradas. Dados menores podem testar a execução, mas geram aviso de cobertura incompleta; o split requer ao menos sete horas distintas. O piloto multiusina de agosto de 2024 está documentado em [`Docs/ML/EXPERIMENTOS_03_A_06_MULTIUSINA.md`](../../Docs/ML/EXPERIMENTOS_03_A_06_MULTIUSINA.md).
+Em `columns`, cada chave é o nome canônico e cada valor é o nome confirmado no seu snapshot. Não renomeie campos sem conferir unidade e semântica. Com `usina_id: null`, só são aceitos dados de uma única usina por padrão. Para um experimento multiusina explícito, use `allow_multiple_plants: true` e deixe `usina_id: null`; a cobertura registra tanto horas distintas quanto pares usina–hora. Com `start_utc: null`, a janela começa na primeira hora encontrada. São selecionados 30 dias por padrão, com exclusões e cobertura registradas. Dados menores podem testar a execução, mas geram aviso de cobertura incompleta; o split legado requer ao menos sete horas distintas. O piloto multiusina de agosto de 2024 está documentado em [`Docs/ML/EXPERIMENTOS_03_A_06_MULTIUSINA.md`](../../Docs/ML/EXPERIMENTOS_03_A_06_MULTIUSINA.md) e está marcado como período exposto no exemplo do protocolo.
+
+As features novas usam exclusivamente clima disponível em `t` ou antes:
+médias e desvios de 3/6 h, médias das componentes vetoriais e gradientes de
+1/3/6 h. As janelas exigem horas exatas por `usina_id`; lacunas não são
+atravessadas. Artefatos novos registram `required_history_hours=6`, e a API usa
+fallback físico nas horas sem esse contexto. Artefatos antigos com as 15
+features originais continuam legíveis.
+
+MOST é opcional e desligado por padrão. Quando habilitado, exige na mesma linha
+`hub_height_m`, `surface_roughness_m` e `monin_obukhov_length_m`; não há valor
+inventado. `most_required=true` exclui entradas inválidas no snapshot e exige
+o suporte correspondente no manifesto. Sem os três campos, o vento de 100 m é
+preservado e o fallback fica explícito.
 
 Disponibilidade deve ser uma fração conhecida no instante da previsão. O serviço não converte automaticamente disponibilidade em MW para fração. Temperatura deve estar em 150–350 K, pressão em 50.000–120.000 Pa e vento derivado em 0–50 m/s, tanto no dataset quanto na API. Essas faixas são verificações iniciais, sujeitas à revisão com os dados reais.
 
@@ -292,7 +314,8 @@ Valide e gere o dataset horário (o target é opcional aqui, mas incluí-lo ampl
 python -m training.build_dataset --input data/raw/snapshot_unido.csv --output data/processed/hourly.csv --report data/processed/validation_report.json --target geracao_referencia_mw
 ```
 
-Treine. O comando exige target explícito e o bloqueia se não for um dos dois valores permitidos:
+Treine. O comando exige explicitamente `geracao_referencia_mw`; geração
+verificada é recusada como target:
 
 ```powershell
 python -m training.train --input data/raw/snapshot_unido.csv --target geracao_referencia_mw
@@ -380,7 +403,10 @@ nova tag no arquivo de versão, nova publicação da imagem de dados e novo depl
 
 ## Limites e decisões pendentes
 
-- Confirmar target com o especialista ONS. Referência precisa representar o potencial sem corte. Se usar geração verificada, preparar previamente um snapshot filtrado por ausência de restrição e disponibilidade adequada, com critérios documentados pelo especialista. Esses filtros não são inferidos e restrição nunca entra nas features.
+- Confirmar com o especialista ONS em que condições a referência representa
+  geração sem limitação. Valores acima de capacidade são excluídos e
+  reportados, nunca clipados; valores acima da capacidade disponível também
+  são contados para a política de elegibilidade versionada.
 - Validar nomes, unidades, timezone, identificação entre bases `tm`/`detail`, coordenadas e associação ao ERA5. Não assumir equivalência entre conjuntos e usinas.
 - Escolher a usina, os 30 dias e uma cobertura mínima aceitável. Sem dados reais não há estimativa de desempenho, intervalo calibrado ou artefato de produção.
 - Confirmar se a disponibilidade histórica estaria disponível antes da previsão. O serviço não estima nem imputa disponibilidade futura.
