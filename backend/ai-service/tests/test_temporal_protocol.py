@@ -99,6 +99,10 @@ def test_protocol_jobs_keep_reservations_separate(synthetic_frame, tmp_path):
     config = TrainingConfig(target="geracao_referencia_mw")
     with pytest.raises(PermissionError, match="fora dos papéis"):
         tune(synthetic_frame, assignments, protocol, config)
+    changed = development.copy()
+    changed.loc[changed.index[0], "geracao_referencia_mw"] += 1
+    with pytest.raises(ValueError, match="fingerprints"):
+        tune(changed, assignments, protocol, config)
     tuning = tune(development, assignments, protocol, config)
     artifact = tmp_path / "protocol-artifact"
     model_frozen = train_frozen_model(development, assignments, protocol, config,

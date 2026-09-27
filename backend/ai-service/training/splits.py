@@ -109,6 +109,15 @@ def coverage_by_validity(assignments: pd.DataFrame, protocol: ProtocolManifest,
     active["valid_to_utc"] = pd.to_datetime(active.valid_to_utc, utc=True, errors="coerce")
     if active[list(required)].isna().any().any() or (active.valid_from_utc >= active.valid_to_utc).any():
         raise ValueError("Vigência cadastral inválida.")
+    active = active.sort_values(["usina_id", "valid_from_utc", "valid_to_utc"])
+    for _, group in active.groupby("usina_id"):
+        if len(group) > 1 and (group.valid_from_utc.iloc[1:].reset_index(drop=True)
+                               < group.valid_to_utc.iloc[:-1].reset_index(drop=True)).any():
+            raise ValueError("Segmentos de vigência da mesma usina não podem se sobrepor.")
+    observed_plants = set(assignments.usina_id.astype(str))
+    validity_plants = set(active.usina_id.astype(str))
+    if not observed_plants <= validity_plants:
+        raise ValueError("Há usina observada sem vigência cadastrada.")
     rows = []
     for key, block in blocks.items():
         expected = 0
@@ -170,6 +179,19 @@ def assert_job_dataset_scope(frame: pd.DataFrame, assignments: pd.DataFrame, rol
     expected = assignments.loc[assignments.role.isin(roles), ["usina_id", "timestamp_utc"]].drop_duplicates()
     if len(authorized) != len(expected):
         raise ValueError("Partição autorizada incompleta ou com linhas inesperadas.")
+    current = frame.copy()
+    current["usina_id"] = current.usina_id.astype(str)
+    current["timestamp_utc"] = pd.to_datetime(current.timestamp_utc, utc=True)
+    current["row_fingerprint"] = current.apply(row_fingerprint, axis=1)
+    expected_fingerprints = assignments.loc[assignments.role.isin(roles), [
+        "usina_id", "timestamp_utc", "row_fingerprint"]].drop_duplicates()
+    if expected_fingerprints.duplicated(["usina_id", "timestamp_utc"]).any():
+        raise ValueError("Atribuições possuem fingerprints divergentes para a mesma linha.")
+    expected_map = {(str(row.usina_id), pd.Timestamp(row.timestamp_utc)): row.row_fingerprint
+                    for row in expected_fingerprints.itertuples(index=False)}
+    if any(expected_map.get((row.usina_id, row.timestamp_utc)) != row.row_fingerprint
+           for row in current.itertuples(index=False)):
+        raise ValueError("Conteúdo da partição diverge dos fingerprints congelados.")
 
 
 def write_assignments(assignments: pd.DataFrame, path: Path, summary: dict) -> None:
@@ -185,14 +207,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Materializa atribuições calendáricas do protocolo.")
     parser.add_argument("--input", required=True, type=Path)
     parser.add_argument("--protocol", required=True, type=Path)
+    parser.add_argument("--config", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--validity", type=Path)
     parser.add_argument("--development-output", type=Path)
     parser.add_argument("--calibration-output", type=Path)
     parser.add_argument("--final-test-output", type=Path)
     args = parser.parse_args()
-    from training.build_dataset import TabularDatasetAdapter
-    frame = TabularDatasetAdapter().load(args.input)
+    from training.build_dataset import TabularDatasetAdapter, prepare_snapshot
+    from training.config import load_config
+    frame, _ = prepare_snapshot(TabularDatasetAdapter().load(args.input), load_config(args.config))
     validity = TabularDatasetAdapter().load(args.validity) if args.validity else None
     assignments, summary = materialize_assignments(frame, ProtocolManifest.load(args.protocol), validity)
     write_assignments(assignments, args.output, summary)

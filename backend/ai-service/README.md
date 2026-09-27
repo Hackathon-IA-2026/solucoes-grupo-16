@@ -251,7 +251,7 @@ aprovação das decisões da Fase 0, crie uma versão com limites calendáricos 
 hashes reais. O fluxo novo é deliberadamente separado do legado:
 
 ```powershell
-python -m training.splits --input data/processed/snapshot.parquet --protocol protocol.json --validity validity.csv --output assignments.parquet --development-output development.parquet --calibration-output calibration.parquet --final-test-output final-test.parquet
+python -m training.splits --input data/processed/snapshot.parquet --config config.json --protocol protocol.json --validity validity.csv --output assignments.parquet --development-output development.parquet --calibration-output calibration.parquet --final-test-output final-test.parquet
 python -m training.tune --input development.parquet --assignments assignments.parquet --protocol protocol-frozen.json --config config.json --output tuning.json
 python -m training.train_final --input development.parquet --assignments assignments.parquet --protocol protocol-frozen.json --config config.json --tuning tuning.json --artifacts artifacts/run-v1 --output-protocol protocol-model-frozen.json
 python -m training.calibrate --input calibration.parquet --assignments assignments.parquet --protocol protocol-model-frozen.json --config config.json --artifacts artifacts/run-v1 --actor NOME --output-protocol protocol-calibration-frozen.json
