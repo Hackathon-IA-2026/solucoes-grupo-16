@@ -110,6 +110,24 @@ def test_historical_replay_returns_observed_generation_for_exact_instant(tmp_pat
     assert first.mapping_coverage_percent == 100
 
 
+def test_availability_checks_project_only_the_timestamp_column(tmp_path: Path, monkeypatch):
+    service = _service(tmp_path)
+    original_read_parquet = pd.read_parquet
+    projected_columns: list[list[str] | None] = []
+
+    def tracked_read_parquet(path, *args, **kwargs):
+        if Path(path) == service.snapshot_path:
+            projected_columns.append(kwargs.get("columns"))
+        return original_read_parquet(path, *args, **kwargs)
+
+    monkeypatch.setattr(pd, "read_parquet", tracked_read_parquet)
+
+    service.availability()
+    service._find_snapshot(pd.Timestamp("2024-01-01T03:00:00Z"))
+
+    assert projected_columns == [["timestamp_utc"], ["timestamp_utc"]]
+
+
 def test_historical_replay_rejects_an_unavailable_instant(tmp_path: Path):
     service = _service(tmp_path)
     try:

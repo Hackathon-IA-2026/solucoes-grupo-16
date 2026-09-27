@@ -1,9 +1,43 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { IntegrationController } from './integration.controller.js';
-import type { AiServiceClient } from './ai-service.client.js';
+import { AiServiceClient } from './ai-service.client.js';
 import type { ClimateScenarioStorageService } from '../climate-scenario/climate-scenario-storage.service.js';
 
 describe('IntegrationController historical preparation', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it('shows a clear error when the AI service URL is missing in production', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('AI_SERVICE_URL', '');
+
+    const client = new AiServiceClient();
+
+    await expect(client.capabilities()).rejects.toMatchObject({
+      message: expect.stringContaining('AI_SERVICE_URL'),
+      response: { statusCode: 503 },
+    });
+  });
+
+  it('does not forward a Render HTML error page to the frontend', async () => {
+    vi.stubEnv('AI_SERVICE_URL', 'https://ai.example.test');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response('<!DOCTYPE html><title>502</title>', { status: 502 }),
+      ),
+    );
+
+    const client = new AiServiceClient();
+
+    await expect(client.capabilities()).rejects.toMatchObject({
+      message: expect.stringContaining('status HTTP 502'),
+      status: 502,
+    });
+  });
+
   it('forwards the experimental report without changing its scientific status', async () => {
     const experimentalInsights = vi.fn().mockResolvedValue({
       available: true,

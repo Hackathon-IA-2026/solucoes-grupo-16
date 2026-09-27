@@ -28,6 +28,26 @@ interface ProcessScenarioInput {
   availability?: number;
 }
 
+class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+const preparationRetryDelayMs = 5000;
+
+function isTransientPreparationError(error: unknown): boolean {
+  return error instanceof ApiError && [502, 503, 504].includes(error.status);
+}
+
+async function waitForPreparationRetry(): Promise<void> {
+  await new Promise((resolve) => window.setTimeout(resolve, preparationRetryDelayMs));
+}
+
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   if (!apiBaseUrl) throw new Error("API não configurada.");
 
@@ -40,7 +60,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    throw new Error(await responseErrorMessage(response));
+    throw new ApiError(await responseErrorMessage(response), response.status);
   }
 
   return response.json() as Promise<T>;
@@ -72,13 +92,20 @@ async function processScenario(input: ProcessScenarioInput): Promise<ProcessScen
       availability: input.availability,
     });
     for (let attempt = 0; attempt < 240; attempt += 1) {
-      const result = await requestJson<Era5Result>("/climate-scenarios/era5/estimate", {
-        method: "POST", body: payload,
-      });
+      let result: Era5Result;
+      try {
+        result = await requestJson<Era5Result>("/climate-scenarios/era5/estimate", {
+          method: "POST", body: payload,
+        });
+      } catch (error) {
+        if (!isTransientPreparationError(error)) throw error;
+        await waitForPreparationRetry();
+        continue;
+      }
       if (!("status" in result)) {
         return { scenario: result.scenario, estimates: result.observations };
       }
-      await new Promise((resolve) => window.setTimeout(resolve, 5000));
+      await waitForPreparationRetry();
     }
     throw new Error("A coleta do ERA5 demorou mais de 20 minutos. Tente novamente; os arquivos já baixados serão reutilizados.");
   }
@@ -118,13 +145,20 @@ async function processScenario(input: ProcessScenarioInput): Promise<ProcessScen
     resolutionMinutes: input.resolutionMinutes,
   });
   for (let attempt = 0; attempt < 240; attempt += 1) {
-    const result = await requestJson<HistoricalResult>("/climate-scenarios/historical", {
-      method: "POST", body: payload,
-    });
+    let result: HistoricalResult;
+    try {
+      result = await requestJson<HistoricalResult>("/climate-scenarios/historical", {
+        method: "POST", body: payload,
+      });
+    } catch (error) {
+      if (!isTransientPreparationError(error)) throw error;
+      await waitForPreparationRetry();
+      continue;
+    }
     if (!("status" in result)) {
       return { scenario: result.scenario, estimates: result.observations };
     }
-    await new Promise((resolve) => window.setTimeout(resolve, 5000));
+    await waitForPreparationRetry();
   }
   throw new Error("A coleta histórica demorou mais de 20 minutos. Tente novamente; os arquivos já baixados serão reutilizados.");
 }
@@ -221,6 +255,10 @@ async function responseErrorMessage(response: Response): Promise<string> {
     if (parsed.message) return parsed.message;
   } catch {
     // A API pode responder texto simples em falhas de infraestrutura.
+    const normalized = body.trim().toLowerCase();
+    if (normalized.startsWith("<!doctype html>") || normalized.startsWith("<html")) {
+      return `O servidor retornou um erro inesperado (HTTP ${response.status}). O serviço pode estar indisponível ou ter excedido o tempo limite.`;
+    }
   }
   return body || `A API respondeu com status ${response.status}.`;
 }

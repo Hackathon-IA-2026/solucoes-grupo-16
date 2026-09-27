@@ -534,6 +534,32 @@ para 12,06% e foi rejeitada. O candidato congelado para o próximo backtest anua
 é o LightGBM de agosto com fator `1,03`; ele continua exploratório e fora do
 `Predictor`.
 
+O candidato congelado pode ser avaliado sem retreino em 12 snapshots mensais
+contíguos com `training.causal.annual_backtest`. O comando exige exatamente 12
+caminhos em ordem cronológica, o artefato sequencial de origem e um diretório de
+saída inexistente. Ele gera métricas primárias do total horário da rede,
+diagnósticos por usina-hora, estabilidade mensal, bootstrap diário e um JSON
+curto para pitch:
+
+```bash
+python -m training.causal.annual_backtest \
+  --months data/processed/training/annual-2024-10_2025-09/{2024-10,2024-11,2024-12,2025-01,2025-02,2025-03,2025-04,2025-05,2025-06,2025-07,2025-08,2025-09}.parquet \
+  --source-artifact artifacts/causal/iterative-residual-calibrated-2026-04 \
+  --bootstrap-samples 2000 \
+  --output-dir artifacts/causal/annual-backtest-2024-10_2025-09
+```
+
+Na execução anual de outubro de 2024 a setembro de 2025, foram avaliadas
+1.149.341 usina-horas e 8.760 horas de rede, com 100% de associação ONS--ERA5.
+O LightGBM calibrado obteve WAPE horário agregado de 10,25%, erro total anual de
+-2,91%, MAE de 1.178 MW, RMSE de 1.475 MW, R² de 0,866 e correlação de 0,936.
+Ficou a até 10% da referência em 54,50% das horas e a até 15% em 74,12%. A
+calibração ganhou do LightGBM original em 8 de 12 meses e reduziu o WAPE anual
+em 0,81 p.p. (IC95% 0,64 a 0,98). O WAPE por usina-hora foi 34,60%, portanto o
+resultado é mais forte para o total da rede que para distribuição espacial. A
+metodologia e a formulação segura para pitch estão em
+[`Docs/ML/BACKTEST_ANUAL_2024_10_A_2025_09.md`](../../Docs/ML/BACKTEST_ANUAL_2024_10_A_2025_09.md).
+
 ### Pipeline legado
 
 Valide e gere o dataset horário (o target é opcional aqui, mas incluí-lo amplia a validação):

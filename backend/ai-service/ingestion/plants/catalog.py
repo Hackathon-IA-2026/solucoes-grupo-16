@@ -91,14 +91,14 @@ def _number(series: pd.Series) -> pd.Series:
 
 
 def load_ons_catalog(
-    paths: Iterable[Path],
+    paths: Iterable[Path | pd.DataFrame],
     subsystem: str = "NE",
     plant_type: str | None = None,
 ) -> pd.DataFrame:
-    frames = [read_tabular(path) for path in paths]
+    frames = [item if isinstance(item, pd.DataFrame) else read_tabular(item) for item in paths]
     if not frames:
         raise ValueError("Informe ao menos um arquivo ONS.")
-    source = pd.concat(frames, ignore_index=True)
+    source = frames[0] if len(frames) == 1 else pd.concat(frames, ignore_index=True)
     aliases = {
         "id_ons": ["id_ons", "idons"],
         "nom_usina": ["nom_usina", "nome_usina"],

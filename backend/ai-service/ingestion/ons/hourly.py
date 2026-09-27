@@ -55,30 +55,40 @@ def _capacity_by_hour(
     capacity["usina_id"] = capacity["usina_id"].astype("string").str.strip()
     if "location_id" not in capacity:
         capacity["location_id"] = capacity["usina_id"]
-    expanded = hourly[["usina_id", "timestamp_utc"]].merge(
-        capacity, on="usina_id", how="left"
-    )
-    active = pd.Series(True, index=expanded.index)
-    if "relationship_start" in expanded:
-        relationship_start = pd.to_datetime(
-            expanded["relationship_start"], utc=True, errors="coerce"
+    capacity_frames: list[pd.DataFrame] = []
+    hourly_keys = hourly[["usina_id", "timestamp_utc"]]
+    for usina_id, plant_hours in hourly_keys.groupby("usina_id", sort=False):
+        members = capacity.loc[capacity["usina_id"].eq(usina_id)]
+        expanded = plant_hours.merge(members, on="usina_id", how="left")
+        active = pd.Series(True, index=expanded.index)
+        if "relationship_start" in expanded:
+            relationship_start = pd.to_datetime(
+                expanded["relationship_start"], utc=True, errors="coerce"
+            )
+            active &= relationship_start.isna() | (
+                expanded["timestamp_utc"] >= relationship_start
+            )
+        if "relationship_end" in expanded:
+            relationship_end = pd.to_datetime(
+                expanded["relationship_end"], utc=True, errors="coerce"
+            )
+            active &= relationship_end.isna() | (
+                expanded["timestamp_utc"]
+                < relationship_end + pd.Timedelta(days=1)
+            )
+        expanded = expanded.loc[active].drop_duplicates(
+            ["usina_id", "timestamp_utc", "location_id"]
         )
-        active &= relationship_start.isna() | (
-            expanded["timestamp_utc"] >= relationship_start
+        capacity_frames.append(
+            expanded.groupby(
+                ["usina_id", "timestamp_utc"], as_index=False, sort=False
+            )["capacidade_instalada_mw"].sum(min_count=1)
         )
-    if "relationship_end" in expanded:
-        relationship_end = pd.to_datetime(
-            expanded["relationship_end"], utc=True, errors="coerce"
+    if not capacity_frames:
+        return pd.DataFrame(
+            columns=["usina_id", "timestamp_utc", "capacidade_instalada_mw"]
         )
-        active &= relationship_end.isna() | (
-            expanded["timestamp_utc"] < relationship_end + pd.Timedelta(days=1)
-        )
-    expanded = expanded.loc[active].drop_duplicates(
-        ["usina_id", "timestamp_utc", "location_id"]
-    )
-    return expanded.groupby(["usina_id", "timestamp_utc"], as_index=False)[
-        "capacidade_instalada_mw"
-    ].sum(min_count=1)
+    return pd.concat(capacity_frames, ignore_index=True)
 
 
 def prepare_ons_generation_hourly(
@@ -94,14 +104,24 @@ def prepare_ons_generation_hourly(
     if missing:
         raise ValueError(f"Campos da geração horária ONS ausentes: {missing}")
 
-    data = frame.copy()
-    data["id_ons"] = data["id_ons"].astype("string").str.strip()
-    data["id_subsistema"] = data["id_subsistema"].astype("string").str.strip()
-    plant_type = data["nom_tipousina"].astype("string").str.strip().str.upper()
-    subsystem_mask = data["id_subsistema"].str.upper().eq(subsystem.upper())
+    normalized_ids = frame["id_ons"].astype("string").str.strip()
+    normalized_subsystem = frame["id_subsistema"].astype("string").str.strip()
+    plant_type = frame["nom_tipousina"].astype("string").str.strip().str.upper()
+    subsystem_mask = normalized_subsystem.str.upper().eq(subsystem.upper())
     wind_mask = plant_type.str.contains("EOL", na=False)
-    missing_id_mask = data["id_ons"].isna() | data["id_ons"].eq("") | data["id_ons"].eq("-")
-    filtered = data.loc[subsystem_mask & wind_mask & ~missing_id_mask].copy()
+    missing_id_mask = (
+        normalized_ids.isna()
+        | normalized_ids.eq("")
+        | normalized_ids.eq("-")
+    )
+    scope_mask = subsystem_mask & wind_mask & ~missing_id_mask
+    excluded_missing_ons_id = int(
+        (subsystem_mask & wind_mask & missing_id_mask).sum()
+    )
+    filtered = frame.loc[
+        scope_mask, ["din_instante", "val_geracao"]
+    ].copy()
+    filtered["id_ons"] = normalized_ids.loc[scope_mask]
 
     filtered["timestamp_utc"] = _timestamps_utc(
         filtered["din_instante"], source_timezone
@@ -150,7 +170,7 @@ def prepare_ons_generation_hourly(
         "rows_after_scope_filter": int(len(filtered)),
         "subsystem": subsystem.upper(),
         "wind_plants_with_id": int(hourly["usina_id"].nunique()),
-        "excluded_missing_ons_id": int((subsystem_mask & wind_mask & missing_id_mask).sum()),
+        "excluded_missing_ons_id": excluded_missing_ons_id,
         "invalid_timestamps": invalid_timestamp_count,
         "invalid_generation": invalid_generation_count,
         "negative_generation": negative_generation_count,

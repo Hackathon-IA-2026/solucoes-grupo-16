@@ -42,12 +42,12 @@ def atomic_write_parquet(frame: pd.DataFrame, path: Path) -> None:
     os.replace(temporary, path)
 
 
-def read_tabular(path: Path, **csv_options: Any) -> pd.DataFrame:
+def read_tabular(path: Path, **options: Any) -> pd.DataFrame:
     suffix = path.suffix.lower()
     if suffix == ".parquet":
-        return pd.read_parquet(path)
+        return pd.read_parquet(path, **options)
     if suffix in {".csv", ".txt"}:
         defaults: dict[str, Any] = {"sep": None, "engine": "python"}
-        defaults.update(csv_options)
+        defaults.update(options)
         return pd.read_csv(path, **defaults)
     raise ValueError(f"Formato não suportado em {path}; use CSV ou Parquet.")
