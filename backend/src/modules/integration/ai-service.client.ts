@@ -191,6 +191,13 @@ export class AiServiceClient {
     );
   }
 
+  async previsao15Dias(payload: Record<string, any>): Promise<any> {
+    return this.request<any>('/previsao-15-dias', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }, 120_000);
+  }
+
   private async request<T>(
     path: string,
     init?: RequestInit,

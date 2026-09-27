@@ -357,6 +357,12 @@ export class IntegrationController {
     await this.scenarios.saveScenario(manifest, input);
     return { scenario, observations };
   }
+
+  @Post('previsao-15-dias')
+  @ApiOperation({ summary: 'Previsão de 15 dias via Open-Meteo GFS' })
+  async previsao15Dias(@Body() body: Record<string, any>) {
+    return this.ai.previsao15Dias(body);
+  }
 }
 
 function validatedCsv(file?: UploadedClimateFile): string {
