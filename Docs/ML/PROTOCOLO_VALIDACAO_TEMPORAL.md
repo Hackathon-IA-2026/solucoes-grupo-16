@@ -1,8 +1,8 @@
 # Plano de evolução da validação temporal
 
-**Status:** infraestrutura implementada; execução científica bloqueada pelas
-decisões da Fase 0. Nenhuma etapa deste documento implica aprovação científica
-ou homologação operacional.  
+**Status:** infraestrutura local implementada; auditoria remota e execução
+científica bloqueadas pelas autorizações/decisões descritas abaixo. Nenhuma
+etapa deste documento implica aprovação científica ou homologação operacional.
 **Escopo:** estimador vento → potência do cenário climático da fase 2.  
 **Fora de escopo:** replay observado, previsão meteorológica futura,
 curtailment e cálculo elétrico do ANAREDE.
@@ -516,5 +516,9 @@ Implementado em 26 de setembro de 2026, sem consumir reservas reais:
 Não implementado por depender de decisão/aprovação externa: datas científicas,
 contrato final do target, política ONS de elegibilidade, mínimos de cobertura,
 lista final de candidatos, critérios numéricos de aceite, execução com dados
-reais e aceite no ANAREDE. O arquivo `training/protocol.example.json` permanece
-deliberadamente em `infrastructure_test`, com hashes placeholder.
+reais e aceite no ANAREDE. A emissão automática dos eventos de acesso para o
+Supabase também não está habilitada: o bundle mantém primeiro o log local
+imutável e a migração prepara o registro remoto, mas a escrita externa exige
+configuração/autorização operacional específica. O arquivo
+`training/protocol.example.json` permanece deliberadamente em
+`infrastructure_test`, com hashes placeholder.

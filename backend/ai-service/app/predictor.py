@@ -11,6 +11,11 @@ from typing import Any
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
+try:
+    from xgboost.core import XGBoostError
+except ImportError:  # The physical fallback must still start in legacy installs.
+    class XGBoostError(Exception):
+        pass
 
 from app.schemas import EstimationRequest, EstimationResponse, Prediction
 from training.config import PhysicalCurveConfig, default_artifact_dir
@@ -58,10 +63,28 @@ class Predictor:
                     raise ValueError("Decisão de aprovação incompatível com as métricas.")
             elif schema == "temporal-protocol-v1":
                 homologation = metadata.get("operational_homologation", {})
+                final_report_file = directory / "final_evaluation_report.json"
+                protocol_file = directory / "protocol_manifest.json"
+                if not final_report_file.is_file() or not protocol_file.is_file():
+                    raise ValueError("Relatório final ou manifesto do protocolo ausente.")
+                final_report = json.loads(final_report_file.read_text(encoding="utf-8"))
+                protocol_manifest = json.loads(protocol_file.read_text(encoding="utf-8"))
+                protocol_sha = hashlib.sha256(json.dumps(
+                    protocol_manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+                    allow_nan=False).encode("utf-8")).hexdigest()
                 if (metadata.get("state") != "operationally_homologated"
+                        or protocol_manifest.get("state") != "operationally_homologated"
+                        or protocol_manifest.get("protocol_version") != metadata.get("protocol_version")
+                        or protocol_sha != metadata.get("protocol_manifest_sha256")
+                        or metadata.get("scientifically_approved") is not True
+                        or final_report.get("scientifically_approved") is not True
                         or homologation.get("status") is not True
                         or homologation.get("model_sha256") != metadata["model_sha256"]
                         or homologation.get("calibration_sha256") != metadata.get("calibration_sha256")
+                        or homologation.get("final_report_sha256") != metadata.get("final_report_sha256")
+                        or hashlib.sha256(final_report_file.read_bytes()).hexdigest() != metadata.get("final_report_sha256")
+                        or final_report.get("model_sha256") != metadata["model_sha256"]
+                        or final_report.get("calibration_sha256") != metadata.get("calibration_sha256")
                         or hashlib.sha256(interval_file.read_bytes()).hexdigest() != metadata.get("calibration_sha256")):
                     raise ValueError("Artefato novo sem homologação operacional compatível.")
                 metadata["approved"] = True
@@ -92,7 +115,8 @@ class Predictor:
             else:
                 raise ValueError("Algoritmo incompatível.")
             return cls(directory, model, metadata, intervals)
-        except (OSError, ValueError, KeyError, TypeError, AttributeError, ImportError, lgb.basic.LightGBMError) as exc:
+        except (OSError, ValueError, KeyError, TypeError, AttributeError, ImportError,
+                lgb.basic.LightGBMError, XGBoostError) as exc:
             logging.getLogger(__name__).warning("Artefato inválido; fallback físico: %s", exc)
             return cls(directory, None, {"model_version": "physical-curve-v1", "model_scope": "physical_fallback",
                                          "approved": False, "artifact_warning": "artefato_invalido: usando_curva_fisica"}, {})
@@ -152,7 +176,7 @@ class Predictor:
                 ) * request.capacidade_instalada_mw
                 if correction.shape != (len(raw),) or not np.isfinite(correction).all():
                     raise ValueError("Correção inválida.")
-            except (ValueError, lgb.basic.LightGBMError):
+            except (ValueError, lgb.basic.LightGBMError, XGBoostError):
                 correction = np.zeros(len(raw))
                 use_ml = False
                 warnings.append("falha_na_correcao_ml: usando_curva_fisica")

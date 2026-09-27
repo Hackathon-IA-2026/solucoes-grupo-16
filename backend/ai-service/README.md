@@ -22,6 +22,9 @@ operacional explícita. Esse experimento é separado do replay.
 Há adaptadores comuns para LightGBM e XGBoost no protocolo temporal. Não há
 classificador de curtailment, SHAP ou modelos por usina/cluster nesta fase. A
 integração com o NestJS mantém essas ausências explícitas no contrato.
+O ambiente instala a distribuição oficial `xgboost-cpu`, pois o protocolo não
+usa algoritmos GPU ou aprendizado federado; o módulo Python continua sendo
+importado normalmente como `xgboost`.
 
 ## Instalação e execução
 

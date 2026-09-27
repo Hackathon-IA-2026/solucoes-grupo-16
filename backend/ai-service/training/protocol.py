@@ -165,6 +165,8 @@ class ProtocolManifest:
         hashes = [self.target_contract_sha256, self.eligibility_policy_sha256,
                   self.snapshot_sha256, self.catalog_sha256, self.composition_sha256,
                   *self.source_sha256.values()]
+        hashes.extend(value for value in (self.assignments_sha256, self.model_sha256,
+                                          self.calibration_sha256, self.final_report_sha256) if value is not None)
         if any(len(value) != 64 or any(c not in "0123456789abcdef" for c in value) for value in hashes):
             raise ValueError("Hashes do protocolo devem ser SHA-256 hexadecimais.")
         reserved = (self.calibration, self.final_test)
@@ -189,6 +191,23 @@ class ProtocolManifest:
             raise ValueError("Purga menor que o suporte temporal declarado.")
         if self.candidate_budget < 1 or len(self.candidates) > self.candidate_budget:
             raise ValueError("Orçamento de candidatos inválido.")
+        if set(self.minimums) != {"hours_per_role", "plants_per_role", "coverage_fraction"}:
+            raise ValueError("Mínimos do protocolo incompletos ou desconhecidos.")
+        if (type(self.minimums["hours_per_role"]) is not int or self.minimums["hours_per_role"] < 1
+                or type(self.minimums["plants_per_role"]) is not int or self.minimums["plants_per_role"] < 1
+                or not 0 <= self.minimums["coverage_fraction"] <= 1):
+            raise ValueError("Mínimos de horas, usinas ou cobertura inválidos.")
+        if self.selection_rule.get("primary_metric") not in {"mae_mw", "rmse_mw", "nmae_cf"}:
+            raise ValueError("Métrica primária não suportada pelo protocolo v1.")
+        if (self.selection_rule.get("aggregation") != "mean"
+                or self.selection_rule.get("tie_break") != "candidate_id"):
+            raise ValueError("Protocolo v1 exige agregação mean e desempate por candidate_id.")
+        if self.final_training_rule.get("method") != "median_best_iteration":
+            raise ValueError("Regra de treino final não suportada.")
+        if (int(self.final_training_rule.get("min_iterations", 1)) < 1
+                or int(self.final_training_rule.get("max_iterations", 1))
+                < int(self.final_training_rule.get("min_iterations", 1))):
+            raise ValueError("Limites de iterações inválidos.")
         if self.purge_hours < 0 or not self.purge_justification.strip():
             raise ValueError("Purga exige valor não negativo e justificativa.")
         if self.state not in (ProtocolState.INFRASTRUCTURE_TEST, ProtocolState.EXPLORATORY):
@@ -238,6 +257,9 @@ class ProtocolManifest:
         }
         if state in requirements and any(not value for value in requirements[state]):
             raise ValueError(f"Evidência obrigatória ausente para {state.value}.")
+        if updated.selected_candidate_id and updated.selected_candidate_id not in {
+                item["candidate_id"] for item in updated.candidates}:
+            raise ValueError("Candidato selecionado não pertence ao protocolo.")
         return updated
 
     def with_access(self, role: str, *, actor: str, purpose: str) -> "ProtocolManifest":
@@ -247,12 +269,14 @@ class ProtocolManifest:
             raise ValueError("Calibração só pode ser aberta após congelar o modelo.")
         if role == "final_test" and self.state != ProtocolState.CALIBRATION_FROZEN:
             raise ValueError("Teste final só pode ser aberto após congelar a calibração.")
+        if not actor.strip() or not purpose.strip():
+            raise ValueError("Acesso reservado exige ator e finalidade.")
         entry = {"role": role, "actor": actor, "purpose": purpose,
                  "accessed_at_utc": datetime.now(timezone.utc).isoformat()}
         return replace(self, access_log=(*self.access_log, entry))
 
-    def write(self, path: Path, *, overwrite: bool = False) -> None:
-        if path.exists() and not overwrite:
+    def write(self, path: Path) -> None:
+        if path.exists():
             raise FileExistsError("Manifesto é imutável; escreva uma nova versão.")
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(canonical_bytes(self.serializable()) + b"\n")

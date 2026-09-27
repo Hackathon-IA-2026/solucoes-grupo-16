@@ -20,6 +20,7 @@ from training.physical_curve import apply_physical_bounds
 from training.protocol import ProtocolManifest, ProtocolState, canonical_bytes, file_sha256, sha256_json
 from training.splits import assigned_rows, assignment_hash, assert_job_dataset_scope
 from training.train import _prepared
+from training.tune import validate_tuning_result
 
 
 ACCESS_LOG_NAME = "reserved_access_log.json"
@@ -60,11 +61,8 @@ def train_frozen_model(dataset: pd.DataFrame, assignments: pd.DataFrame,
                        tuning_result: dict, artifact_dir: Path) -> ProtocolManifest:
     if protocol.state != ProtocolState.PROTOCOL_FROZEN:
         raise ValueError("Treino final exige protocol_frozen.")
-    if tuning_result["protocol_manifest_sha256"] != protocol.digest():
-        raise ValueError("Resultado de tuning pertence a outro manifesto.")
     assignments_digest = assignment_hash(assignments)
-    if tuning_result["assignments_sha256"] != assignments_digest:
-        raise ValueError("Resultado de tuning pertence a outras atribuições.")
+    validate_tuning_result(tuning_result, assignments, protocol)
     assert_job_dataset_scope(dataset, assignments, {"train", "early_stopping", "evaluation"})
     selected_id = tuning_result["selected_candidate_id"]
     selected = next(item for item in tuning_result["candidates"] if item["candidate_id"] == selected_id)
@@ -95,7 +93,7 @@ def train_frozen_model(dataset: pd.DataFrame, assignments: pd.DataFrame,
     metadata = {
         "artifact_schema_version": "temporal-protocol-v1",
         "protocol_version": protocol.protocol_version,
-        "protocol_manifest_sha256": protocol.digest(),
+        "frozen_protocol_manifest_sha256": protocol.digest(),
         "assignments_sha256": assignments_digest,
         "state": "model_frozen", "model_version": config.model_version,
         "model_scope": config.scope, "algorithm": candidate["algorithm"],
@@ -112,6 +110,9 @@ def train_frozen_model(dataset: pd.DataFrame, assignments: pd.DataFrame,
                              "numpy": np.__version__, "pandas": pd.__version__},
         "operational_homologation": {"status": False},
     }
+    if candidate["algorithm"] == "xgboost":
+        import xgboost
+        metadata["runtime_versions"]["xgboost"] = xgboost.__version__
     (artifact_dir / "metadata.json").write_bytes(canonical_bytes(metadata) + b"\n")
     return protocol.transition(ProtocolState.MODEL_FROZEN, assignments_sha256=assignments_digest,
                                selected_candidate_id=selected_id, model_sha256=metadata["model_sha256"])
@@ -240,15 +241,20 @@ def homologate_operationally(protocol: ProtocolManifest, artifact_dir: Path,
     metadata_path = artifact_dir / "metadata.json"
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     if (metadata.get("state") != "final_test_consumed"
+            or metadata.get("scientifically_approved") is not True
             or metadata.get("model_sha256") != protocol.model_sha256
             or metadata.get("calibration_sha256") != protocol.calibration_sha256
             or metadata.get("final_report_sha256") != protocol.final_report_sha256):
         raise ValueError("Bundle não corresponde ao protocolo avaliado.")
+    updated = protocol.transition(ProtocolState.OPERATIONALLY_HOMOLOGATED)
+    protocol_path = artifact_dir / "protocol_manifest.json"
+    updated.write(protocol_path)
     metadata["state"] = "operationally_homologated"
+    metadata["protocol_manifest_sha256"] = updated.digest()
     metadata["operational_homologation"] = {
         "status": True, **evidence, "model_sha256": protocol.model_sha256,
         "calibration_sha256": protocol.calibration_sha256,
         "final_report_sha256": protocol.final_report_sha256,
     }
     metadata_path.write_bytes(canonical_bytes(metadata) + b"\n")
-    return protocol.transition(ProtocolState.OPERATIONALLY_HOMOLOGATED)
+    return updated

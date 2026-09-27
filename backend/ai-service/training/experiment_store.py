@@ -21,7 +21,7 @@ import httpx
 
 LEGACY_REQUIRED = {"model.txt", "metadata.json", "residual_quantiles.json", "validation_report.json"}
 PROTOCOL_REQUIRED = {"metadata.json", "residual_quantiles.json", "final_evaluation_report.json",
-                     "reserved_access_log.json"}
+                     "reserved_access_log.json", "protocol_manifest.json"}
 ALLOWED = LEGACY_REQUIRED | PROTOCOL_REQUIRED | {"evaluation_report.json", "model.ubj"}
 RECEIPT = ".supabase-publication.json"
 MAX_FILE_BYTES = 64 * 1024 * 1024
@@ -60,6 +60,8 @@ def read_bundle(directory: Path) -> tuple[dict, dict[str, bytes]]:
     try:
         metadata = json.loads(files["metadata.json"])
         schema = metadata.get("artifact_schema_version", "legacy-temporal-70-15-15")
+        if schema not in {"legacy-temporal-70-15-15", "temporal-protocol-v1"}:
+            raise RegistryError("Versão de artefato desconhecida.")
         required = LEGACY_REQUIRED if schema == "legacy-temporal-70-15-15" else PROTOCOL_REQUIRED
         model_name = metadata.get("model_file", "model.txt")
         if not required <= files.keys() or model_name not in files:
@@ -68,7 +70,9 @@ def read_bundle(directory: Path) -> tuple[dict, dict[str, bytes]]:
             raise RegistryError("Hash do modelo difere do metadata.")
         if schema == "temporal-protocol-v1":
             if (metadata.get("calibration_sha256") != digest(files["residual_quantiles.json"])
-                    or metadata.get("final_report_sha256") != digest(files["final_evaluation_report.json"])):
+                    or metadata.get("final_report_sha256") != digest(files["final_evaluation_report.json"])
+                    or metadata.get("protocol_manifest_sha256")
+                    != digest(canonical(json.loads(files["protocol_manifest.json"])))):
                 raise RegistryError("Hashes de calibração ou avaliação final divergem do metadata.")
         for key in ("model_version", "target", "training_config", "metrics"):
             if key not in metadata and not (schema == "temporal-protocol-v1" and key == "metrics"):

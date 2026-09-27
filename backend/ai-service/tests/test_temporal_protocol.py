@@ -24,7 +24,8 @@ def manifest(state=ProtocolState.INFRASTRUCTURE_TEST):
         feature_support=(TemporalSupport("u100", "timestamp", 0, 0, 0, 0),),
         purge_hours=0, purge_justification="Features e target estritamente horários na fixture.",
         candidates=({"candidate_id": "lgb-1", "algorithm": "lightgbm", "parameters": {}},),
-        candidate_budget=1, selection_rule={"primary_metric": "mae_mw"},
+        candidate_budget=1, selection_rule={"primary_metric": "mae_mw", "aggregation": "mean",
+                                             "tie_break": "candidate_id"},
         final_training_rule={"method": "median_best_iteration"},
         calibration_rule={"parameters": {"minimum_samples": 1}},
         acceptance_criteria={"require_improvement_over_baseline": True},
@@ -104,6 +105,10 @@ def test_protocol_jobs_keep_reservations_separate(synthetic_frame, tmp_path):
     with pytest.raises(ValueError, match="fingerprints"):
         tune(changed, assignments, protocol, config)
     tuning = tune(development, assignments, protocol, config)
+    tampered = {**tuning, "selected_candidate_id": "not-authorized"}
+    with pytest.raises(ValueError, match="selecionado"):
+        train_frozen_model(development, assignments, protocol, config, tampered,
+                           tmp_path / "tampered-artifact")
     artifact = tmp_path / "protocol-artifact"
     model_frozen = train_frozen_model(development, assignments, protocol, config,
                                       tuning, artifact)
@@ -126,6 +131,9 @@ def test_protocol_jobs_keep_reservations_separate(synthetic_frame, tmp_path):
     from training.experiment_store import read_bundle
     bundle, _ = read_bundle(artifact)
     assert {"model.txt", "reserved_access_log.json", "final_evaluation_report.json"} <= bundle.keys()
+    report_file = artifact / "final_evaluation_report.json"
+    report_file.write_bytes(report_file.read_bytes() + b" ")
+    assert not Predictor.from_artifacts(artifact).approved
 
 
 def test_xgboost_adapter_uses_exclusive_stopping_set(tmp_path):
