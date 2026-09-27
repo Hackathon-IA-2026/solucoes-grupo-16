@@ -271,6 +271,19 @@ Homologação operacional não é inferida pelas métricas. Ela exige chamada
 explícita a `homologate_operationally`, com referências do fluxo ponta a ponta e
 do aceite no ANAREDE. Até isso ocorrer, o `Predictor` usa a curva física.
 
+### Challenger causal DML
+
+O módulo `training/causal/` implementa um challenger parcialmente linear para
+estimar o efeito da densidade do ar sobre `residual_cf`. Ele usa dois nuisance
+models LightGBM, cross-fitting expansivo por timestamp, diagnóstico de overlap e
+um bundle de dois modelos protegido por hashes. Temperatura e pressão são
+proibidas como controles porque determinam a própria densidade.
+
+O experimento reutiliza exclusivamente os papéis de desenvolvimento do
+protocolo temporal e permanece fora do `Predictor`. Instruções, equações, CLI e
+gates estão em
+[`Docs/ML/MODELO_DML_CAUSAL.md`](../../Docs/ML/MODELO_DML_CAUSAL.md).
+
 ### Pipeline legado
 
 Valide e gere o dataset horário (o target é opcional aqui, mas incluí-lo amplia a validação):
