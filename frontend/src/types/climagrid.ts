@@ -209,3 +209,32 @@ export interface SystemCapabilities {
     historicalInstantCount: number;
   } | null;
 }
+
+export interface Forecast15DaysRequest {
+  usina_id: string;
+  latitude: number;
+  longitude: number;
+  capacidade_instalada_mw: number;
+  disponibilidade: number;
+}
+
+export interface ForecastPrediction {
+  timestamp_utc: string;
+  baseline_mw: number;
+  correcao_ml_mw: number;
+  geracao_estimada_mw: number;
+  limite_inferior_mw: number | null;
+  limite_superior_mw: number | null;
+  confianca: "alta" | "media" | "baixa";
+  warnings: string[];
+}
+
+export interface Forecast15DaysResponse {
+  usina_id: string;
+  model_version: string;
+  model_scope: string;
+  data_source: string;
+  horizon_hours: number;
+  predicoes: ForecastPrediction[];
+  warnings: string[];
+}

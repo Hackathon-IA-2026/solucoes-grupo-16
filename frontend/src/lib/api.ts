@@ -3,6 +3,8 @@ import type {
   ClimateScenario,
   ClimateSource,
   ClimateFileInspection,
+  Forecast15DaysRequest,
+  Forecast15DaysResponse,
   ProcessScenarioResult,
   PwfExportRequest,
   PwfExportResult,
@@ -274,6 +276,16 @@ async function getCapabilities(): Promise<SystemCapabilities> {
   return requestJson<SystemCapabilities>("/system/capabilities");
 }
 
+async function get15DayForecast(request: Forecast15DaysRequest): Promise<Forecast15DaysResponse> {
+  if (!apiBaseUrl) {
+    throw new Error("A funcionalidade de previsão 15 dias exige o backend conectado.");
+  }
+  return requestJson<Forecast15DaysResponse>("/previsao-15-dias", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+}
+
 export const climagridApi = {
   processScenario,
   inspectClimateFile,
@@ -281,4 +293,5 @@ export const climagridApi = {
   getPwfGenerationTargets,
   getCapabilities,
   exportPwf,
+  get15DayForecast,
 };

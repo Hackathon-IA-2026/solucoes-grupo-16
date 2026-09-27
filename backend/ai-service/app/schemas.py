@@ -147,3 +147,32 @@ class HistoricalAvailabilityResponse(BaseModel):
     latest_timestamp: datetime | None = None
     instant_count: int = 0
     resolution_minutes: Literal[60] = 60
+
+
+class Previsao15DiasRequest(BaseModel):
+    """Solicitação de previsão de geração para os próximos 15 dias via Open-Meteo."""
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    usina_id: str = Field(min_length=1, max_length=128)
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    capacidade_instalada_mw: float = Field(gt=0)
+    disponibilidade: float = Field(ge=0, le=1, default=1.0)
+
+    @field_validator("usina_id")
+    @classmethod
+    def nonblank_forecast_id(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("usina_id não pode ser vazio")
+        return value.strip()
+
+
+class Previsao15DiasResponse(BaseModel):
+    """Resposta com curva de geração projetada hora a hora por até 15 dias."""
+    usina_id: str
+    model_version: str
+    model_scope: str
+    data_source: str
+    horizon_hours: int
+    predicoes: list[Prediction]
+    warnings: list[str]
