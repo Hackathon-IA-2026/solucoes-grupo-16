@@ -5,7 +5,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { Notice } from "@/components/ui/notice";
 import { PageHeader } from "@/components/ui/page-header";
 import { climagridApi } from "@/lib/api";
-import type { ExperimentalInsights, ExperimentalMetric } from "@/types/climagrid";
+import type { ExperimentalInsights, ExperimentalMetric, IndependentHoldoutInsights } from "@/types/climagrid";
 
 const MODEL_LABELS = {
   physical: "Curva física",
@@ -32,8 +32,8 @@ export default function ExperimentalInsightsPage() {
       <div className="space-y-6">
         <PageHeader
           eyebrow="Laboratório · trilha experimental"
-          title="O que o DML acrescenta à curva física?"
-          description="Comparação temporal pareada entre a curva física, um LightGBM residual fixo e o challenger DML. Esta tela gera evidência para o pitch; ela não altera a geração usada no PWF."
+          title="Qual modelo generaliza para um mês novo?"
+          description="O teste independente treina em agosto e avalia setembro sem retreino. O piloto temporal dentro de agosto permanece abaixo para explicar a evolução da evidência."
           aside={<StatusBadge available={report?.available === true} loading={!report && !error} />}
         />
 
@@ -48,6 +48,11 @@ export default function ExperimentalInsightsPage() {
         ) : null}
         {report?.available && report.overall_metrics && report.comparison ? (
           <>
+            {report.independent_holdout ? <IndependentHoldoutPanel holdout={report.independent_holdout} /> : (
+              <Notice title="Holdout mensal ainda não materializado">A tela contém apenas os folds internos do mês de desenvolvimento.</Notice>
+            )}
+
+            <SectionTitle title="Piloto de desenvolvimento · agosto de 2024" description="Estes folds orientaram a hipótese inicial, mas não substituem o holdout mensal independente mostrado acima." />
             <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <SummaryCard label="Linhas pareadas" value={formatInteger(report.comparison.rows)} detail={`${formatInteger(report.comparison.hours)} horas`} />
               <SummaryCard label="Conjuntos ONS" value={formatInteger(report.comparison.plants)} detail="mesmas linhas nos 3 modelos" />
@@ -121,6 +126,43 @@ export default function ExperimentalInsightsPage() {
       </div>
     </AppShell>
   );
+}
+
+function IndependentHoldoutPanel({ holdout }: { holdout: IndependentHoldoutInsights }) {
+  const primary = holdout.metrics.primary_all_physically_valid_holdout;
+  const secondary = holdout.metrics.secondary_reference_within_available;
+  const rows = [
+    ["Curva física", primary.models.physical],
+    ["LightGBM fixo", primary.models.lightgbm],
+    ["DML", primary.models.dml_operational],
+  ] as const;
+  return <section className="rounded-2xl border border-primary/45 bg-primary/6 p-5 lg:p-7">
+    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+      <SectionTitle title="Holdout independente · setembro de 2024" description="Modelo congelado em agosto, gap externo de 6 horas, zero chaves sobrepostas e nenhuma linha do holdout usada no treino." />
+      <span className="w-fit rounded-full border border-primary/40 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">LightGBM generalizou melhor</span>
+    </div>
+    <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <SummaryCard label="População primária" value={formatInteger(primary.rows)} detail={`${formatInteger(primary.hours)} horas · ${formatInteger(primary.plants)} conjuntos`} />
+      <SummaryCard label="WAPE horário LightGBM" value={formatPercent(primary.models.lightgbm.hourly_total.wape)} detail="melhor resultado independente" />
+      <SummaryCard label="WAPE horário DML" value={formatPercent(primary.models.dml_operational.hourly_total.wape)} detail={`${formatSignedPercent(primary.models.dml_operational.hourly_total.signed_total_error_fraction)} no acumulado`} />
+      <SummaryCard label="Fallback DML" value={formatInteger(holdout.coverage.fallback_rows)} detail={`${formatInteger(holdout.separation.purged_development_rows)} linhas purgadas do treino`} />
+    </div>
+    <div className="mt-6 overflow-x-auto">
+      <table className="w-full min-w-[620px] text-left text-xs">
+        <thead className="text-outline"><tr>{["Modelo", "WAPE usina-hora", "WAPE total horário", "Diferença acumulada", "P95 horário"].map((header) => <th key={header} className="border-b border-outline-variant/50 px-3 py-2 font-medium">{header}</th>)}</tr></thead>
+        <tbody>{rows.map(([label, result]) => <tr key={label} className={label.startsWith("LightGBM") ? "bg-primary/8 text-on-surface" : "text-on-surface-variant"}>
+          <td className="border-b border-outline-variant/25 px-3 py-3 font-semibold">{label}</td>
+          <td className="border-b border-outline-variant/25 px-3 py-3 font-mono">{formatPercent(result.plant_hour.wape)}</td>
+          <td className="border-b border-outline-variant/25 px-3 py-3 font-mono">{formatPercent(result.hourly_total.wape)}</td>
+          <td className="border-b border-outline-variant/25 px-3 py-3 font-mono">{formatSignedPercent(result.hourly_total.signed_total_error_fraction)}</td>
+          <td className="border-b border-outline-variant/25 px-3 py-3 font-mono">{formatMw(result.hourly_total.p95_abs_error_mw)}</td>
+        </tr>)}</tbody>
+      </table>
+    </div>
+    <p className="mt-4 text-xs text-on-surface-variant">
+      A análise secundária, limitada às {formatInteger(secondary.rows)} linhas em que a referência não supera a capacidade disponível, confirma a ordem: LightGBM {formatPercent(secondary.models.lightgbm.hourly_total.wape)} e DML {formatPercent(secondary.models.dml_operational.hourly_total.wape)} de WAPE horário. Setembro está consumido e não será usado para retuning.
+    </p>
+  </section>;
 }
 
 function StatusBadge({ available, loading }: { available: boolean; loading: boolean }) {
@@ -205,6 +247,10 @@ function formatMw(value: number): string { return `${value.toLocaleString("pt-BR
 function formatSignedMw(value: number): string { return `${value >= 0 ? "+" : ""}${value.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} MW`; }
 function formatInteger(value: number): string { return value.toLocaleString("pt-BR"); }
 function formatPercent(value: number | null): string { return value === null ? "—" : `${(value * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`; }
+function formatSignedPercent(value?: number | null): string {
+  if (value === null || value === undefined) return "—";
+  return `${value >= 0 ? "+" : ""}${(value * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
+}
 function formatGain(value?: number | null, baseline = "curva física"): string {
   if (value === null || value === undefined) return "ganho não calculável";
   const percent = Math.abs(value * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 });

@@ -160,6 +160,44 @@ semanal de inferência; portanto os intervalos causais são subpotentes. O ganho
 preditivo pode ser mostrado no pitch, mas não deve ser apresentado como prova
 causal nem como desempenho de uma previsão meteorológica futura.
 
+### Experimento seguinte: holdout mensal independente
+
+O módulo `training/causal/independent_holdout.py` recebe dois snapshots físicos
+e logicamente separados, exige que o holdout seja posterior, remove do treino o
+gap temporal declarado e ajusta DML e LightGBM somente no desenvolvimento.
+
+A métrica primária usa todas as linhas do holdout que passaram pelas validações
+físicas gerais. A regra baseada no próprio target — referência menor ou igual à
+capacidade disponível — é calculada depois da previsão e publicada apenas como
+análise secundária. O relatório também separa usinas conhecidas, fallback de
+usinas inéditas, métricas por usina-hora e total horário. O diretório de saída é
+imutável e registra hashes de entradas, configuração, estimando, modelos e
+previsões.
+
+Antes de abrir um novo mês, a configuração deve estar congelada e a equipe deve
+aceitar que o período passará a constar como exposto. Mesmo depois da execução,
+o estado continua exploratório até que haja cobertura multiestação e validação
+com hindcasts meteorológicos.
+
+#### Resultado do holdout setembro de 2024
+
+O holdout foi consumido em 27 de setembro de 2026 com configuração e estimando
+congelados. O desenvolvimento de agosto forneceu 107.785 linhas antes da purga;
+870 linhas das seis horas finais foram retiradas do treino. Setembro forneceu
+103.801 linhas fisicamente válidas, 720 horas e 146 conjuntos, sem chaves
+sobrepostas e sem fallback DML.
+
+Na população primária completa, o WAPE por usina-hora foi 54,35% para a curva
+física, 23,62% para o LightGBM e 25,46% para o DML. Após agregar os conjuntos por
+hora, o WAPE foi 46,00%, 7,88% e 13,29%, respectivamente. Na coorte secundária
+em que a referência não ultrapassa a capacidade disponível, o WAPE horário foi
+41,67%, 5,18% e 9,10%.
+
+O resultado independente contradiz a pequena vantagem do DML observada dentro
+de agosto. O LightGBM fixo é o melhor candidato deste teste; setembro não pode
+ser reutilizado para escolher novos hiperparâmetros. O DML permanece challenger
+de pesquisa e nenhum artefato foi promovido para o `Predictor`.
+
 Depois de gerar `assignments.parquet` e a partição `development.parquet` pelo
 protocolo temporal:
 

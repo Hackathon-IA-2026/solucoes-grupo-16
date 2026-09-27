@@ -350,6 +350,52 @@ protocolo temporal e permanece fora do `Predictor`. Instruções, equações, CL
 gates estão em
 [`Docs/ML/MODELO_DML_CAUSAL.md`](../../Docs/ML/MODELO_DML_CAUSAL.md).
 
+O experimento seguinte usa um mês posterior como holdout separado. Primeiro,
+materialize desenvolvimento e holdout sem excluir linhas com referência acima
+da capacidade disponível:
+
+```bash
+python -m training.causal.prepare_data \
+  --year 2024 --month 8 \
+  --output data/processed/training/holdout/development_2024_08.parquet \
+  --report data/processed/training/holdout/development_2024_08.report.json \
+  --retain-reference-above-availability
+
+python -m training.causal.prepare_data \
+  --year 2024 --month 9 --collect-missing \
+  --output data/processed/training/holdout/holdout_2024_09.parquet \
+  --report data/processed/training/holdout/holdout_2024_09.report.json \
+  --retain-reference-above-availability
+```
+
+Depois, consuma o holdout uma única vez. O diretório de saída não pode existir:
+
+```bash
+python -m training.causal.independent_holdout \
+  --development data/processed/training/holdout/development_2024_08.parquet \
+  --holdout data/processed/training/holdout/holdout_2024_09.parquet \
+  --config training/causal/hackathon.example.json \
+  --estimand training/causal/estimand.example.json \
+  --gap-hours 6 \
+  --output-dir artifacts/causal/independent-holdout-2024-09
+```
+
+A métrica primária mantém todas as linhas fisicamente válidas. A condição
+`geracao_referencia_mw <= capacidade_instalada_mw * disponibilidade` aparece
+somente como coorte secundária, evitando que o target do teste selecione
+silenciosamente o próprio placar. O relatório separa usinas conhecidas e
+fallback, métricas por usina-hora e total horário, e registra hashes de todas as
+entradas e saídas. O estado continua exploratório; ERA5 não incorpora o erro de
+uma previsão meteorológica futura.
+
+O holdout de setembro de 2024 já foi consumido contra desenvolvimento em
+agosto. Na população primária de 103.801 usina-horas, o WAPE foi 54,35% na
+curva física, 23,62% no LightGBM e 25,46% no DML. No total agregado por hora,
+os valores foram 46,00%, 7,88% e 13,29%. Assim, o LightGBM generalizou melhor e
+o DML não foi promovido nem deve ser retunado usando setembro. O relatório
+imutável está em
+`artifacts/causal/independent-holdout-2024-09/holdout_report.json`.
+
 ### Pipeline legado
 
 Valide e gere o dataset horário (o target é opcional aqui, mas incluí-lo amplia a validação):

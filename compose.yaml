@@ -12,6 +12,7 @@ services:
     environment:
       CLIMAGRID_ARTIFACT_DIR: /service/artifacts/global/v1
       CLIMAGRID_DML_INSIGHTS_PATH: /service/artifacts/causal/hackathon/insights.json
+      CLIMAGRID_INDEPENDENT_HOLDOUT_PATH: /service/artifacts/causal/independent-holdout-2024-09/holdout_report.json
       CLIMAGRID_HISTORICAL_SNAPSHOT: /service/data/processed/historical/observations.parquet
       CLIMAGRID_PLANT_CATALOG: /service/data/processed/reference/plant_locations.parquet
       CLIMAGRID_PWF_MAPPING: /service/data/processed/reference/pwf_bus_mapping.parquet

@@ -168,6 +168,15 @@ geração observada. Os documentos `GUIA_ESTUDANTE_SINAL.md` e
   **Insights DML**. Nenhum deles está conectado ao `Predictor`; o relatório
   exige `scientifically_approved=false`. Consulte
   [`ML/MODELO_DML_CAUSAL.md`](ML/MODELO_DML_CAUSAL.md).
+  Há também um job de holdout mensal independente que treina em um arquivo
+  anterior, aplica gap temporal e avalia um segundo snapshot sem retreino. Sua
+  métrica primária não filtra linhas usando o target; a coorte dentro da
+  disponibilidade é secundária e explícita. Setembro de 2024 foi consumido
+  uma única vez como holdout de agosto, sem sobreposição e com purga externa de
+  6 h: nas 103.801 linhas primárias, o WAPE por usina-hora foi 54,35% na curva
+  física, 23,62% no LightGBM e 25,46% no DML; no total horário, 46,00%, 7,88% e
+  13,29%, respectivamente. O LightGBM generalizou melhor; o DML não foi
+  promovido nem retunado com setembro.
   A execução local de agosto de 2024 materializou 90.185 linhas elegíveis e
   comparou 67.883 linhas futuras pareadas: MAE de 49,29 MW na curva física,
   22,55 MW no LightGBM fixo e 21,68 MW no DML, com 99,89% de cobertura do

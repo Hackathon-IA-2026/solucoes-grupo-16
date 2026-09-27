@@ -52,6 +52,10 @@ def _ensure_sources(
     for request in requests:
         is_primary_month = (request.year, request.month) == (year, month)
         operational_output = paths.weather_month(request.year, request.month)
+        training_root = (
+            data_root / "processed" / "training" / "era5"
+            / f"year={request.year}" / f"month={request.month:02d}"
+        )
         # The following UTC month is needed only for the final local ONS hours.
         # Keep this extraction separate: relationships may legitimately end
         # during that month, so a full-month operational coverage gate can fail.
@@ -59,11 +63,15 @@ def _ensure_sources(
             data_root / "processed" / "training" / "era5-spillover"
             / f"year={request.year}" / f"month={request.month:02d}"
         )
-        output = (
-            operational_output
-            if is_primary_month or operational_output.exists()
-            else spillover_root / "weather_hourly.parquet"
-        )
+        if operational_output.exists():
+            output = operational_output
+        elif is_primary_month:
+            # Scientific snapshots may cross relationship changes inside the
+            # primary month. Keep their extraction outside the operational
+            # partition, whose 99% per-plant gate assumes full-month vigency.
+            output = training_root / "weather_hourly.parquet"
+        else:
+            output = spillover_root / "weather_hourly.parquet"
         weather_paths.append(output)
         if output.exists():
             continue
@@ -79,11 +87,11 @@ def _ensure_sources(
         manifest = extract_file(
             raw, catalog, output,
             (
-                paths.processed_manifest(request.year, request.month)
+                training_root / "processed.json"
                 if is_primary_month
                 else spillover_root / "processed.json"
             ),
-            expected_hours=request.expected_hours if is_primary_month else None,
+            expected_hours=None,
             request_hash=request.request_hash,
             catalog_hash=None,
         )

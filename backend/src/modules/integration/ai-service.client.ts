@@ -66,6 +66,7 @@ export interface AiExperimentalInsights {
   estimand_sha256?: string;
   input_sha256?: string;
   predictions_sha256?: string;
+  independent_holdout?: Record<string, unknown> | null;
 }
 
 export interface AiHistoricalReplayResponse {

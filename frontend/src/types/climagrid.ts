@@ -223,6 +223,52 @@ export interface ExperimentalMetric {
   rows: number;
   mae_gain_vs_physical?: number | null;
   mae_gain_vs_lightgbm?: number | null;
+  target_total_mwh?: number;
+  prediction_total_mwh?: number;
+  signed_total_error_fraction?: number | null;
+}
+
+export interface IndependentHoldoutModelResult {
+  plant_hour: ExperimentalMetric;
+  hourly_total: ExperimentalMetric;
+}
+
+export interface IndependentHoldoutCohort {
+  rows: number;
+  hours: number;
+  plants: number;
+  models: {
+    physical: IndependentHoldoutModelResult;
+    lightgbm: IndependentHoldoutModelResult;
+    dml_operational: IndependentHoldoutModelResult;
+  };
+}
+
+export interface IndependentHoldoutInsights {
+  schema_version: "climagrid-independent-month-holdout-v1";
+  status: "exploratory_independent_holdout_consumed";
+  scientifically_approved: false;
+  separation: {
+    gap_hours: number;
+    purged_development_rows: number;
+    overlapping_keys: number;
+    holdout_used_for_training: false;
+    development_used: { start_utc: string; end_utc: string; rows: number; hours: number; plants: number };
+    holdout: { start_utc: string; end_utc: string; rows: number; hours: number; plants: number };
+  };
+  coverage: {
+    holdout_rows: number;
+    dml_model_rows: number;
+    fallback_rows: number;
+    reference_within_available_rows: number;
+    reference_above_available_rows: number;
+  };
+  metrics: {
+    primary_all_physically_valid_holdout: IndependentHoldoutCohort;
+    secondary_reference_within_available: IndependentHoldoutCohort;
+    paired_dml_eligible: IndependentHoldoutCohort;
+  };
+  comparison_sha256: string;
 }
 
 export interface ExperimentalInsights {
@@ -284,4 +330,5 @@ export interface ExperimentalInsights {
   estimand_sha256?: string;
   input_sha256?: string;
   predictions_sha256?: string;
+  independent_holdout?: IndependentHoldoutInsights | null;
 }

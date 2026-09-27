@@ -158,6 +158,7 @@ def test_experimental_insights_endpoint_is_read_only_and_explicit(tmp_path, monk
         encoding="utf-8",
     )
     monkeypatch.setenv("CLIMAGRID_DML_INSIGHTS_PATH", str(report_path))
+    monkeypatch.setenv("CLIMAGRID_INDEPENDENT_HOLDOUT_PATH", str(tmp_path / "missing.json"))
     with TestClient(create_app(tmp_path)) as client:
         capabilities = client.get("/capabilities").json()
         response = client.get("/insights-experimentais")
@@ -166,3 +167,29 @@ def test_experimental_insights_endpoint_is_read_only_and_explicit(tmp_path, monk
     assert response.status_code == 200
     assert response.json()["available"] is True
     assert response.json()["scientifically_approved"] is False
+    assert response.json()["independent_holdout"] is None
+
+
+def test_experimental_insights_includes_independent_holdout(tmp_path, monkeypatch):
+    report_path = tmp_path / "insights.json"
+    report_path.write_text(
+        '{"schema_version":"climagrid-dml-hackathon-insights-v1",'
+        '"status":"exploratory_evidence","scientifically_approved":false,'
+        '"message":"Somente para pitch."}',
+        encoding="utf-8",
+    )
+    holdout_path = tmp_path / "holdout.json"
+    holdout_path.write_text(
+        '{"schema_version":"climagrid-independent-month-holdout-v1",'
+        '"status":"exploratory_independent_holdout_consumed",'
+        '"scientifically_approved":false,"metrics":{}}',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CLIMAGRID_DML_INSIGHTS_PATH", str(report_path))
+    monkeypatch.setenv("CLIMAGRID_INDEPENDENT_HOLDOUT_PATH", str(holdout_path))
+
+    with TestClient(create_app(tmp_path)) as client:
+        body = client.get("/insights-experimentais").json()
+
+    assert body["independent_holdout"]["status"] == "exploratory_independent_holdout_consumed"
+    assert body["independent_holdout"]["scientifically_approved"] is False
