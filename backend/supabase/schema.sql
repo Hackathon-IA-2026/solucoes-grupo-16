@@ -51,10 +51,15 @@ WITH CHECK (true);
 --
 -- No painel do Supabase -> Storage:
 -- 1. Crie um novo bucket chamado "pwf" (ou o nome que configurou no .env).
--- 2. Se desejar que os arquivos possam ser baixados diretamente por URLs públicas:
---    Marque a opção "Public bucket".
--- 3. Caso deixe privado, adicione uma Storage Policy no bucket para permitir
---    leitura (SELECT) e escrita (INSERT):
+-- 2. Recomenda-se manter o bucket privado e configurar SUPABASE_KEY com a
+--    service_role key somente no backend. Ela ignora RLS e não deve ir para o
+--    frontend nem para variáveis NEXT_PUBLIC_*.
+-- 3. O backend usa os seguintes prefixos no mesmo bucket:
+--      reference-cases/<uuid>/...
+--      climate-scenarios/<uuid>/...
+--      climate-scenarios/<uuid>/exports/<uuid>/...
+-- 4. Se você optar por uma chave anon em vez de service_role, crie políticas
+--    de leitura e escrita adequadas. Para um bucket chamado "pwf":
 --
 --    create policy "Acesso a arquivos PWF"
 --    on storage.objects for all

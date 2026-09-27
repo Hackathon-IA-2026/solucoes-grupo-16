@@ -62,8 +62,11 @@ Os valores padrão já funcionam nas portas 3000, 3333 e 8000. Edite o novo
 `.env` apenas se alguma delas estiver ocupada.
 
 O arquivo `backend/.env` também é opcional. Sem credenciais do Supabase, o
-backend usa o volume local `backend-data`. Para usar Supabase, crie o arquivo
-a partir do exemplo e substitua os placeholders por credenciais reais:
+backend usa o volume local `backend-data`. Com Supabase, casos PWF, cenários,
+CSVs, manifestos e exportações são replicados no bucket configurado; esse é o
+modo recomendado no Render Free, cujo filesystem é efêmero. Para usar
+Supabase, crie o arquivo a partir do exemplo e substitua os placeholders por
+credenciais reais:
 
 ```bash
 cp backend/.env.example backend/.env

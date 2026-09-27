@@ -83,8 +83,10 @@ semântica fica registrada como `preserve_reference_pwf_pg`.
 No Compose, cenários e exportações ficam no volume `backend-data`, em
 `/app/data/scenarios`. Fora do contêiner, o padrão é
 `backend/data/scenarios`; `SCENARIO_STORAGE_ROOT` permite alterar o diretório.
-Ainda é necessário definir retenção, backup e armazenamento compartilhado para
-produção.
+Com `SUPABASE_URL`, `SUPABASE_KEY` e `SUPABASE_BUCKET`, o servidor também grava
+e recupera CSVs, manifestos e PWFs exportados no prefixo
+`climate-scenarios/` do Supabase Storage. Essa é a persistência compartilhada
+usada no Render Free. Ainda é necessário definir retenção e expurgo.
 
 ## Próximo passo para um modelo treinado de potencial
 

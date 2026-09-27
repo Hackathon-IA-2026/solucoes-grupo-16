@@ -32,7 +32,11 @@ export class SupabaseService implements OnModuleInit {
     let url = process.env.SUPABASE_URL?.trim();
     if (!url && process.env.SUPABASE_PROJECT_ID) {
       url = `https://${process.env.SUPABASE_PROJECT_ID.trim()}.supabase.co`;
-    } else if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+    } else if (
+      url &&
+      !url.startsWith('http://') &&
+      !url.startsWith('https://')
+    ) {
       url = `https://${url}.supabase.co`;
     }
 
@@ -99,7 +103,9 @@ export class SupabaseService implements OnModuleInit {
       this.logger.error(
         `Erro ao fazer upload para Supabase (${this.bucket}/${path}): ${error.message}`,
       );
-      throw new Error(`Erro ao enviar arquivo para o Supabase: ${error.message}`);
+      throw new Error(
+        `Erro ao enviar arquivo para o Supabase: ${error.message}`,
+      );
     }
 
     return { path: data.path };
@@ -126,6 +132,33 @@ export class SupabaseService implements OnModuleInit {
 
     const arrayBuffer = await data.arrayBuffer();
     return Buffer.from(arrayBuffer);
+  }
+
+  /**
+   * Lista os nomes diretamente abaixo de uma pasta do bucket.
+   * O Storage representa subpastas como entradas sem `id`; não dependemos
+   * desse detalhe e devolvemos somente os nomes informados pela API.
+   */
+  async listFolder(path: string): Promise<string[] | null> {
+    if (!this.client) {
+      return null;
+    }
+
+    const { data, error } = await this.client.storage
+      .from(this.bucket)
+      .list(path, {
+        limit: 1000,
+        sortBy: { column: 'name', order: 'asc' },
+      });
+
+    if (error) {
+      this.logger.warn(
+        `Não foi possível listar a pasta no Supabase (${this.bucket}/${path}): ${error.message}`,
+      );
+      return null;
+    }
+
+    return data.map((entry) => entry.name);
   }
 
   /**
