@@ -14,11 +14,13 @@ import pandas as pd
 
 from training.causal.spec import CausalEstimandSpec
 from training.causal.temporal_crossfit import expanding_time_splits
-from training.features import add_features
+from training.config import FeatureConfig
+from training.features import FEATURE_SET_VERSION, add_features
 from training.protocol import canonical_bytes, file_sha256
 
 
-ARTIFACT_SCHEMA_VERSION = "causal-dml-plr-v1"
+ARTIFACT_SCHEMA_VERSION = "causal-dml-plr-v2"
+DEFAULT_STANDALONE_FEATURE_CONFIG = FeatureConfig(require_complete_history=False)
 
 
 @dataclass(frozen=True)
@@ -54,14 +56,54 @@ def _plant_ids(frame: pd.DataFrame) -> tuple[str, ...]:
     return tuple(sorted(values.astype(str).unique().tolist()))
 
 
-def _inputs(
+def _feature_config_from_dict(values: dict[str, Any]) -> FeatureConfig:
+    data = dict(values)
+    if "rolling_windows_hours" in data:
+        data["rolling_windows_hours"] = tuple(data["rolling_windows_hours"])
+    return FeatureConfig(**data)
+
+
+def _feature_contract(config: FeatureConfig) -> dict[str, Any]:
+    return {
+        "feature_set_version": FEATURE_SET_VERSION,
+        "feature_config": asdict(config),
+    }
+
+
+def _enriched_frame(
     frame: pd.DataFrame,
+    spec: CausalEstimandSpec,
+    feature_config: FeatureConfig,
+) -> pd.DataFrame:
+    required = ({spec.treatment, "temporal_context_complete"}
+                | {name for name in spec.controls if name != "usina_id"})
+    if required <= set(frame) and frame.attrs.get("climagrid_feature_contract") == _feature_contract(feature_config):
+        return frame.copy()
+    return add_features(frame, feature_config)
+
+
+def eligible_causal_rows(frame: pd.DataFrame, feature_config: FeatureConfig) -> pd.DataFrame:
+    """Return the prediction population declared by the temporal feature contract."""
+    if not feature_config.require_complete_history:
+        return frame.copy()
+    if "temporal_context_complete" not in frame:
+        raise ValueError("Elegibilidade causal exige temporal_context_complete calculado.")
+    complete = pd.to_numeric(frame["temporal_context_complete"], errors="coerce").eq(1)
+    return frame.loc[complete].copy()
+
+
+def _inputs(
+    enriched: pd.DataFrame,
     spec: CausalEstimandSpec,
     plant_ids: tuple[str, ...],
 ) -> tuple[pd.DataFrame, np.ndarray]:
-    enriched = add_features(frame)
     mapping = {plant: index for index, plant in enumerate(plant_ids)}
-    enriched["usina_code"] = enriched["usina_id"].astype(str).map(mapping).fillna(-1).astype("int32")
+    enriched = enriched.copy()
+    codes = enriched["usina_id"].astype(str).map(mapping)
+    if codes.isna().any():
+        unknown = sorted(enriched.loc[codes.isna(), "usina_id"].astype(str).unique().tolist())
+        raise ValueError(f"DML não extrapola para usinas desconhecidas: {unknown}.")
+    enriched["usina_code"] = codes.astype("int32")
     feature_order = _resolved_feature_order(spec)
     missing = sorted(set(feature_order + [spec.treatment]) - set(enriched.columns))
     if missing:
@@ -139,6 +181,7 @@ def _block_standard_error(
 class DMLPLRModel:
     spec: CausalEstimandSpec
     nuisance_config: NuisanceConfig
+    feature_config: FeatureConfig
     theta: float
     outcome_model: Any
     treatment_model: Any
@@ -146,7 +189,14 @@ class DMLPLRModel:
     diagnostics: dict[str, Any]
 
     def predict_residual_cf(self, frame: pd.DataFrame) -> np.ndarray:
-        features, treatment = _inputs(frame, self.spec, self.plant_ids)
+        self.spec.validate_feature_config(self.feature_config)
+        enriched = _enriched_frame(frame, self.spec, self.feature_config)
+        eligible = eligible_causal_rows(enriched, self.feature_config)
+        if len(eligible) != len(enriched):
+            raise ValueError(
+                "DML exige histórico temporal completo; forneça o contexto anterior ou use fallback."
+            )
+        features, treatment = _inputs(eligible, self.spec, self.plant_ids)
         outcome_mean = np.asarray(self.outcome_model.predict(features), dtype=float)
         treatment_mean = np.asarray(self.treatment_model.predict(features), dtype=float)
         prediction = outcome_mean + self.theta * (treatment - treatment_mean)
@@ -167,12 +217,20 @@ class DMLPLRModel:
         metadata = {
             "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
             "model_family": "dml_plr",
-            "model_version": "dml-plr-density-v1",
+            "model_version": f"dml-plr-{self.spec.control_set_version}",
             "status": self.spec.status,
             "created_at_utc": datetime.now(timezone.utc).isoformat(),
             "estimand": self.spec.serializable(),
             "estimand_sha256": self.spec.digest(),
             "nuisance_config": asdict(self.nuisance_config),
+            "feature_config": asdict(self.feature_config),
+            "feature_set_version": FEATURE_SET_VERSION,
+            "required_history_hours": (
+                self.feature_config.required_history_hours
+                if self.feature_config.require_complete_history else 0
+            ),
+            "most_required": self.feature_config.most_required,
+            "most_support_required_by_estimand": self.spec.requires_temporal_most_features,
             "theta": self.theta,
             "feature_order": _resolved_feature_order(self.spec),
             "plant_ids": list(self.plant_ids),
@@ -198,9 +256,20 @@ class DMLPLRModel:
         if spec.digest() != metadata["estimand_sha256"]:
             raise ValueError("Contrato causal diverge do hash registrado.")
         diagnostics = json.loads((artifact_dir / "causal_diagnostics.json").read_text(encoding="utf-8"))
+        feature_config = _feature_config_from_dict(metadata["feature_config"])
+        spec.validate_feature_config(feature_config)
+        if metadata.get("feature_set_version") != FEATURE_SET_VERSION:
+            raise ValueError("Versão do contrato de features do bundle DML é incompatível.")
+        expected_history = feature_config.required_history_hours if feature_config.require_complete_history else 0
+        if (metadata.get("required_history_hours") != expected_history
+                or metadata.get("most_required") != feature_config.most_required
+                or metadata.get("most_support_required_by_estimand")
+                != spec.requires_temporal_most_features):
+            raise ValueError("Metadados temporais/MOST divergem da configuração do bundle DML.")
         return cls(
             spec=spec,
             nuisance_config=NuisanceConfig(**metadata["nuisance_config"]),
+            feature_config=feature_config,
             theta=float(metadata["theta"]),
             outcome_model=lgb.Booster(model_file=str(artifact_dir / "outcome_model.txt")),
             treatment_model=lgb.Booster(model_file=str(artifact_dir / "treatment_model.txt")),
@@ -213,20 +282,31 @@ def fit_dml_plr(
     frame: pd.DataFrame,
     spec: CausalEstimandSpec = CausalEstimandSpec(),
     nuisance_config: NuisanceConfig = NuisanceConfig(),
+    *,
+    feature_config: FeatureConfig = DEFAULT_STANDALONE_FEATURE_CONFIG,
 ) -> DMLPLRModel:
     """Fit cross-fitted nuisance models, the orthogonal coefficient and final models."""
+    spec.validate_feature_config(feature_config)
     if spec.outcome not in frame:
         raise ValueError(f"Outcome causal ausente: {spec.outcome}.")
-    work = frame.reset_index(drop=True).copy()
+    enriched = _enriched_frame(frame, spec, feature_config)
+    input_rows = len(enriched)
+    work = eligible_causal_rows(enriched, feature_config).reset_index(drop=True)
+    if work.empty:
+        raise ValueError("Nenhuma linha possui o contexto temporal exigido pelo DML.")
     outcome = pd.to_numeric(work[spec.outcome], errors="coerce").to_numpy(dtype=float)
     if not np.isfinite(outcome).all():
         raise ValueError("Outcome causal deve ser finito em todas as linhas.")
     plants = _plant_ids(work)
     features, treatment = _inputs(work, spec, plants)
+    effective_gap_hours = max(
+        spec.crossfit_gap_hours,
+        feature_config.required_history_hours if feature_config.require_complete_history else 0,
+    )
     folds = expanding_time_splits(
         work["timestamp_utc"],
         n_splits=spec.n_crossfit_splits,
-        gap_hours=spec.crossfit_gap_hours,
+        gap_hours=effective_gap_hours,
     )
     outcome_oof = np.full(len(work), np.nan)
     treatment_oof = np.full(len(work), np.nan)
@@ -276,7 +356,7 @@ def fit_dml_plr(
     sign_matches = (theta > 0 if spec.expected_effect_sign == "positive"
                     else theta < 0 if spec.expected_effect_sign == "negative" else None)
     diagnostics = {
-        "artifact_schema_version": "causal-diagnostics-v1",
+        "artifact_schema_version": "causal-diagnostics-v2",
         "estimand_id": spec.estimand_id,
         "status": spec.status,
         "theta": theta,
@@ -289,6 +369,8 @@ def fit_dml_plr(
         "expected_effect_sign": spec.expected_effect_sign,
         "expected_sign_matches": sign_matches,
         "rows_total": len(work),
+        "rows_input": input_rows,
+        "rows_excluded_incomplete_history": input_rows - len(work),
         "rows_oof": int(oof_mask.sum()),
         "warmup_rows": int((~oof_mask).sum()),
         "treatment_residual_std": residual_std,
@@ -299,6 +381,10 @@ def fit_dml_plr(
         },
         "outcome_nuisance_oof": _metrics(outcome[oof_mask], outcome_oof[oof_mask]),
         "treatment_nuisance_oof": _metrics(treatment[oof_mask], treatment_oof[oof_mask]),
+        "requested_crossfit_gap_hours": spec.crossfit_gap_hours,
+        "effective_crossfit_gap_hours": effective_gap_hours,
+        "feature_set_version": FEATURE_SET_VERSION,
+        "feature_config": asdict(feature_config),
         "folds": fold_reports,
         "causal_warning": (
             "DML reduz viés de regularização sob o contrato declarado; não prova ausência de "
@@ -310,6 +396,7 @@ def fit_dml_plr(
     return DMLPLRModel(
         spec=spec,
         nuisance_config=nuisance_config,
+        feature_config=feature_config,
         theta=theta,
         outcome_model=final_outcome_model,
         treatment_model=final_treatment_model,

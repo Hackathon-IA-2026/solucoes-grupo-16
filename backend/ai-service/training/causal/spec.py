@@ -10,6 +10,9 @@ from training.protocol import canonical_bytes, sha256_json
 
 
 SCHEMA_VERSION = "causal-estimand-v1"
+TEMPORAL_MOST_SCHEMA_VERSION = "causal-estimand-v2"
+LEGACY_CONTROL_SET = "legacy-v1"
+TEMPORAL_MOST_CONTROL_SET = "temporal-most-v2"
 
 DEFAULT_CONTROLS = (
     "wind_speed_100m",
@@ -26,7 +29,35 @@ DEFAULT_CONTROLS = (
     "usina_id",
 )
 
-ALLOWED_CONTROLS = frozenset(DEFAULT_CONTROLS)
+TEMPORAL_MOST_CONTROLS = (
+    "wind_speed_hub_m",
+    "wind_dir_sin",
+    "wind_dir_cos",
+    "wind_speed_mean_3h",
+    "wind_speed_std_3h",
+    "u_mean_3h",
+    "v_mean_3h",
+    "wind_speed_mean_6h",
+    "wind_speed_std_6h",
+    "u_mean_6h",
+    "v_mean_6h",
+    "wind_speed_gradient_1h",
+    "wind_speed_gradient_3h",
+    "wind_speed_gradient_6h",
+    "hour_sin",
+    "hour_cos",
+    "doy_sin",
+    "doy_cos",
+    "capacidade_instalada_mw",
+    "era5_distance_km",
+    "era5_distance_known",
+    "usina_id",
+)
+
+CONTROL_SETS = {
+    LEGACY_CONTROL_SET: frozenset(DEFAULT_CONTROLS),
+    TEMPORAL_MOST_CONTROL_SET: frozenset((*TEMPORAL_MOST_CONTROLS, "disponibilidade")),
+}
 FORBIDDEN_CONTROLS = frozenset({
     "air_density_kg_m3",
     "temperature_2m",
@@ -42,12 +73,13 @@ FORBIDDEN_CONTROLS = frozenset({
 
 @dataclass(frozen=True)
 class CausalEstimandSpec:
-    """Declare what is estimated before any causal result is inspected."""
+    """Declare a versioned causal question before inspecting its results."""
 
     estimand_id: str = "air-density-on-physical-residual-v1"
     treatment: str = "air_density_kg_m3"
     outcome: str = "residual_cf"
     controls: tuple[str, ...] = DEFAULT_CONTROLS
+    control_set_version: str = LEGACY_CONTROL_SET
     n_crossfit_splits: int = 4
     crossfit_gap_hours: int = 0
     inference_cluster_hours: int = 168
@@ -58,8 +90,12 @@ class CausalEstimandSpec:
     schema_version: str = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
-        if self.schema_version != SCHEMA_VERSION:
-            raise ValueError("Versão do contrato causal incompatível.")
+        expected_schema = {
+            LEGACY_CONTROL_SET: SCHEMA_VERSION,
+            TEMPORAL_MOST_CONTROL_SET: TEMPORAL_MOST_SCHEMA_VERSION,
+        }.get(self.control_set_version)
+        if expected_schema is None or self.schema_version != expected_schema:
+            raise ValueError("Versão do contrato causal incompatível com o conjunto de controles.")
         if not self.estimand_id.strip():
             raise ValueError("estimand_id não pode ser vazio.")
         if self.treatment != "air_density_kg_m3" or self.outcome != "residual_cf":
@@ -69,10 +105,17 @@ class CausalEstimandSpec:
             raise ValueError("Controles causais devem ser únicos e não vazios.")
         if forbidden := sorted(set(controls) & FORBIDDEN_CONTROLS):
             raise ValueError(f"Controles determinísticos, alvo ou pós-resultado são proibidos: {forbidden}.")
-        if unsupported := sorted(set(controls) - ALLOWED_CONTROLS):
-            raise ValueError(f"Controles não suportados pelo estimando v1: {unsupported}.")
-        if "wind_speed_100m" not in controls or "usina_id" not in controls:
-            raise ValueError("O estimando v1 exige vento e identidade da usina como controles.")
+        allowed = CONTROL_SETS[self.control_set_version]
+        if unsupported := sorted(set(controls) - allowed):
+            raise ValueError(
+                f"Controles não suportados por {self.control_set_version}: {unsupported}."
+            )
+        if self.control_set_version == LEGACY_CONTROL_SET:
+            if "wind_speed_100m" not in controls or "usina_id" not in controls:
+                raise ValueError("O estimando v1 exige vento e identidade da usina como controles.")
+        elif not set(TEMPORAL_MOST_CONTROLS) <= set(controls):
+            missing = sorted(set(TEMPORAL_MOST_CONTROLS) - set(controls))
+            raise ValueError(f"O estimando temporal/MOST exige controles completos: {missing}.")
         if (type(self.n_crossfit_splits) is not int or self.n_crossfit_splits < 2
                 or type(self.crossfit_gap_hours) is not int or self.crossfit_gap_hours < 0
                 or type(self.inference_cluster_hours) is not int or self.inference_cluster_hours < 1
@@ -84,6 +127,17 @@ class CausalEstimandSpec:
         if self.status not in {"infrastructure_test", "exploratory", "frozen"}:
             raise ValueError("Estado do estimando causal inválido.")
         object.__setattr__(self, "controls", controls)
+
+    @property
+    def requires_temporal_most_features(self) -> bool:
+        return self.control_set_version == TEMPORAL_MOST_CONTROL_SET
+
+    def validate_feature_config(self, feature_config: Any) -> None:
+        if self.requires_temporal_most_features:
+            if not feature_config.most_enabled:
+                raise ValueError("O estimando temporal/MOST exige most_enabled=true.")
+            if not feature_config.require_complete_history:
+                raise ValueError("O estimando temporal/MOST exige histórico completo de 6 horas.")
 
     @classmethod
     def from_dict(cls, values: dict[str, Any]) -> "CausalEstimandSpec":

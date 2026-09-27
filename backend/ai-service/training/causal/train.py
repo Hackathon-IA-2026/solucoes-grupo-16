@@ -33,15 +33,23 @@ def main() -> None:
     if spec.status not in {"infrastructure_test", "exploratory"}:
         parser.error("Contrato causal congelado exige o futuro job de treino final controlado.")
     config = load_config(args.config)
+    if config.scientific_target_column() != protocol.target_name:
+        parser.error("Target da configuração DML diverge do protocolo.")
+    protocol.validate_feature_contract(
+        required_history_hours=(config.features.required_history_hours
+                                if config.features.require_complete_history else 0),
+        most_required=(config.features.most_required
+                       or spec.requires_temporal_most_features),
+    )
     dataset, _ = prepare_snapshot(TabularDatasetAdapter().load(args.input), config)
     assignments = (pd.read_parquet(args.assignments) if args.assignments.suffix.lower() == ".parquet"
                    else pd.read_csv(args.assignments))
     assert_job_dataset_scope(dataset, assignments, DEVELOPMENT_ROLES)
-    prepared = _prepared(dataset, config.target_column(), config)
+    prepared = _prepared(dataset, config.scientific_target_column(), config)
     model = fit_dml_plr(prepared, spec, NuisanceConfig(
         random_state=config.random_state,
         n_jobs=config.n_jobs,
-    ))
+    ), feature_config=config.features)
     metadata = model.save(args.artifacts, provenance={
         "protocol_version": protocol.protocol_version,
         "protocol_manifest_sha256": protocol.digest(),

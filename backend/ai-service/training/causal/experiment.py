@@ -9,7 +9,7 @@ from pathlib import Path
 import pandas as pd
 
 from training.build_dataset import TabularDatasetAdapter, prepare_snapshot
-from training.causal.dml_plr import NuisanceConfig, fit_dml_plr
+from training.causal.dml_plr import NuisanceConfig, eligible_causal_rows, fit_dml_plr
 from training.causal.spec import CausalEstimandSpec
 from training.config import TrainingConfig, load_config
 from training.evaluate import metrics_by_wind_and_plant
@@ -37,18 +37,32 @@ def evaluate_dml_folds(
         ProtocolState.PROTOCOL_FROZEN,
     }:
         raise ValueError("Experimento DML não é permitido após congelar o modelo.")
+    if config.scientific_target_column() != protocol.target_name:
+        raise ValueError("Target da configuração DML diverge do protocolo.")
+    protocol.validate_feature_contract(
+        required_history_hours=(config.features.required_history_hours
+                                if config.features.require_complete_history else 0),
+        most_required=(config.features.most_required
+                       or spec.requires_temporal_most_features),
+    )
     assert_job_dataset_scope(dataset, assignments, DEVELOPMENT_ROLES)
-    prepared = _prepared(dataset, config.target_column(), config)
+    prepared = _prepared(dataset, config.scientific_target_column(), config)
     fold_results = []
     for fold in protocol.folds:
         train = assigned_rows(prepared, assignments, fold_id=fold.fold_id, role="train")
         evaluation = assigned_rows(prepared, assignments, fold_id=fold.fold_id, role="evaluation")
-        model = fit_dml_plr(train, spec, nuisance_config)
+        evaluation_input_rows = len(evaluation)
+        evaluation = eligible_causal_rows(evaluation, config.features)
+        if evaluation.empty:
+            raise ValueError(f"Fold {fold.fold_id} sem avaliação causal elegível.")
+        model = fit_dml_plr(
+            train, spec, nuisance_config, feature_config=config.features,
+        )
         correction = model.predict_residual_cf(evaluation) * evaluation.capacidade_instalada_mw
         evaluation["dml_hybrid_mw"] = apply_physical_bounds(
             evaluation.baseline_mw,
             correction,
-            evaluation.wind_speed_100m,
+            evaluation.wind_speed_hub_m,
             evaluation.capacidade_instalada_mw,
             evaluation.disponibilidade,
             config.physical_curve,
@@ -58,18 +72,22 @@ def evaluate_dml_folds(
             "baseline": metrics_by_wind_and_plant(evaluation, "baseline_mw"),
             "dml_hybrid": metrics_by_wind_and_plant(evaluation, "dml_hybrid_mw"),
             "causal_diagnostics": model.diagnostics,
+            "evaluation_rows_input": evaluation_input_rows,
+            "evaluation_rows_eligible": len(evaluation),
+            "evaluation_rows_excluded_incomplete_history": evaluation_input_rows - len(evaluation),
         })
     primary = protocol.selection_rule.get("primary_metric", "mae_mw")
     baseline_score = sum(item["baseline"]["overall"][primary] for item in fold_results) / len(fold_results)
     dml_score = sum(item["dml_hybrid"]["overall"][primary] for item in fold_results) / len(fold_results)
     return {
-        "artifact_schema_version": "causal-experiment-report-v1",
+        "artifact_schema_version": "causal-experiment-report-v2",
         "status": spec.status,
         "protocol_version": protocol.protocol_version,
         "protocol_manifest_sha256": protocol.digest(),
         "assignments_sha256": assignment_hash(assignments),
         "estimand_sha256": spec.digest(),
         "nuisance_config": asdict(nuisance_config),
+        "feature_config": asdict(config.features),
         "primary_metric": primary,
         "baseline_aggregate_score": baseline_score,
         "dml_aggregate_score": dml_score,

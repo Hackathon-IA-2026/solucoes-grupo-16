@@ -30,6 +30,12 @@ O ambiente instala a distribuição oficial `xgboost-cpu`, pois o protocolo não
 usa algoritmos GPU ou aprendizado federado; o módulo Python continua sendo
 importado normalmente como `xgboost`.
 
+O challenger DML permanece exploratório e fora do `Predictor`. Seus contratos
+versionados permitem comparar os controles legados com o conjunto temporal/MOST
+de 3/6 h, incluindo uma ablação explícita da disponibilidade. A execução exige
+o mesmo target científico, manifesto temporal e hashes do protocolo. Consulte
+[`Docs/ML/MODELO_DML_CAUSAL.md`](../../Docs/ML/MODELO_DML_CAUSAL.md).
+
 ## Instalação e execução
 
 O ambiente homologado usa Python 3.13. Não reutilize um ambiente virtual criado
