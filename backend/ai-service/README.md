@@ -280,6 +280,83 @@ Duplicatas exatas da chave lógica são excluídas por inteiro. Se uma linha con
 
 ## CLI
 
+### Auditoria contra geração observada ONS
+
+`training.observed_generation` implementa o cruzamento canônico de
+`GERACAO_USINA-2_HO.val_geracao` → `geracao_verificada_mw` e a comparação das
+previsões congeladas com esse campo. A referência da base de restrição permanece
+em `geracao_referencia_mw`, com um placar próprio na **mesma coorte**. Este fluxo
+não muda o alvo do treino de potencial nem promove um modelo para o `Predictor`.
+
+Para arquivos já disponíveis, incluindo o ERA5 do mês UTC seguinte para as
+últimas três horas locais, execute:
+
+```powershell
+python -m training.observed_generation prepare `
+  --ons data/raw/ons/year=2024/month=08/GERACAO_USINA-2_2024_08.parquet `
+  --restriction data/raw/ons/year=2024/month=08/RESTRICAO_COFF_EOLICA_2024_08.parquet `
+  --weather data/processed/historical/year=2024/month=08/utc=2024-08/weather_hourly.parquet data/processed/historical/year=2024/month=08/utc=2024-09/weather_hourly.parquet `
+  --catalog data/processed/historical/year=2024/month=08/catalog.parquet `
+  --output-dir data/processed/audit/observed-2024-08-nova-execucao
+```
+
+`--ons`, `--restriction` e `--weather` aceitam vários arquivos. Use extrações
+ERA5 correspondentes ao catálogo informado. A preparação conserva todas as
+linhas de geração com capacidade válida e clima válido, inclusive geração zero,
+referência acima da capacidade e disponibilidade fora de 0–1. As últimas são
+contadas, sem clipping. A referência ausente não remove a geração do snapshot;
+ela impede somente a comparação pareada dos dois alvos nessa linha. Meias horas
+incompletas ou inválidas não são mascaradas pela média. Duplicatas conflitantes
+da geração são rejeitadas.
+
+Para coletar fontes e reconstruir o catálogo CEG de um intervalo:
+
+```powershell
+python -m training.observed_generation collect `
+  --start-month 2024-10 --end-month 2025-09 --data-root data `
+  --env-file .env --output-dir data/processed/audit/annual-observed-nova-execucao
+```
+
+O comando reutiliza ONS local, baixa partições ausentes e registra hashes;
+reconcilia com `data/raw/siga/siga.csv` e o relacionamento ONS existente. Exige
+95% de conjuntos completamente localizados antes de acessar o CDS. Abaixo
+disso, salva `collection_report.json`, catálogo e motivos de revisão. O ERA5
+é extraído em diretório próprio, incluindo o mês UTC seguinte. As partições
+geradas para o replay operacional não são substituídas.
+
+Para avaliar o candidato anual recuperado:
+
+```powershell
+python -m training.observed_generation evaluate `
+  --predictions artifacts/causal/annual-backtest-2024-10_2025-09/annual_predictions.parquet `
+  --model artifacts/causal/iterative-residual-calibrated-2026-04/base_lightgbm.txt `
+  --frozen-report ../../Docs/ML/annual_report.json `
+  --snapshot-manifests data/processed/audit/annual-observed-nova-execucao/snapshot/snapshot_manifest.json `
+  --prediction-columns NOME_EXATO_DA_COLUNA_DE_PREVISAO `
+  --output-dir artifacts/audit/annual-observed-nova-execucao
+```
+
+Informe os nomes reais das colunas previstas; não há detecção automática de
+`target_mw` como previsão. Várias colunas de modelos podem ser comparadas.
+Para outro experimento congelado, substitua `--frozen-report` por
+`--expected-predictions-sha256` e `--expected-model-sha256`, obtidos do registro
+original. O avaliador verifica os hashes das previsões, modelo, snapshots e
+fontes antes de publicar métricas. O modelo é verificado, não executado: a entrada
+é o arquivo com previsões já congeladas, incluindo qualquer calibração aplicada.
+
+Saídas: snapshot Parquet, amostra de até 30 chaves estratificada por mês/conjunto
+conferida com ONS bruto, relatório de cobertura e manifesto; na avaliação,
+`observed_generation_predictions.parquet`, `observed_generation_report.json`,
+`COMPARATIVO_MODELO_VS_GERACAO_VERIFICADA_ONS.md` e manifesto com versões/hashes.
+WAPE horário observado é primário; o JSON inclui métricas mensais, por conjunto,
+percentis, viés, energia e sensibilidade aos códigos de restrição. MAPE exclui
+apenas denominadores zero, contados explicitamente; WAPE e MAE conservam zeros.
+Todos os diretórios de saída devem ser novos; uma execução bloqueada é preservada
+e uma nova tentativa usa outro diretório, reutilizando os arquivos ONS baixados.
+
+Estado da execução real e limites estão em
+[`PLANO_AUDITORIA_MODELO_VS_GERACAO_VERIFICADA_ONS.md`](../../Docs/PLANO_AUDITORIA_MODELO_VS_GERACAO_VERIFICADA_ONS.md).
+
 ### Protocolo temporal versionado
 
 Antes de desenhar datas, inventarie e congele o snapshot com hashes reais. O

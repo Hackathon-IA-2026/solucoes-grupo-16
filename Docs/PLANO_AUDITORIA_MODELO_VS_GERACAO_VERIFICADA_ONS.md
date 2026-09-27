@@ -5,6 +5,73 @@
 **Decisão atual:** o relatório existente **não** mede o modelo contra a potência
 ativa efetivamente produzida. Ele mede contra `geracao_referencia_mw`.
 
+## Implementação e execução — 27/09/2026
+
+O fluxo executável está disponível em `backend/ai-service`:
+
+- `ingestion/ons/observed.py`: snapshot com geração canônica horária, referência
+  e disponibilidade unidas separadamente, sem filtro pela magnitude dos alvos;
+- `training/observed_generation.py`: comandos `collect`, `prepare` e `evaluate`,
+  manifests, conferência dos hashes congelados e amostra de ONS bruto;
+- `training/observed_metrics.py`: dois placares pareados, agregado horário,
+  conjunto-hora, mês, conjunto, percentis, energia e sensibilidade aos códigos
+  de restrição;
+- `tests/test_observed_generation.py`: fonte canônica, conflitos, fuso,
+  subintervalos incompletos, zeros, coorte comum, hashes e bloqueio de cobertura.
+
+Instruções e comandos completos estão no
+[`README do AI service`](../backend/ai-service/README.md#auditoria-contra-geração-observada-ons).
+O novo fluxo avalia modelos congelados; não retreina o estimador de potencial
+com geração observada e não substitui o `Predictor` servido.
+
+### Evidências reais materializadas
+
+1. `data/processed/audit/observed-2024-08-v1/observed_generation_snapshot.parquet`:
+   111.600 linhas, 744 horas e 150 conjuntos, de
+   `2024-08-01T03:00:00Z` até `2024-09-01T02:00:00Z`. A associação ao ERA5 foi
+   100% entre os 111.600 registros com capacidade válida. A fonte tinha
+   118.296 registros NE/eólicos e 6.696 ficaram fora por falta de capacidade.
+2. A referência está ausente em 2.352 linhas, que continuam no snapshot
+   observado. Há 109 referências acima da capacidade instalada, mantidas e
+   contadas. A geração verificada da base de restrição foi preservada em
+   `geracao_verificada_restricao_mw` para conciliação: 252 diferenças excedem
+   0,001 MW, com máximo de 80,1795 MW; a coluna canônica continua sendo a fonte
+   `GERACAO_USINA-2_HO`, sem substituir divergências silenciosamente.
+3. As 30 chaves da amostra `raw_ons_sample.parquet` conferiram com `val_geracao`
+   bruto. Manifestos e relatórios no mesmo diretório registram os hashes.
+4. `GET /system/capabilities` confirmou serviços disponíveis. O replay HTTP
+   de `2024-08-15T12:00:00Z` devolveu 150 conjuntos, todos pareados com o novo
+   snapshot e diferença máxima de 0 MW. Nenhum aceite no ANAREDE é inferido.
+5. A coleta anual baixou as partições ONS ausentes: os 24 arquivos de geração
+   e restrição de outubro/2024 a setembro/2025 estão presentes. Resultado em
+   `data/processed/audit/annual-observed-2024-10_2025-09/collection_report.json`.
+   O catálogo reconstruído, maior que o catálogo examinado inicialmente,
+   possui 195 conjuntos; 178 têm localização completa (91,28%). A coleta ERA5
+   parou antes do CDS, com os conjuntos pendentes e motivos registrados em
+   `catalog.parquet` e `catalog_report.json`.
+6. A suíte Python passou com **160 testes**. Foi usado `--basetemp` em um
+   diretório novo de dados processados porque o diretório temporário padrão
+   do pytest neste Windows tem acesso negado. A exportação de um novo PWF real
+   não foi repetida: não havia um arquivo PWF de referência local acessível
+   nem casos no volume local do backend; os arquivos de referência nesta cópia
+   de `Docs/Casos de Referência` são SAV. O writer PWF não foi alterado.
+
+### Pendências para concluir o placar anual
+
+- Corrigir ou aprovar formalmente a população cadastral; o gate de 95% foi
+  conservado, sem opção de rebaixamento neste novo coletor.
+- Recuperar as previsões e o modelo com os hashes originais abaixo. Eles
+  continuam ausentes nesta cópia. O avaliador aceita o `annual_report.json`
+  original como contrato desses hashes e bloqueia divergências.
+- Depois disso, executar a coleta em novo diretório e o `evaluate`. O plano
+  anterior contou 12 meses ERA5, mas a janela em horário de São Paulo precisa
+  também das primeiras três horas UTC de outubro/2025; o novo coletor inclui
+  a 13ª partição mensal, conforme o particionamento do script existente.
+
+O WAPE anual de 10,25% continua pertencendo à referência. A implementação
+está disponível, mas o resultado anual contra produção observada permanece
+pendente; os artefatos históricos existentes não foram sobrescritos.
+
 ## 1. Conclusão da auditoria inicial
 
 O documento `comparativo_modelo_vs_ons.md` descreve 100.633.084 MWh como

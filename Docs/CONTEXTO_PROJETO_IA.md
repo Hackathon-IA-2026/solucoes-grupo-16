@@ -140,6 +140,19 @@ geração observada. Os documentos `GUIA_ESTUDANTE_SINAL.md` e
 - `backend/`: NestJS; fachada, upload/parser/writer PWF e integração.
 - `backend/ai-service/`: FastAPI; ingestão, replay e experimento de geração.
 - `backend/ai-service/data/`: dados locais, ignorados pelo Git.
+- Auditoria de geração observada implementada em
+  `training.observed_generation`: coleta/preparo de `GERACAO_USINA-2_HO` + ERA5,
+  `geracao_verificada_mw` canônica, referência separada, hashes e métricas dos
+  dois alvos em uma coorte de previsões congeladas. Não muda o treino de
+  potencial nem o modelo servido. A prova local de agosto/2024 gerou 111.600
+  registros/744 horas/150 conjuntos; 30 amostras conferiram com ONS bruto e
+  150 registros da hora 15/08 12h UTC coincidiram exatamente com o replay HTTP.
+  Foram obtidas as 24 partições ONS de outubro/2024 a setembro/2025; o catálogo
+  reconstruído dessa janela tem 178/195 conjuntos completamente localizados
+  (91,28%), bloqueando o novo ERA5 anual no gate de 95%. O Parquet de previsões
+  e o modelo exato do backtest anual seguem ausentes nesta cópia, portanto
+  ainda não há WAPE anual contra geração verificada. Consulte
+  [`PLANO_AUDITORIA_MODELO_VS_GERACAO_VERIFICADA_ONS.md`](PLANO_AUDITORIA_MODELO_VS_GERACAO_VERIFICADA_ONS.md).
 - Experimentos ML: publicação opcional no Supabase Postgres/Storage privado,
   com manifesto de hashes, recuperação e limpeza local protegida. Requer aplicar
   a migração e configurar credenciais; a disponibilidade remota não é presumida.

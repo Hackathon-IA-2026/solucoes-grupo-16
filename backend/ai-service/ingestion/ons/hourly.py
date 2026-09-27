@@ -4,6 +4,7 @@ from __future__ import annotations
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+import numpy as np
 
 
 ONS_VALUE_COLUMNS = {
@@ -86,6 +87,7 @@ def prepare_ons_generation_hourly(
     *,
     subsystem: str = "NE",
     source_timezone: str = "America/Sao_Paulo",
+    reject_conflicting_duplicates: bool = False,
 ) -> tuple[pd.DataFrame, dict]:
     """Normalize the official ONS hourly generation dataset for historical replay."""
     missing = sorted(ONS_GENERATION_REQUIRED_COLUMNS - set(frame.columns))
@@ -106,14 +108,15 @@ def prepare_ons_generation_hourly(
     )
     filtered["geracao_verificada_mw"] = _numeric(filtered["val_geracao"])
     invalid_timestamp_count = int(filtered["timestamp_utc"].isna().sum())
-    invalid_generation_count = int(filtered["geracao_verificada_mw"].isna().sum())
+    finite_generation = np.isfinite(filtered["geracao_verificada_mw"])
+    invalid_generation_count = int((~finite_generation).sum())
     negative_generation_count = int(filtered["geracao_verificada_mw"].lt(0).sum())
     filtered = filtered[
         filtered["timestamp_utc"].notna()
-        & filtered["geracao_verificada_mw"].notna()
+        & finite_generation
         & filtered["geracao_verificada_mw"].ge(0)
     ].copy()
-    invalid_minute_mask = filtered["timestamp_utc"].dt.minute.ne(0)
+    invalid_minute_mask = filtered["timestamp_utc"].ne(filtered["timestamp_utc"].dt.floor("h"))
     invalid_interval_count = int(invalid_minute_mask.sum())
     filtered = filtered.loc[~invalid_minute_mask]
 
@@ -127,6 +130,8 @@ def prepare_ons_generation_hourly(
     )
     grouped_keys = ["id_ons", "timestamp_utc"]
     multi_record_keys = int(filtered.duplicated(grouped_keys, keep=False).sum())
+    if reject_conflicting_duplicates and multi_record_keys:
+        raise ValueError("Há registros ONS conflitantes para a mesma usina e hora; audite antes de somar.")
     hourly = (
         filtered.groupby(grouped_keys, as_index=False)["geracao_verificada_mw"]
         .sum(min_count=1)
@@ -139,7 +144,7 @@ def prepare_ons_generation_hourly(
     hourly["fator_capacidade"] = (
         hourly["geracao_verificada_mw"] / hourly["capacidade_instalada_mw"]
     )
-    valid = hourly["capacidade_instalada_mw"].gt(0)
+    valid = hourly["capacidade_instalada_mw"].gt(0) & np.isfinite(hourly["capacidade_instalada_mw"])
     report = {
         "rows_input": int(len(frame)),
         "rows_after_scope_filter": int(len(filtered)),
@@ -155,6 +160,7 @@ def prepare_ons_generation_hourly(
         "rows_hourly": int(len(hourly)),
         "rows_valid": int(valid.sum()),
         "missing_capacity": int(hourly["capacidade_instalada_mw"].isna().sum()),
+        "invalid_or_missing_capacity_by_plant": hourly.loc[~valid].groupby("usina_id").size().to_dict(),
         "generation_above_capacity": int(hourly["fator_capacidade"].gt(1.05).sum()),
     }
     hourly = hourly.loc[valid].copy()
