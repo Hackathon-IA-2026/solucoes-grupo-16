@@ -219,6 +219,35 @@ class ExperimentStore:
         completed = self.get_run(run_id)
         if completed["status"] != "complete":
             raise RegistryError("Conclusão da publicação não confirmada.")
+
+        if metadata.get("artifact_schema_version") == "temporal-protocol-v1" and "protocol_manifest.json" in files:
+            protocol_manifest = json.loads(files["protocol_manifest.json"])
+            proto_row = {
+                "manifest_sha256": digest(canonical(protocol_manifest)),
+                "protocol_version": protocol_manifest["protocol_version"],
+                "state": protocol_manifest["state"],
+                "manifest": protocol_manifest,
+                "assignments_sha256": protocol_manifest.get("assignments_sha256"),
+                "model_sha256": protocol_manifest.get("model_sha256"),
+                "calibration_sha256": protocol_manifest.get("calibration_sha256"),
+                "final_report_sha256": protocol_manifest.get("final_report_sha256")
+            }
+            self._request("POST", "/rest/v1/ml_temporal_protocols", params={"on_conflict": "manifest_sha256"},
+                          headers={"Prefer": "resolution=ignore-duplicates,return=minimal"}, json=proto_row)
+
+            if "reserved_access_log.json" in files:
+                access_logs = json.loads(files["reserved_access_log.json"])
+                for log_entry in access_logs:
+                    log_row = {
+                        "protocol_version": protocol_manifest["protocol_version"],
+                        "protocol_manifest_sha256": proto_row["manifest_sha256"],
+                        "block_role": log_entry["role"],
+                        "actor": log_entry["actor"],
+                        "purpose": log_entry["purpose"],
+                        "accessed_at": log_entry["accessed_at_utc"]
+                    }
+                    self._request("POST", "/rest/v1/ml_temporal_access_log",
+                                  headers={"Prefer": "return=minimal"}, json=log_row)
         receipt = {"run_id": run_id, "supabase_url": self.url, "bucket": self.bucket,
                    "manifest_sha256": fingerprint}
         write_receipt(directory, receipt)
