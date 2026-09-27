@@ -103,87 +103,135 @@ def extract_from_dataset(dataset: Any, plants: pd.DataFrame, *, source_file: str
 
     grid_latitudes = np.asarray(dataset[latitude_name].values, dtype=float)
     grid_longitudes = np.asarray(dataset[longitude_name].values, dtype=float)
-    rows: list[pd.DataFrame] = []
+    weather_frames: list[pd.DataFrame] = []
     mapping_records: list[dict] = []
 
-    for plant in selected_plants.itertuples(index=False):
-        location_id = str(getattr(plant, "location_id", plant.usina_id))
-        plant_latitude = float(plant.latitude)
-        plant_longitude = float(plant.longitude)
-        comparable_longitude = _normalize_longitude(plant_longitude, grid_longitudes)
-        lat_index = int(np.nanargmin(np.abs(grid_latitudes - plant_latitude)))
-        lon_index = int(np.nanargmin(np.abs(grid_longitudes - comparable_longitude)))
-        grid_latitude = float(grid_latitudes[lat_index])
-        grid_longitude_raw = float(grid_longitudes[lon_index])
-        grid_longitude = ((grid_longitude_raw + 180) % 360) - 180
-        distance = haversine_km(plant_latitude, plant_longitude, grid_latitude, grid_longitude)
-        timestamps = pd.to_datetime(dataset[time_name].values, utc=True)
-        plant_frame = pd.DataFrame({"timestamp_utc": timestamps})
-        expver_values: np.ndarray | None = None
-        for canonical, data_array in arrays.items():
-            point = data_array.isel({latitude_name: lat_index, longitude_name: lon_index})
-            values = np.asarray(point.values).reshape(-1)
-            if len(values) != len(timestamps):
-                raise ValueError(f"Dimensões inesperadas em {canonical}: {point.dims}")
-            plant_frame[canonical] = values
-            version_array = versions[canonical]
-            if version_array is not None and expver_values is None:
-                expver_values = np.asarray(version_array.isel({latitude_name: lat_index, longitude_name: lon_index}).values).reshape(-1)
-        plant_frame.insert(0, "usina_id", str(plant.usina_id))
-        plant_frame.insert(1, "location_id", location_id)
-        capacity = float(getattr(plant, "capacidade_instalada_mw", 1.0))
-        plant_frame["capacity_weight"] = capacity if np.isfinite(capacity) and capacity > 0 else 1.0
-        plant_frame["era5_grid_latitude"] = grid_latitude
-        plant_frame["era5_grid_longitude"] = grid_longitude
-        plant_frame["era5_distance_km"] = distance
-        plant_frame["era5_source_file"] = source_file
-        plant_frame["era5_expver"] = expver_values if expver_values is not None else pd.NA
-        relationship_start = getattr(plant, "relationship_start", pd.NaT)
-        relationship_end = getattr(plant, "relationship_end", pd.NaT)
-        if pd.notna(relationship_start):
-            start = pd.Timestamp(relationship_start, tz="UTC") if pd.Timestamp(relationship_start).tzinfo is None else pd.Timestamp(relationship_start).tz_convert("UTC")
-            plant_frame = plant_frame[plant_frame["timestamp_utc"] >= start]
-        if pd.notna(relationship_end):
-            end_value = pd.Timestamp(relationship_end)
-            end = (end_value.tz_localize("UTC") if end_value.tzinfo is None else end_value.tz_convert("UTC")) + pd.Timedelta(days=1)
-            plant_frame = plant_frame[plant_frame["timestamp_utc"] < end]
-        rows.append(plant_frame)
-        mapping_records.append({
-            "usina_id": str(plant.usina_id),
-            "location_id": location_id,
-            "latitude": plant_latitude,
-            "longitude": plant_longitude,
-            "era5_grid_latitude": grid_latitude,
-            "era5_grid_longitude": grid_longitude,
-            "era5_distance_km": distance,
-            "capacidade_instalada_mw": capacity if np.isfinite(capacity) else np.nan,
-            "relationship_start": relationship_start,
-            "relationship_end": relationship_end,
-        })
-
-    member_weather = pd.concat(rows, ignore_index=True)
-    member_weather = member_weather.drop_duplicates(["usina_id", "location_id", "timestamp_utc"], keep="last")
-    keys = ["usina_id", "timestamp_utc"]
+    timestamps = pd.to_datetime(dataset[time_name].values, utc=True)
     weighted_columns = [
         "u100", "v100", "temperature_2m", "surface_pressure",
         "era5_grid_latitude", "era5_grid_longitude", "era5_distance_km",
     ]
-    for column in weighted_columns:
-        member_weather[f"__weighted_{column}"] = member_weather[column] * member_weather["capacity_weight"]
-    member_weather["era5_expver"] = pd.to_numeric(member_weather["era5_expver"], errors="coerce")
-    grouped = member_weather.groupby(keys, as_index=False, sort=False)
-    weights = grouped["capacity_weight"].sum().rename(columns={"capacity_weight": "__weight_sum"})
-    weather = weights
-    for column in weighted_columns:
-        weighted_sum = grouped[f"__weighted_{column}"].sum().rename(columns={f"__weighted_{column}": f"__sum_{column}"})
-        weather = weather.merge(weighted_sum, on=keys, validate="one_to_one")
-        weather[column] = weather.pop(f"__sum_{column}") / weather["__weight_sum"]
-    metadata = grouped.agg(
-        era5_source_file=("era5_source_file", "first"),
-        era5_expver=("era5_expver", "max"),
-        era5_member_count=("location_id", "nunique"),
-    )
-    weather = weather.merge(metadata, on=keys, validate="one_to_one").drop(columns="__weight_sum")
+
+    # A full month can contain hundreds of catalog members. Expanding all of
+    # them at once and repeatedly merging the weighted columns exceeded the
+    # memory available to the Render Free service. Aggregate one ONS group at
+    # a time so the largest intermediate frame is only members-in-group x
+    # hours, while preserving the same capacity-weighted result.
+    for _, plant_group in selected_plants.groupby("usina_id", sort=False):
+        member_frames: list[pd.DataFrame] = []
+        for plant in plant_group.itertuples(index=False):
+            location_id = str(getattr(plant, "location_id", plant.usina_id))
+            plant_latitude = float(plant.latitude)
+            plant_longitude = float(plant.longitude)
+            comparable_longitude = _normalize_longitude(plant_longitude, grid_longitudes)
+            lat_index = int(np.nanargmin(np.abs(grid_latitudes - plant_latitude)))
+            lon_index = int(np.nanargmin(np.abs(grid_longitudes - comparable_longitude)))
+            grid_latitude = float(grid_latitudes[lat_index])
+            grid_longitude_raw = float(grid_longitudes[lon_index])
+            grid_longitude = ((grid_longitude_raw + 180) % 360) - 180
+            distance = haversine_km(
+                plant_latitude, plant_longitude, grid_latitude, grid_longitude
+            )
+            plant_frame = pd.DataFrame({"timestamp_utc": timestamps})
+            expver_values: np.ndarray | None = None
+            for canonical, data_array in arrays.items():
+                point = data_array.isel(
+                    {latitude_name: lat_index, longitude_name: lon_index}
+                )
+                values = np.asarray(point.values).reshape(-1)
+                if len(values) != len(timestamps):
+                    raise ValueError(
+                        f"Dimensões inesperadas em {canonical}: {point.dims}"
+                    )
+                plant_frame[canonical] = values
+                version_array = versions[canonical]
+                if version_array is not None and expver_values is None:
+                    expver_values = np.asarray(
+                        version_array.isel(
+                            {latitude_name: lat_index, longitude_name: lon_index}
+                        ).values
+                    ).reshape(-1)
+            plant_frame.insert(0, "usina_id", str(plant.usina_id))
+            plant_frame.insert(1, "location_id", location_id)
+            capacity = float(getattr(plant, "capacidade_instalada_mw", 1.0))
+            plant_frame["capacity_weight"] = (
+                capacity if np.isfinite(capacity) and capacity > 0 else 1.0
+            )
+            plant_frame["era5_grid_latitude"] = grid_latitude
+            plant_frame["era5_grid_longitude"] = grid_longitude
+            plant_frame["era5_distance_km"] = distance
+            plant_frame["era5_source_file"] = source_file
+            plant_frame["era5_expver"] = (
+                expver_values if expver_values is not None else pd.NA
+            )
+            relationship_start = getattr(plant, "relationship_start", pd.NaT)
+            relationship_end = getattr(plant, "relationship_end", pd.NaT)
+            if pd.notna(relationship_start):
+                start_value = pd.Timestamp(relationship_start)
+                start = (
+                    start_value.tz_localize("UTC")
+                    if start_value.tzinfo is None
+                    else start_value.tz_convert("UTC")
+                )
+                plant_frame = plant_frame[plant_frame["timestamp_utc"] >= start]
+            if pd.notna(relationship_end):
+                end_value = pd.Timestamp(relationship_end)
+                end = (
+                    end_value.tz_localize("UTC")
+                    if end_value.tzinfo is None
+                    else end_value.tz_convert("UTC")
+                ) + pd.Timedelta(days=1)
+                plant_frame = plant_frame[plant_frame["timestamp_utc"] < end]
+            member_frames.append(plant_frame)
+            mapping_records.append({
+                "usina_id": str(plant.usina_id),
+                "location_id": location_id,
+                "latitude": plant_latitude,
+                "longitude": plant_longitude,
+                "era5_grid_latitude": grid_latitude,
+                "era5_grid_longitude": grid_longitude,
+                "era5_distance_km": distance,
+                "capacidade_instalada_mw": (
+                    capacity if np.isfinite(capacity) else np.nan
+                ),
+                "relationship_start": relationship_start,
+                "relationship_end": relationship_end,
+            })
+
+        member_weather = pd.concat(member_frames, ignore_index=True)
+        member_weather = member_weather.drop_duplicates(
+            ["usina_id", "location_id", "timestamp_utc"], keep="last"
+        )
+        for column in weighted_columns:
+            member_weather[f"__weighted_{column}"] = (
+                member_weather[column] * member_weather["capacity_weight"]
+            )
+        member_weather["era5_expver"] = pd.to_numeric(
+            member_weather["era5_expver"], errors="coerce"
+        )
+        aggregated = member_weather.groupby(
+            ["usina_id", "timestamp_utc"], as_index=False, sort=False
+        ).agg(
+            __weight_sum=("capacity_weight", "sum"),
+            **{
+                f"__sum_{column}": (f"__weighted_{column}", "sum")
+                for column in weighted_columns
+            },
+            era5_source_file=("era5_source_file", "first"),
+            era5_expver=("era5_expver", "max"),
+            era5_member_count=("location_id", "nunique"),
+        )
+        for column in weighted_columns:
+            aggregated[column] = (
+                aggregated.pop(f"__sum_{column}") / aggregated["__weight_sum"]
+            )
+        weather_frames.append(aggregated.drop(columns="__weight_sum"))
+
+    weather = pd.concat(weather_frames, ignore_index=True)
+    weather = weather[[
+        "usina_id", "timestamp_utc", *weighted_columns,
+        "era5_source_file", "era5_expver", "era5_member_count",
+    ]]
     weather = weather.sort_values(["timestamp_utc", "usina_id"]).reset_index(drop=True)
     mapping = pd.DataFrame.from_records(mapping_records).drop_duplicates(
         ["usina_id", "location_id", "era5_grid_latitude", "era5_grid_longitude"]

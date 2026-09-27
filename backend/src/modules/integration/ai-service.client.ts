@@ -173,9 +173,20 @@ export interface AiClimateFileEstimate {
 
 @Injectable()
 export class AiServiceClient {
-  private readonly baseUrl = (
-    process.env.AI_SERVICE_URL ?? 'http://127.0.0.1:8000'
-  ).replace(/\/$/, '');
+  private get baseUrl(): string {
+    const configured = process.env.AI_SERVICE_URL?.trim();
+    if (configured) {
+      return configured.replace(/\/$/, '');
+    }
+
+    if (process.env.NODE_ENV === 'production' || process.env.RENDER === 'true') {
+      throw new ServiceUnavailableException(
+        'AI_SERVICE_URL não configurado. No Render, defina a URL pública do AI Service, por exemplo https://climagrid-ai-service.onrender.com',
+      );
+    }
+
+    return 'http://127.0.0.1:8000';
+  }
 
   async capabilities(): Promise<AiCapabilities> {
     // Web Services Free podem precisar acordar antes de responder.
@@ -235,16 +246,17 @@ export class AiServiceClient {
     init?: RequestInit,
     timeoutMs = 15_000,
   ): Promise<T> {
+    const baseUrl = this.baseUrl;
     let response: Response;
     try {
-      response = await fetch(`${this.baseUrl}${path}`, {
+      response = await fetch(`${baseUrl}${path}`, {
         ...init,
         headers: { 'Content-Type': 'application/json', ...init?.headers },
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
       throw new ServiceUnavailableException(
-        `O serviço de IA não respondeu em ${this.baseUrl}.`,
+        `O serviço de IA não respondeu em ${baseUrl}.`,
         { cause: error },
       );
     }
@@ -256,7 +268,14 @@ export class AiServiceClient {
         const parsed = JSON.parse(text) as { detail?: string; message?: string };
         message = parsed.detail ?? parsed.message ?? text;
       } catch {
-        // Mantém a resposta textual do serviço de IA.
+        // Mantém a resposta textual do serviço de IA, mas filtra páginas HTML
+        const normalized = text.trim().toLowerCase();
+        if (
+          normalized.startsWith('<!doctype html>') ||
+          normalized.startsWith('<html')
+        ) {
+          message = `O serviço de IA falhou com status HTTP ${response.status} (o serviço pode estar indisponível ou demorou muito para responder).`;
+        }
       }
       throw new HttpException(
         message || 'Falha ao consultar o serviço de IA.',

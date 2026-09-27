@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import argparse
+import gc
 import json
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -14,7 +15,11 @@ from ingestion.era5.cds_client import download_month
 from ingestion.era5.config import ERA5Paths
 from ingestion.era5.extract_points import extract_file
 from ingestion.era5.request_planner import build_monthly_request
-from ingestion.ons.hourly import join_ons_era5, prepare_ons_generation_hourly
+from ingestion.ons.hourly import (
+    ONS_GENERATION_REQUIRED_COLUMNS,
+    join_ons_era5,
+    prepare_ons_generation_hourly,
+)
 from ingestion.ons.source_client import download_ons_generation, download_ons_membership
 from ingestion.plants.catalog import (
     calculate_bounds, expand_ons_groups, load_ons_catalog,
@@ -25,6 +30,14 @@ from ingestion.plants.siga_client import download_siga
 
 ONS_TIMEZONE = ZoneInfo("America/Sao_Paulo")
 EARLIEST_ONS_MONTH = (2022, 1)
+ONS_CATALOG_COLUMNS = (
+    "ceg",
+    "id_estado",
+    "id_ons",
+    "id_subsistema",
+    "nom_tipousina",
+    "nom_usina",
+)
 
 
 def replay_partition(data_root: Path, timestamp: pd.Timestamp) -> Path:
@@ -108,7 +121,6 @@ def prepare_replay_partition(data_root: Path, timestamp: pd.Timestamp) -> Path:
                     / f"month={local.month:02d}" / "download.json")
     if not ons_path.is_file():
         atomic_write_json(ons_manifest, download_ons_generation(ons_path, local.year, local.month))
-    ons = read_tabular(ons_path)
 
     siga_path = data_root / "raw" / "siga" / "siga.csv"
     membership_path = data_root / "raw" / "ons" / "relacionamento_usina_conjunto.parquet"
@@ -124,7 +136,15 @@ def prepare_replay_partition(data_root: Path, timestamp: pd.Timestamp) -> Path:
         catalog = read_tabular(catalog_path)
         catalog_report = json.loads(catalog_report_path.read_text(encoding="utf-8"))
     else:
-        ons_catalog = load_ons_catalog([ons_path], subsystem="NE", plant_type="EOL")
+        ons_catalog_source = read_tabular(
+            ons_path,
+            columns=list(ONS_CATALOG_COLUMNS),
+        )
+        ons_catalog = load_ons_catalog(
+            [ons_catalog_source], subsystem="NE", plant_type="EOL"
+        )
+        del ons_catalog_source
+        gc.collect()
         membership = load_ons_membership(membership_path, subsystem="NE")
         expanded = expand_ons_groups(ons_catalog, membership)
         catalog, catalog_report = reconcile_catalog(expanded, load_siga_catalog(siga_path),
@@ -133,6 +153,21 @@ def prepare_replay_partition(data_root: Path, timestamp: pd.Timestamp) -> Path:
             raise ValueError("Nenhum conjunto ONS pôde ser localizado no catálogo SIGA.")
         atomic_write_parquet(catalog, catalog_path)
         atomic_write_json(catalog_report_path, catalog_report)
+
+    # Normalize the ONS source before opening the monthly NetCDF, then release
+    # the much wider raw frame. Keeping both inputs expanded at the same time
+    # can exceed the memory limit of the Render Free service.
+    ons = read_tabular(
+        ons_path,
+        columns=sorted(ONS_GENERATION_REQUIRED_COLUMNS),
+    )
+    ons_hourly, ons_report = prepare_ons_generation_hourly(ons, catalog)
+    ons_hourly = ons_hourly.loc[
+        ons_hourly["timestamp_utc"].dt.year.eq(timestamp.year)
+        & ons_hourly["timestamp_utc"].dt.month.eq(timestamp.month)
+    ].copy()
+    del ons
+    gc.collect()
 
     bounds = calculate_bounds(catalog)
     request = build_monthly_request(timestamp.year, timestamp.month, bounds)
@@ -149,11 +184,6 @@ def prepare_replay_partition(data_root: Path, timestamp: pd.Timestamp) -> Path:
         extract_file(raw, catalog, weather, weather_manifest, request_hash=request.request_hash,
                      catalog_hash=catalog_hash)
 
-    ons_hourly, ons_report = prepare_ons_generation_hourly(ons, catalog)
-    ons_hourly = ons_hourly.loc[
-        ons_hourly["timestamp_utc"].dt.year.eq(timestamp.year)
-        & ons_hourly["timestamp_utc"].dt.month.eq(timestamp.month)
-    ].copy()
     joined, join_report = join_ons_era5(ons_hourly, read_tabular(weather))
     selected_ons = ons_hourly.loc[ons_hourly["timestamp_utc"].eq(timestamp)]
     selected_joined = joined.loc[joined["timestamp_utc"].eq(timestamp)]

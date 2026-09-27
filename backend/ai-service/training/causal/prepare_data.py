@@ -63,15 +63,27 @@ def _ensure_sources(
             data_root / "processed" / "training" / "era5-spillover"
             / f"year={request.year}" / f"month={request.month:02d}"
         )
+        training_output = training_root / "weather_hourly.parquet"
+        spillover_output = spillover_root / "weather_hourly.parquet"
         if operational_output.exists():
             output = operational_output
+        elif training_output.exists():
+            # A month already extracted as a scientific primary partition is
+            # identical climate input when requested as the following-month
+            # UTC spillover. Reuse it instead of duplicating extraction.
+            output = training_output
+        elif spillover_output.exists():
+            # Conversely, a spillover produced by the previous local month can
+            # become the next scientific primary month. Both use the same raw
+            # ERA5 request, catalog and no operational full-vigency gate.
+            output = spillover_output
         elif is_primary_month:
             # Scientific snapshots may cross relationship changes inside the
             # primary month. Keep their extraction outside the operational
             # partition, whose 99% per-plant gate assumes full-month vigency.
-            output = training_root / "weather_hourly.parquet"
+            output = training_output
         else:
-            output = spillover_root / "weather_hourly.parquet"
+            output = spillover_output
         weather_paths.append(output)
         if output.exists():
             continue

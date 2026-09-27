@@ -195,6 +195,15 @@ geração observada. Os documentos `GUIA_ESTUDANTE_SINAL.md` e
   aprendida em janeiro piorou abril para 12,06% e foi rejeitada. O candidato
   congelado para o próximo backtest anual é, portanto, LightGBM de agosto com
   calibração `1,03` de setembro; abril agora é período exposto de validação.
+  O backtest anual congelado foi executado sobre outubro de 2024 a setembro de
+  2025: 1.149.341 pares usina-hora, 8.760 horas, 142 conjuntos e associação
+  ONS--ERA5 de 100% em todos os meses. No total horário da rede, o candidato
+  calibrado obteve WAPE de 10,25%, MAE de 1.178 MW, RMSE de 1.475 MW, correlação
+  0,936, R² 0,866 e erro total anual de -2,91%. A calibração reduziu o WAPE em
+  0,81 p.p. contra o LightGBM original (IC95% 0,64 a 0,98) e venceu em 8 de 12
+  meses. A evidência espacial é mais fraca: WAPE usina-hora de 34,60% e MAE de
+  30,29 MW. Consulte
+  [`ML/BACKTEST_ANUAL_2024_10_A_2025_09.md`](ML/BACKTEST_ANUAL_2024_10_A_2025_09.md).
   A execução local de agosto de 2024 materializou 90.185 linhas elegíveis e
   comparou 67.883 linhas futuras pareadas: MAE de 49,29 MW na curva física,
   22,55 MW no LightGBM fixo e 21,68 MW no DML, com 99,89% de cobertura do

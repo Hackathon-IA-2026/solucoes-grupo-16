@@ -221,6 +221,10 @@ async function responseErrorMessage(response: Response): Promise<string> {
     if (parsed.message) return parsed.message;
   } catch {
     // A API pode responder texto simples em falhas de infraestrutura.
+    const normalized = body.trim().toLowerCase();
+    if (normalized.startsWith("<!doctype html>") || normalized.startsWith("<html")) {
+      return `O servidor retornou um erro inesperado (HTTP ${response.status}). O serviço pode estar indisponível ou ter excedido o tempo limite.`;
+    }
   }
   return body || `A API respondeu com status ${response.status}.`;
 }
