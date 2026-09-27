@@ -153,6 +153,14 @@ geração observada. Os documentos `GUIA_ESTUDANTE_SINAL.md` e
   e o modelo exato do backtest anual seguem ausentes nesta cópia, portanto
   ainda não há WAPE anual contra geração verificada. Consulte
   [`PLANO_AUDITORIA_MODELO_VS_GERACAO_VERIFICADA_ONS.md`](PLANO_AUDITORIA_MODELO_VS_GERACAO_VERIFICADA_ONS.md).
+- Um ensaio **separado, exploratório e não servido** em
+  `training.observed_monthly_experiment` treinou um novo híbrido residual com
+  geração verificada de agosto/2024 e avaliou outubro/2025 fora do treino.
+  Outubro cobre 744 horas e 137 conjuntos completamente localizados de 149
+  (91,9%; coorte parcial explicitamente autorizada). WAPE do total horário:
+  18,84% contra geração verificada, com viés positivo de 1.948 MW; não é
+  homologação nem substitui o modelo de potencial/referência do MVP. Consulte
+  [`ML/EXPERIMENTO_GERACAO_VERIFICADA_2025_10.md`](ML/EXPERIMENTO_GERACAO_VERIFICADA_2025_10.md).
 - Experimentos ML: publicação opcional no Supabase Postgres/Storage privado,
   com manifesto de hashes, recuperação e limpeza local protegida. Requer aplicar
   a migração e configurar credenciais; a disponibilidade remota não é presumida.

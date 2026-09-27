@@ -282,6 +282,34 @@ Duplicatas exatas da chave lógica são excluídas por inteiro. Se uma linha con
 
 ### Auditoria contra geração observada ONS
 
+Para um **novo experimento exploratório de produção observada**, separado do
+estimador de potencial servido, `training.observed_monthly_experiment` treina
+um LightGBM residual com `geracao_verificada_mw` de um mês anterior e avalia
+um mês posterior integralmente fora do treino. A curva física usa disponibilidade
+igual a 1; a disponibilidade, a referência e a geração ONS contemporâneas não
+entram nas features. O catálogo de teste define a coorte: somente conjuntos
+com todas as localizações CEG válidas participam. O relatório preserva as
+exclusões, hashes, hiperparâmetros, split e métricas por hora e conjunto-hora.
+Este ensaio **não** altera `training.train` nem o `Predictor` da aplicação.
+
+Exemplo reproduzido para outubro/2025, após `prepare` dos snapshots de
+agosto/2024 e outubro/2025:
+
+```powershell
+python -m training.observed_monthly_experiment `
+  --train-snapshot data/processed/audit/observed-2024-08-v1/observed_generation_snapshot.parquet `
+  --test-snapshot data/processed/audit/monthly-observed-2025-10/snapshot/observed_generation_snapshot.parquet `
+  --catalog data/processed/audit/monthly-observed-2025-10/catalog.parquet `
+  --test-month 2025-10 `
+  --output-dir artifacts/experiments/observed-hybrid-2025-10-v2
+```
+
+As saídas imutáveis incluem `model.txt`, `previsoes_vs_ons.parquet` (conjunto-hora),
+`comparacao_horaria.parquet`, `comparacao_diaria.csv` e
+`relatorio_experimento.json`. `comparacao_diaria.csv` apresenta geração somada
+em MWh; capacidade instalada permanece em MW. O ERA5 do mês UTC seguinte é
+necessário para as últimas três horas locais de outubro.
+
 `training.observed_generation` implementa o cruzamento canônico de
 `GERACAO_USINA-2_HO.val_geracao` → `geracao_verificada_mw` e a comparação das
 previsões congeladas com esse campo. A referência da base de restrição permanece
