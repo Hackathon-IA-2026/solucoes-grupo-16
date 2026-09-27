@@ -96,10 +96,14 @@ Para um modelo robusto, não treine apenas com ocorrências de restrição. Essa
 
 ### 4.2 Escolher o target
 
-- `geracao_referencia_mw`: potencial ou referência de geração;
-- `geracao_verificada_mw`: geração efetivamente entregue.
+Novos treinos aceitam exclusivamente `geracao_referencia_mw`. Ela é a proxy
+escolhida para geração sem limitação, mas sua semântica e política de
+elegibilidade ainda precisam de aprovação ONS. Não faça clipping silencioso de
+valores acima dos limites cadastrados.
 
-Para estimar potencial eólico sem o efeito direto do corte, a geração de referência tende a ser mais adequada. Para reproduzir energia entregue, use a geração verificada, sabendo que ela inclui efeitos operacionais, indisponibilidade e curtailment.
+`geracao_verificada_mw` representa geração efetivamente entregue e permanece
+no replay e em auditorias. Ela não é aceita como target do estimador nem como
+feature. Artefatos antigos que a utilizaram são apenas evidência histórica.
 
 ## 5. Criar o catálogo das usinas eólicas
 
@@ -180,7 +184,7 @@ v100
 temperature_2m
 surface_pressure
 era5_distance_km
-geracao_referencia_mw ou geracao_verificada_mw
+geracao_referencia_mw
 ```
 
 O pipeline agrega por média os dois registros de 30 minutos do ONS. A disponibilidade em MW é dividida pela capacidade e convertida para uma fração entre `0` e `1`.

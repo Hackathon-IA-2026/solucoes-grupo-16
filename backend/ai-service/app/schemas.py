@@ -17,6 +17,9 @@ class ClimateRecord(BaseModel):
     temperature_2m: float = Field(ge=150, le=350, description="Kelvin")
     surface_pressure: float = Field(ge=50_000, le=120_000, description="Pascal")
     disponibilidade: float | None = Field(default=None, ge=0, le=1)
+    hub_height_m: float | None = Field(default=None, ge=10, le=300)
+    surface_roughness_m: float | None = Field(default=None, gt=0, lt=10)
+    monin_obukhov_length_m: float | None = None
 
     @field_validator("timestamp_utc")
     @classmethod
@@ -30,6 +33,11 @@ class ClimateRecord(BaseModel):
         speed = math.hypot(self.u100, self.v100)
         if not 0 <= speed <= 50:
             raise ValueError("A velocidade derivada de u100/v100 deve estar entre 0 e 50 m/s")
+        most = (self.hub_height_m, self.surface_roughness_m, self.monin_obukhov_length_m)
+        if any(value is not None for value in most) and not all(value is not None for value in most):
+            raise ValueError("MOST exige altura de cubo, rugosidade e comprimento de Monin-Obukhov juntos")
+        if self.monin_obukhov_length_m == 0:
+            raise ValueError("monin_obukhov_length_m não pode ser zero")
         return self
 
 

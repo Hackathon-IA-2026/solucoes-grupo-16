@@ -14,6 +14,8 @@ from training.config import ALLOWED_TARGETS, ColumnConfig, TrainingConfig, load_
 
 KEY = ["usina_id", "timestamp_utc"]
 NUMERIC = ["capacidade_instalada_mw", "disponibilidade", "u100", "v100", "temperature_2m", "surface_pressure"]
+OPTIONAL_NUMERIC = ["era5_distance_km", "hub_height_m", "surface_roughness_m",
+                    "monin_obukhov_length_m"]
 
 
 class DatasetAdapter(Protocol):
@@ -76,7 +78,9 @@ def _inspect(frame: pd.DataFrame, config: TrainingConfig) -> tuple[pd.DataFrame,
         "rows_input": len(df), "columns_found": list(frame.columns),
         "canonical_columns": list(df.columns), "column_mapping": asdict(config.columns),
         "expected_columns": required, "missing_required_columns": missing,
-        "target": config.target, "target_semantics_validated": False,
+        "target": config.target,
+        "target_contract": "ONS geracao_referencia_mw; proxy escolhida para geração sem limitação",
+        "target_semantics_validated": False,
         "source_timezone": config.source_timezone, "logical_key": KEY,
         "null_rate": {c: float(df[c].isna().mean()) if len(df) else 0.0 for c in df},
         "exclusions": {}, "warnings": [],
@@ -86,14 +90,14 @@ def _inspect(frame: pd.DataFrame, config: TrainingConfig) -> tuple[pd.DataFrame,
         return df, report, {}
     df["timestamp_utc"] = utc_timestamps(df.timestamp_utc, config.source_timezone)
     df["usina_id"] = df.usina_id.astype("string").str.strip().replace("", pd.NA)
-    if "era5_distance_km" in df:
-        numeric = numeric + ["era5_distance_km"]
+    present_optional = [column for column in OPTIONAL_NUMERIC if column in df]
+    numeric = numeric + present_optional
     for column in numeric:
         df[column] = pd.to_numeric(df[column], errors="coerce")
     reasons = {"missing_usina_id": df.usina_id.isna(), "invalid_or_naive_timestamp": df.timestamp_utc.isna()}
     for column in numeric:
         report["null_rate"][column] = float(df[column].isna().mean()) if len(df) else 0.0
-        if column != "era5_distance_km":
+        if column not in OPTIONAL_NUMERIC:
             reasons[f"missing_or_nonfinite_{column}"] = ~np.isfinite(df[column])
     reasons.update({
         "capacity_not_positive": df.capacidade_instalada_mw <= 0,
@@ -104,10 +108,26 @@ def _inspect(frame: pd.DataFrame, config: TrainingConfig) -> tuple[pd.DataFrame,
     })
     if config.target:
         reasons["target_outside_installed_capacity"] = ~df[config.target].between(0, df.capacidade_instalada_mw)
+        report["target_above_installed_capacity"] = int((df[config.target] > df.capacidade_instalada_mw).sum())
         report["target_above_available_capacity"] = int((df[config.target] > df.capacidade_instalada_mw * df.disponibilidade).sum())
-        report["warnings"].append("Semântica do target e filtros ONS devem ser validados pelo especialista.")
+        report["target_clipped"] = False
+        report["warnings"].append(
+            "geracao_referencia_mw é proxy de geração sem limitação; semântica e filtros exigem aprovação ONS."
+        )
     if "era5_distance_km" in df:
         reasons["invalid_era5_distance"] = df.era5_distance_km.notna() & (~np.isfinite(df.era5_distance_km) | (df.era5_distance_km < 0))
+    most_fields = ["hub_height_m", "surface_roughness_m", "monin_obukhov_length_m"]
+    if config.features.most_required:
+        missing_most = [column for column in most_fields if column not in df]
+        if missing_most:
+            report["missing_required_columns"].extend(missing_most)
+            report["status"] = "invalid"
+            return df, report, reasons
+        reasons.update({
+            "invalid_hub_height_m": ~df.hub_height_m.between(10, 300),
+            "invalid_surface_roughness_m": ~df.surface_roughness_m.gt(0) | ~df.surface_roughness_m.lt(10),
+            "invalid_monin_obukhov_length_m": ~np.isfinite(df.monin_obukhov_length_m) | df.monin_obukhov_length_m.eq(0),
+        })
     duplicates = df.duplicated(KEY, keep=False) & df[KEY].notna().all(axis=1)
     reasons["duplicate_logical_key_rows"] = duplicates
     report["duplicate_logical_keys"] = int(df.loc[duplicates].duplicated(KEY).sum())
@@ -155,8 +175,7 @@ def prepare_hourly_dataset(frame: pd.DataFrame, config: TrainingConfig) -> tuple
     report["exclusions"]["additional_rows_in_invalid_hour"] = int((selected & ~bad & bad_hour).sum())
     clean = df.loc[selected & ~bad & ~bad_hour].copy()
     numeric = NUMERIC + ([config.target] if config.target else [])
-    if "era5_distance_km" in clean:
-        numeric += ["era5_distance_km"]
+    numeric += [column for column in OPTIONAL_NUMERIC if column in clean]
     hourly = clean.groupby(KEY, as_index=False)[numeric].mean().sort_values(KEY[::-1]).reset_index(drop=True)
     expected_hours = config.experiment_days * 24
     expected_plant_hours = expected_hours * max(1, len(plants))
@@ -202,8 +221,7 @@ def prepare_snapshot(frame: pd.DataFrame, config: TrainingConfig) -> tuple[pd.Da
     bad_hour = pd.Series(pd.MultiIndex.from_frame(df[KEY]).isin(bad_keys), index=df.index)
     clean = df.loc[~bad & ~bad_hour].copy()
     numeric = NUMERIC + ([config.target] if config.target else [])
-    if "era5_distance_km" in clean:
-        numeric.append("era5_distance_km")
+    numeric += [column for column in OPTIONAL_NUMERIC if column in clean]
     hourly = clean.groupby(KEY, as_index=False)[numeric].mean().sort_values(KEY[::-1]).reset_index(drop=True)
     report.update({
         "status": "valid" if len(hourly) else "invalid",

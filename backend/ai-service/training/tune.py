@@ -23,10 +23,17 @@ def tune(dataset: pd.DataFrame, assignments: pd.DataFrame, protocol: ProtocolMan
     if protocol.state not in {ProtocolState.INFRASTRUCTURE_TEST, ProtocolState.EXPLORATORY,
                               ProtocolState.PROTOCOL_FROZEN}:
         raise ValueError("Tuning não é permitido após congelar o modelo.")
+    if config.scientific_target_column() != protocol.target_name:
+        raise ValueError("Target da configuração diverge do protocolo.")
     if not set(assignments.role) & {"train", "early_stopping", "evaluation"}:
         raise ValueError("Atribuições não contêm desenvolvimento.")
+    protocol.validate_feature_contract(
+        required_history_hours=(config.features.required_history_hours
+                                if config.features.require_complete_history else 0),
+        most_required=config.features.most_required,
+    )
     assert_job_dataset_scope(dataset, assignments, {"train", "early_stopping", "evaluation"})
-    prepared = _prepared(dataset, config.target_column(), config)
+    prepared = _prepared(dataset, config.scientific_target_column(), config)
     results = []
     for candidate in protocol.candidates:
         fold_results = []
@@ -35,11 +42,11 @@ def tune(dataset: pd.DataFrame, assignments: pd.DataFrame, protocol: ProtocolMan
             stopping = assigned_rows(prepared, assignments, fold_id=fold.fold_id, role="early_stopping")
             evaluation = assigned_rows(prepared, assignments, fold_id=fold.fold_id, role="evaluation")
             estimator = create_estimator(candidate, random_state=config.random_state, n_jobs=config.n_jobs)
-            estimator.fit(feature_matrix(train), train.residual_cf,
-                          feature_matrix(stopping), stopping.residual_cf)
-            correction = estimator.predict(feature_matrix(evaluation)) * evaluation.capacidade_instalada_mw
+            estimator.fit(feature_matrix(train, config.features), train.residual_cf,
+                          feature_matrix(stopping, config.features), stopping.residual_cf)
+            correction = estimator.predict(feature_matrix(evaluation, config.features)) * evaluation.capacidade_instalada_mw
             evaluation["hybrid_mw"] = apply_physical_bounds(
-                evaluation.baseline_mw, correction, evaluation.wind_speed_100m,
+                evaluation.baseline_mw, correction, evaluation.wind_speed_hub_m,
                 evaluation.capacidade_instalada_mw, evaluation.disponibilidade, config.physical_curve)
             fold_results.append({"fold_id": fold.fold_id, "best_iteration": estimator.best_iteration,
                                  "metrics": metrics_by_wind_and_plant(evaluation, "hybrid_mw")})

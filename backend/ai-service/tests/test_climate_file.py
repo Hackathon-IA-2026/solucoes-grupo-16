@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pandas as pd
+import pytest
 from fastapi.testclient import TestClient
 
 from app.climate_file import ClimateFileError, ClimateFileService, parse_climate_csv
@@ -55,7 +56,9 @@ def test_climate_file_estimates_only_selected_hour_and_tracks_provenance(tmp_pat
         assert observation["observed_generation_mw"] is None
         assert 0 < observation["estimated_generation_mw"] <= 50
         assert observation["availability"] == 0.5
-        assert observation["warnings"] == ["mapeamento_pwf_ausente"]
+        assert observation["warnings"] == [
+            "most_nao_aplicado: usando_vento_era5_a_100m", "mapeamento_pwf_ausente"
+        ]
 
 
 def test_climate_file_rejects_duplicate_and_invalid_availability():
@@ -72,6 +75,29 @@ def test_climate_file_rejects_duplicate_and_invalid_availability():
         assert "disponibilidade" in str(error)
     else:
         raise AssertionError("Disponibilidade acima de 1 deveria ser rejeitada")
+
+
+def test_climate_file_applies_most_only_with_complete_inputs(tmp_path, monkeypatch):
+    csv_text = (
+        "timestamp_utc,usina_id,u100,v100,disponibilidade,hub_height_m,"
+        "surface_roughness_m,monin_obukhov_length_m\n"
+        "2024-01-01T03:00:00Z,ONS_1,8,0,1,150,0.1,-200\n"
+    )
+    parsed = parse_climate_csv(csv_text)
+    assert parsed.loc[0, "hub_height_m"] == 150
+    monkeypatch.setenv("CLIMAGRID_PLANT_CATALOG", str(_catalog(tmp_path)))
+    monkeypatch.setenv("CLIMAGRID_PWF_MAPPING", str(tmp_path / "missing.parquet"))
+    with TestClient(create_app(tmp_path)) as client:
+        body = client.post("/cenario-climatico/estimar", json={
+            "csv_text": csv_text, "timestamp_utc": "2024-01-01T03:00:00Z",
+        }).json()
+    observation = body["observations"][0]
+    assert observation["wind_speed_mps"] > 8
+    assert not any("most_nao_aplicado" in item for item in observation["warnings"])
+
+    incomplete = csv_text.replace(",150,0.1,-200", ",150,,")
+    with pytest.raises(ClimateFileError, match="MOST exige"):
+        parse_climate_csv(incomplete)
 
 
 def test_climate_file_rejects_unmatched_catalog(tmp_path, monkeypatch):

@@ -41,10 +41,10 @@ def temporal_split(frame: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.
 
 
 def _prepared(frame: pd.DataFrame, target_column: str, config: TrainingConfig) -> pd.DataFrame:
-    prepared = add_features(frame)
+    prepared = add_features(frame, config.features)
     prepared["target_mw"] = pd.to_numeric(prepared[target_column], errors="coerce")
     prepared["baseline_mw"] = physical_power_mw(
-        prepared.wind_speed_100m, prepared.capacidade_instalada_mw, prepared.disponibilidade, config.physical_curve
+        prepared.wind_speed_hub_m, prepared.capacidade_instalada_mw, prepared.disponibilidade, config.physical_curve
     )
     prepared["target_cf"] = prepared.target_mw / prepared.capacidade_instalada_mw
     prepared["baseline_cf"] = prepared.baseline_mw / prepared.capacidade_instalada_mw
@@ -61,7 +61,7 @@ def _json_default(value: object) -> object:
 
 
 def train(dataset: pd.DataFrame, config: TrainingConfig, artifact_dir: Path) -> dict:
-    target_column = config.target_column()
+    target_column = config.scientific_target_column()
     if (artifact_dir / "model.txt").exists():
         raise FileExistsError("Artefato já existe; escolha outro diretório versionado com --artifacts.")
     checked, report = prepare_hourly_dataset(dataset, replace(config, columns=ColumnConfig()))
@@ -70,7 +70,7 @@ def train(dataset: pd.DataFrame, config: TrainingConfig, artifact_dir: Path) -> 
     dataset = checked
     prepared = _prepared(dataset, target_column, config)
     train_df, valid_df, test_df, periods = temporal_split(prepared)
-    X_train, X_valid, X_test = (feature_matrix(part) for part in (train_df, valid_df, test_df))
+    X_train, X_valid, X_test = (feature_matrix(part, config.features) for part in (train_df, valid_df, test_df))
     params = dict(objective="regression_l1", **config.serializable()["lightgbm"],
                   random_state=config.random_state, n_jobs=config.n_jobs,
                   subsample_freq=1, deterministic=True, force_col_wise=True, verbosity=-1)
@@ -79,7 +79,7 @@ def train(dataset: pd.DataFrame, config: TrainingConfig, artifact_dir: Path) -> 
               callbacks=[lgb.early_stopping(100, verbose=False)])
     for part, matrix in ((valid_df, X_valid), (test_df, X_test)):
         part["ml_correction_mw"] = model.predict(matrix) * part.capacidade_instalada_mw
-        part["hybrid_mw"] = apply_physical_bounds(part.baseline_mw, part.ml_correction_mw, part.wind_speed_100m,
+        part["hybrid_mw"] = apply_physical_bounds(part.baseline_mw, part.ml_correction_mw, part.wind_speed_hub_m,
                                                    part.capacidade_instalada_mw, part.disponibilidade, config.physical_curve)
     validation_metrics = {
         "baseline": metrics_by_wind_and_plant(valid_df, "baseline_mw"),
@@ -92,8 +92,8 @@ def train(dataset: pd.DataFrame, config: TrainingConfig, artifact_dir: Path) -> 
     artifact_dir.mkdir(parents=True, exist_ok=True)
     model.booster_.save_model(str(artifact_dir / "model.txt"))
     (artifact_dir / "residual_quantiles.json").write_text(json.dumps(intervals, ensure_ascii=False, indent=2, default=_json_default), encoding="utf-8")
-    wind_domain = {"min": float(train_df.wind_speed_100m.min()), "max": float(train_df.wind_speed_100m.max())}
-    domain_columns = ["wind_speed_100m", "temperature_2m", "surface_pressure", "capacidade_instalada_mw", "disponibilidade"]
+    wind_domain = {"min": float(train_df.wind_speed_hub_m.min()), "max": float(train_df.wind_speed_hub_m.max())}
+    domain_columns = ["wind_speed_100m", "wind_speed_hub_m", "temperature_2m", "surface_pressure", "capacidade_instalada_mw", "disponibilidade"]
     saved_config = config.serializable()
     saved_config["start_utc"] = report["experiment"]["start"]
     metadata = {
@@ -107,6 +107,9 @@ def train(dataset: pd.DataFrame, config: TrainingConfig, artifact_dir: Path) -> 
         "training_config": saved_config,
         "features": FEATURE_COLUMNS,
         "feature_order": FEATURE_COLUMNS,
+        "required_history_hours": (config.features.required_history_hours
+                                   if config.features.require_complete_history else 0),
+        "most_required": config.features.most_required,
         "physical_curve": config.serializable()["physical_curve"],
         "split_periods": periods,
         "metrics": {"baseline_validation": validation_metrics["baseline"],
@@ -157,7 +160,7 @@ def main() -> None:
         except RegistryError as exc:
             parser.exit(2, f"{exc}\n")
     config = load_config(args.config, args.target)
-    config.target_column()
+    config.scientific_target_column()
     raw = TabularDatasetAdapter().load(args.input)
     try:
         dataset, report = prepare_hourly_dataset(raw, config)

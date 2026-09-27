@@ -61,6 +61,11 @@ def train_frozen_model(dataset: pd.DataFrame, assignments: pd.DataFrame,
                        tuning_result: dict, artifact_dir: Path) -> ProtocolManifest:
     if protocol.state != ProtocolState.PROTOCOL_FROZEN:
         raise ValueError("Treino final exige protocol_frozen.")
+    protocol.validate_feature_contract(
+        required_history_hours=(config.features.required_history_hours
+                                if config.features.require_complete_history else 0),
+        most_required=config.features.most_required,
+    )
     assignments_digest = assignment_hash(assignments)
     validate_tuning_result(tuning_result, assignments, protocol)
     assert_job_dataset_scope(dataset, assignments, {"train", "early_stopping", "evaluation"})
@@ -74,21 +79,21 @@ def train_frozen_model(dataset: pd.DataFrame, assignments: pd.DataFrame,
                            min(fixed_iterations, int(rule.get("max_iterations", fixed_iterations))))
     candidate = {**candidate, "parameters": {**candidate.get("parameters", {}), "n_estimators": fixed_iterations}}
     candidate["parameters"].pop("early_stopping_rounds", None)
-    development = _prepared(_development_rows(dataset, assignments), config.target_column(), config)
+    development = _prepared(_development_rows(dataset, assignments), config.scientific_target_column(), config)
     # The common interface requires an eval set.  For fixed-iteration training it
     # is passed only to adapters with early stopping disabled by construction.
     estimator = create_estimator(candidate, random_state=config.random_state, n_jobs=config.n_jobs)
     if candidate["algorithm"] == "lightgbm":
-        estimator.model.fit(feature_matrix(development), development.residual_cf)
+        estimator.model.fit(feature_matrix(development, config.features), development.residual_cf)
         estimator.best_iteration = fixed_iterations
     else:
-        estimator.model.fit(feature_matrix(development), development.residual_cf, verbose=False)
+        estimator.model.fit(feature_matrix(development, config.features), development.residual_cf, verbose=False)
         estimator.best_iteration = fixed_iterations
     artifact_dir.mkdir(parents=True, exist_ok=False)
     model_name = "model.txt" if candidate["algorithm"] == "lightgbm" else "model.ubj"
     model_path = artifact_dir / model_name
     estimator.save(model_path)
-    domain_columns = ["wind_speed_100m", "temperature_2m", "surface_pressure",
+    domain_columns = ["wind_speed_100m", "wind_speed_hub_m", "temperature_2m", "surface_pressure",
                       "capacidade_instalada_mw", "disponibilidade"]
     metadata = {
         "artifact_schema_version": "temporal-protocol-v1",
@@ -102,6 +107,9 @@ def train_frozen_model(dataset: pd.DataFrame, assignments: pd.DataFrame,
         "target": config.target, "training_config": config.serializable(),
         "physical_curve": config.serializable()["physical_curve"],
         "feature_order": FEATURE_COLUMNS,
+        "required_history_hours": (config.features.required_history_hours
+                                   if config.features.require_complete_history else 0),
+        "most_required": config.features.most_required,
         "training_usina_ids": sorted(development.usina_id.unique().tolist()),
         "input_domain": {name: {"min": float(development[name].min()), "max": float(development[name].max())}
                          for name in domain_columns},
@@ -136,10 +144,10 @@ def _load_model(metadata: dict, artifact_dir: Path):
 
 
 def _predict(frame: pd.DataFrame, model, config: TrainingConfig) -> pd.DataFrame:
-    result = _prepared(frame, config.target_column(), config)
-    correction = np.asarray(model.predict(feature_matrix(result))) * result.capacidade_instalada_mw
+    result = _prepared(frame, config.scientific_target_column(), config)
+    correction = np.asarray(model.predict(feature_matrix(result, config.features))) * result.capacidade_instalada_mw
     result["hybrid_mw"] = apply_physical_bounds(
-        result.baseline_mw, correction, result.wind_speed_100m,
+        result.baseline_mw, correction, result.wind_speed_hub_m,
         result.capacidade_instalada_mw, result.disponibilidade, config.physical_curve)
     return result
 

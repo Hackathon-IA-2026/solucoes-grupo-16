@@ -46,6 +46,11 @@ separada. Upload direto de ERA5 nativo ainda não está implementado.
 - `u100` e `v100`: componentes do vento a 100 m em m/s. A velocidade calculada deve ser no máximo 50 m/s.
 - `disponibilidade`: fração disponível da capacidade instalada naquela hora, entre 0 e 1. O usuário informa esse valor por conjunto no arquivo; o sistema não o inventa.
 - `temperature_2m` em K e `surface_pressure` em Pa são opcionais. São validados, mas a curva física atual não os usa no cálculo.
+- `hub_height_m`, `surface_roughness_m` e `monin_obukhov_length_m` são um trio
+  opcional. Quando os três estão presentes, o serviço aplica o perfil MOST
+  antes da curva; se qualquer um faltar, o CSV é rejeitado em vez de completar
+  o cadastro por hipótese. Sem o trio, permanece o vento ERA5 de 100 m e a
+  observação registra esse fallback.
 
 Uma linha representa um conjunto em uma hora. O mesmo conjunto e hora não pode aparecer duas vezes. Para gerar outro instante, escolha outra hora do mesmo CSV e exporte outro PWF.
 

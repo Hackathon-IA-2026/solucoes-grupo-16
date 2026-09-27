@@ -138,6 +138,7 @@ class ProtocolManifest:
     final_training_rule: dict[str, Any]
     calibration_rule: dict[str, Any]
     acceptance_criteria: dict[str, Any]
+    target_name: str = "geracao_referencia_mw"
     exposed_periods: tuple[dict[str, Any], ...] = ()
     minimums: dict[str, float] = field(default_factory=lambda: {
         "hours_per_role": 1, "plants_per_role": 1, "coverage_fraction": 0,
@@ -153,6 +154,8 @@ class ProtocolManifest:
     def __post_init__(self) -> None:
         if self.artifact_schema_version != SCHEMA_VERSION:
             raise ValueError("Versão de protocolo incompatível.")
+        if self.target_name != "geracao_referencia_mw":
+            raise ValueError("O protocolo temporal aceita somente geracao_referencia_mw como target.")
         if not self.protocol_version.strip() or not self.folds:
             raise ValueError("Protocolo precisa de versão e ao menos um fold.")
         if len({fold.fold_id for fold in self.folds}) != len(self.folds):
@@ -210,6 +213,13 @@ class ProtocolManifest:
             raise ValueError("Limites de iterações inválidos.")
         if self.purge_hours < 0 or not self.purge_justification.strip():
             raise ValueError("Purga exige valor não negativo e justificativa.")
+        for exposed in self.exposed_periods:
+            if not {"start_utc", "end_utc", "reason"} <= set(exposed) or not str(exposed["reason"]).strip():
+                raise ValueError("Período exposto exige limites UTC e motivo.")
+            block = TimeBlock(exposed["start_utc"], exposed["end_utc"])
+            if self.state not in (ProtocolState.INFRASTRUCTURE_TEST, ProtocolState.EXPLORATORY) \
+                    and block.overlaps(self.final_test):
+                raise ValueError("Teste final científico não pode reutilizar período já exposto.")
         if self.state not in (ProtocolState.INFRASTRUCTURE_TEST, ProtocolState.EXPLORATORY):
             required = (self.target_contract_sha256, self.eligibility_policy_sha256,
                         self.snapshot_sha256, self.catalog_sha256, self.composition_sha256)
@@ -244,6 +254,21 @@ class ProtocolManifest:
 
     def digest(self) -> str:
         return sha256_json(self.serializable())
+
+    def validate_feature_contract(self, *, required_history_hours: int,
+                                  most_required: bool) -> None:
+        """Bind runtime feature semantics to the frozen temporal manifest."""
+        if required_history_hours:
+            matching = [item for item in self.feature_support
+                        if item.consumed_start_offset_hours <= -required_history_hours
+                        and item.consumed_end_offset_hours >= 0]
+            if not matching:
+                raise ValueError(
+                    f"Manifesto não declara o lookback causal de {required_history_hours} horas."
+                )
+        if most_required and not any("most" in item.name.lower() or "monin" in item.name.lower()
+                                     for item in self.feature_support):
+            raise ValueError("Manifesto não declara suporte temporal/proveniência das entradas MOST.")
 
     def transition(self, state: ProtocolState, **evidence: str | None) -> "ProtocolManifest":
         if state not in _TRANSITIONS[self.state]:

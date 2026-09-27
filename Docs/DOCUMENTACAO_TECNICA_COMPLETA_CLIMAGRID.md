@@ -1,5 +1,11 @@
 # ClimaGrid — documentação técnica completa do estado atual do código
 
+> **Nota de atualização — 27 de setembro de 2026:** este documento antecede a
+> implementação do target exclusivo, das features causais de 3/6 h e de MOST.
+> Para o estado atual do ML, prevalecem
+> [`CONTEXTO_PROJETO_IA.md`](CONTEXTO_PROJETO_IA.md) e
+> [`ML/IMPLEMENTACAO_TARGET_WALK_FORWARD_MOST_ROLLING.md`](ML/IMPLEMENTACAO_TARGET_WALK_FORWARD_MOST_ROLLING.md).
+
 ## 1. Visão geral
 
 O ClimaGrid é uma plataforma para transformar condições climáticas associadas a usinas eólicas em injeções de potência ativa em um caso PWF do ANAREDE. Em termos práticos, a ferramenta:

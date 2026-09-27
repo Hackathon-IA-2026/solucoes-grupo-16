@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from training.build_dataset import DatasetValidationError, prepare_hourly_dataset
-from training.config import ColumnConfig, TrainingConfig
+from training.config import ColumnConfig, FeatureConfig, TrainingConfig
 
 CONFIG = TrainingConfig(target="geracao_referencia_mw")
 
@@ -38,6 +38,26 @@ def test_duplicate_keys_not_silently_averaged(synthetic_frame):
     assert len(data) == 719
     assert report["duplicate_logical_keys"] == 1
     assert report["exclusions"]["duplicate_logical_key_rows"] == 2
+
+
+def test_reference_above_capacity_is_reported_and_never_clipped(synthetic_frame):
+    synthetic_frame.loc[0, CONFIG.target] = 120.0
+    data, report = prepare_hourly_dataset(synthetic_frame, CONFIG)
+    assert len(data) == 719
+    assert report["target_above_installed_capacity"] == 1
+    assert report["target_above_available_capacity"] >= 1
+    assert report["target_clipped"] is False
+    assert 120.0 not in data[CONFIG.target].tolist()
+
+
+def test_most_required_blocks_snapshot_without_scientific_inputs(synthetic_frame):
+    config = TrainingConfig(target=CONFIG.target,
+                            features=FeatureConfig(most_enabled=True, most_required=True))
+    with pytest.raises(DatasetValidationError) as error:
+        prepare_hourly_dataset(synthetic_frame, config)
+    assert set(error.value.report["missing_required_columns"]) >= {
+        "hub_height_m", "surface_roughness_m", "monin_obukhov_length_m"
+    }
 
 
 def test_missing_half_hour_excludes_whole_hour(synthetic_frame):

@@ -18,11 +18,11 @@ def manifest(state=ProtocolState.INFRASTRUCTURE_TEST):
         protocol_version="fixture-v1", state=state, created_at_utc="2026-01-01T00:00:00Z",
         target_contract_sha256=HASH, eligibility_policy_sha256=HASH, snapshot_sha256=HASH,
         catalog_sha256=HASH, composition_sha256=HASH, source_sha256={"ons": HASH},
-        folds=(DevelopmentFold("f1", block(1, 3), block(3, 4), block(4, 5)),
-               DevelopmentFold("f2", block(1, 5), block(5, 6), block(6, 7))),
-        calibration=block(7, 8), final_test=block(8, 9),
-        feature_support=(TemporalSupport("u100", "timestamp", 0, 0, 0, 0),),
-        purge_hours=0, purge_justification="Features e target estritamente horários na fixture.",
+        folds=(DevelopmentFold("f1", block(1, 2), block(3, 4), block(5, 6)),
+               DevelopmentFold("f2", block(1, 6), block(7, 8), block(9, 10))),
+        calibration=block(11, 12), final_test=block(12, 13),
+        feature_support=(TemporalSupport("causal_wind_history_6h", "timestamp", -6, 0, 0, 0),),
+        purge_hours=6, purge_justification="Features usam vento de t-6 a t.",
         candidates=({"candidate_id": "lgb-1", "algorithm": "lightgbm", "parameters": {}},),
         candidate_budget=1, selection_rule={"primary_metric": "mae_mw", "aggregation": "mean",
                                              "tie_break": "candidate_id"},
@@ -34,7 +34,7 @@ def manifest(state=ProtocolState.INFRASTRUCTURE_TEST):
 
 
 def panel():
-    timestamps = pd.date_range("2024-01-01", "2024-01-08 23:00", freq="h", tz="UTC")
+    timestamps = pd.date_range("2024-01-01", "2024-01-12 23:00", freq="h", tz="UTC")
     return pd.DataFrame([{"usina_id": plant, "timestamp_utc": timestamp, "value": float(index)}
                          for index, timestamp in enumerate(timestamps)
                          for plant in ("a", "b") if not (plant == "b" and timestamp.day == 3)])
@@ -71,6 +71,20 @@ def test_protocol_rejects_naive_overlap_and_gate_skips():
                         TimeBlock("2024-01-04T00:00Z", "2024-01-05T00:00Z"))
     with pytest.raises(ValueError, match="Transição"):
         manifest().transition(ProtocolState.MODEL_FROZEN)
+
+
+def test_scientific_protocol_rejects_exposed_final_period():
+    with pytest.raises(ValueError, match="exposto"):
+        replace(manifest(ProtocolState.PROTOCOL_FROZEN), exposed_periods=({
+            "start_utc": "2024-01-12T00:00:00Z",
+            "end_utc": "2024-01-13T00:00:00Z",
+            "reason": "resultado consultado",
+        },))
+
+
+def test_runtime_feature_lookback_must_match_manifest():
+    with pytest.raises(ValueError, match="lookback"):
+        manifest().validate_feature_contract(required_history_hours=7, most_required=False)
 
 
 def test_reserved_access_requires_frozen_predecessor():

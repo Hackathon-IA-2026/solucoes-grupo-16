@@ -84,6 +84,18 @@ arquivos são locais/ignorados. `artifacts/global/v1` contém apenas `.gitkeep`.
 Logo, os números documentados não são reproduzíveis a partir deste checkout
 sozinho e nenhum modelo está habilitado na aplicação.
 
+### Mudança posterior à auditoria original
+
+Em 27 de setembro de 2026 foi implementada a evolução descrita em
+[`IMPLEMENTACAO_TARGET_WALK_FORWARD_MOST_ROLLING.md`](IMPLEMENTACAO_TARGET_WALK_FORWARD_MOST_ROLLING.md):
+target novo restrito à referência ONS, vínculo do lookback ao protocolo,
+features causais de 3/6 h e MOST opcional. Essa mudança amplia a infraestrutura
+experimental, mas não altera a conclusão operacional desta auditoria: nenhum
+modelo novo foi homologado e a curva física continua sendo servida na fase 2.
+
+A tabela abaixo registra a execução da auditoria original e não deve ser lida
+como evidência da suíte posterior.
+
 ## Evidência executada nesta auditoria
 
 | Verificação | Resultado |

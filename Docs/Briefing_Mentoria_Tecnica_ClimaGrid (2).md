@@ -52,7 +52,12 @@ Interpretação importante. Como a saída é limitada por capacidade x disponibi
 | Geração efetivamente verificada | Produção observada/entregue, podendo conter efeitos de manutenção, restrição e operação. | ONS GERACAO\_USINA-2\_HO. | Replay e análise operacional; não é automaticamente potencial. |
 | Geração de referência ONS | Estimativa ONS usada para representar geração sem limitação, segundo a documentação do piloto. | RESTRICAO\_COFF\_EOLICA e coluna geracao\_referencia\_mw. | Candidato a proxy de potencial, mas exige decisão sobre excessos e qualidade. |
 
-Decisão pendente. geracao\_referencia\_mw e geracao\_verificada\_mw estão ambos aceitos pelo pipeline de treino, mas não são alvos equivalentes. A referência ONS não é uma medição direta e pode superar capacidade instalada ou capacidade disponível. A geração verificada é observada, porém mistura vento com restrições e indisponibilidades. O especialista ONS precisa aprovar o estimando, os filtros e a política de elegibilidade antes de qualquer promoção.
+Atualização de 27 de setembro de 2026. Novos treinos aceitam somente
+geracao\_referencia\_mw. A referência ONS continua não sendo uma medição direta
+e pode superar capacidade instalada ou disponível; portanto, especialista ONS,
+filtros e política de elegibilidade ainda precisam de aprovação antes de
+qualquer promoção. geracao\_verificada\_mw permanece no replay, em auditorias e
+na compatibilidade de artefatos legados, mas é recusada como target novo.
 
 # **6 O que os experimentos realmente mostram**
 
