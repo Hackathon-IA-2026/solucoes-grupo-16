@@ -18,6 +18,8 @@ describe('PwfParserService', () => {
       type: 1,
       baseVoltageKv: 230,
       voltageMagnitude: 1,
+      operationField: expect.objectContaining({ value: 'A', width: 1 }),
+      stateField: expect.objectContaining({ value: 'L', width: 1 }),
       activeGenerationMw: 100,
       activeGenerationMinimumMw: 10,
       activeGenerationMaximumMw: 180,
@@ -64,6 +66,7 @@ describe('PwfParserService', () => {
 function createValidPwf(): Buffer {
   const dbar = fixedRecord(111, [
     [0, 5, '123', 'right'],
+    [5, 6, 'A'],
     [6, 7, 'L'],
     [7, 8, '1'],
     [8, 10, '1', 'right'],

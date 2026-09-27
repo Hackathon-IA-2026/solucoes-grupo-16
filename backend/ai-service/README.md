@@ -560,6 +560,27 @@ resultado é mais forte para o total da rede que para distribuição espacial. A
 metodologia e a formulação segura para pitch estão em
 [`Docs/ML/BACKTEST_ANUAL_2024_10_A_2025_09.md`](../../Docs/ML/BACKTEST_ANUAL_2024_10_A_2025_09.md).
 
+As mesmas predições congeladas podem ser auditadas contrafactualmente contra a
+geração verificada da ONS. O comando abaixo não retreina nem seleciona modelos;
+ele exige correspondência `1:1` dos pares mês--usina--hora e valida que a
+referência dos snapshots é idêntica ao target já registrado:
+
+```bash
+python -m training.causal.verified_generation_audit \
+  --predictions artifacts/causal/annual-backtest-2024-10_2025-09/annual_predictions.parquet \
+  --annual-report artifacts/causal/annual-backtest-2024-10_2025-09/annual_report.json \
+  --months data/processed/training/annual-2024-10_2025-09/{2024-10,2024-11,2024-12,2025-01,2025-02,2025-03,2025-04,2025-05,2025-06,2025-07,2025-08,2025-09}.parquet \
+  --output-dir artifacts/causal/verified-generation-audit-2024-10_2025-09
+```
+
+Contra a geração entregue, o LightGBM original obteve WAPE horário agregado de
+17,48%, diferença anual de +8,26% e MAE de 1.751 MW; o candidato calibrado teve
+17,97%, +11,40% e 1.799 MW. Esses valores não substituem a métrica científica
+contra referência: a saída atual estima potencial sem limitação, e sua
+subestimação pode compensar acidentalmente o descolamento entre referência e
+realizado. A análise completa está em
+[`Docs/ML/AUDITORIA_GERACAO_VERIFICADA_ANUAL.md`](../../Docs/ML/AUDITORIA_GERACAO_VERIFICADA_ANUAL.md).
+
 ### Pipeline legado
 
 Valide e gere o dataset horário (o target é opcional aqui, mas incluí-lo amplia a validação):

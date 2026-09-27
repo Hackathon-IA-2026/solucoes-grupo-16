@@ -33,7 +33,9 @@ Fluxo implementado:
 4. ERA5 horário no ponto de grade de cada membro do conjunto;
 5. união por `usina_id + timestamp_utc`;
 6. relação CEG → uma ou mais barras da planilha PWF;
-7. exportação de uma cópia do PWF alterando somente o `Pg`.
+7. exportação em um de dois modos: cópia rastreável de um caso-base, alterando
+   `Operação`, `Estado` e `Pg` apenas nas barras incluídas, ou arquivo isolado
+   de alterações `DBAR` sem rede elétrica embutida.
 
 Estado dos dados locais nesta cópia: julho e agosto de 2024 foram preparados
 sob demanda, com 1.485 horas distintas em cache. Agosto está completo nas
@@ -69,8 +71,8 @@ Fluxo:
 4. serviço valida cadastro/capacidade para a hora, calcula a geração esperada
    de cada conjunto/usina e persiste CSV, proveniência e observações;
 5. usuário revisa usinas e alocações de barras;
-6. backend recupera a estimativa persistida, valida seleção/fatores e gera um
-   PWF para aquela hora;
+6. backend recupera a estimativa persistida, valida seleção/fatores e gera uma
+   cópia de um PWF rastreável ou um arquivo `DBAR` de alterações para a hora;
 7. backend persiste o PWF e seu manifesto de exportação;
 8. especialista abre o arquivo no ANAREDE.
 
@@ -252,6 +254,9 @@ Endpoints operacionais dos fluxos atuais:
   visíveis ao especialista.
 - A planilha de barras representa 2040; outro PWF pode não conter as mesmas
   barras. O upload deve validar cada alvo.
+- O arquivo `DBAR` genérico não é um caso elétrico completo: ele deve ser
+  aplicado a um caso compatível e validado no ANAREDE. Somente o modo com
+  upload/caso padrão conserva hash e conteúdo integral do caso-base.
 - Os casos PWF reais disponíveis não contêm `DGEI`/`DGER`; a preservação desses
   blocos foi coberta por teste sintético, mas o aceite final deve ocorrer no
   ANAREDE com um caso representativo.
@@ -269,8 +274,8 @@ Endpoints operacionais dos fluxos atuais:
   ignorados pelo Git e excluídos da imagem; o Compose deste checkout os recebe
   pelo volume montado, mas produção precisa provisioná-los separadamente.
 - Mapeamento PWF parcial é bloqueado. Cobertura 0% permite uma alocação manual
-  completa; essa decisão e a permanência do `Pg` do caso base para conjuntos
-  ausentes/desmarcados ainda precisam de aprovação do domínio.
+  completa. No modo caso-base, conjuntos desmarcados preservam o registro
+  original; no modo `DBAR`, eles são omitidos do arquivo de alterações.
 - Os experimentos multiusina 3 a 6 estão documentados e seus artefatos estão
   presentes neste diretório de trabalho, mas são locais e ignorados pelo Git;
   não estarão disponíveis automaticamente em outro checkout ou na imagem.

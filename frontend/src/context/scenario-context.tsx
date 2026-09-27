@@ -5,6 +5,7 @@ import type {
   ClimaGridState,
   ClimateScenario,
   PlantBusMapping,
+  PwfExportMode,
   ReferencePwf,
   PwfGenerationTarget,
   WindPlantEstimate,
@@ -18,6 +19,7 @@ const initialState: ClimaGridState = {
   selectedPlantIds: [],
   study: {
     name: "",
+    exportMode: "reference",
     referencePwf: null,
     generationTargets: [],
     mappings: {},
@@ -31,8 +33,10 @@ interface ScenarioContextValue {
   setSelectedPlantIds: (plantIds: string[]) => void;
   togglePlant: (plantId: string) => void;
   setStudyName: (name: string) => void;
+  setExportMode: (mode: PwfExportMode) => void;
   setReferencePwf: (referencePwf: ReferencePwf | null, generationTargets?: PwfGenerationTarget[]) => void;
   updateMapping: (allocationId: string, patch: Partial<PlantBusMapping>) => void;
+  setPlantIncluded: (plantId: string, included: boolean) => void;
   resetScenario: () => void;
 }
 
@@ -49,7 +53,7 @@ export function ScenarioProvider({ children }: { children: React.ReactNode }) {
     let storedState: ClimaGridState | null = null;
     try {
       const stored = window.localStorage.getItem(STORAGE_KEY);
-      if (stored) storedState = JSON.parse(stored) as ClimaGridState;
+      if (stored) storedState = normalizeStoredState(JSON.parse(stored) as ClimaGridState);
     } catch {
       window.localStorage.removeItem(STORAGE_KEY);
     }
@@ -96,41 +100,27 @@ export function ScenarioProvider({ children }: { children: React.ReactNode }) {
           study: { ...current.study, name },
         }));
       },
+      setExportMode: (exportMode) => {
+        setState((current) => ({
+          ...current,
+          study: {
+            ...current.study,
+            exportMode,
+            mappings: buildMappings(
+              current,
+              current.study.generationTargets,
+              exportMode,
+            ),
+          },
+        }));
+      },
       setReferencePwf: (referencePwf, generationTargets = []) => {
         setState((current) => {
-          const targets = new Map(
-            generationTargets.map((target) => [String(target.busNumber), target]),
-          );
-          const mappings: Record<string, PlantBusMapping> = {};
-          if (referencePwf) {
-            current.estimates
-              .filter((plant) => current.selectedPlantIds.includes(plant.id))
-              .forEach((plant) => {
-                const allocations = plant.suggestedBusAllocations.length > 0
-                  ? plant.suggestedBusAllocations
-                  : [{
-                      busNumber: "",
-                      busName: "",
-                      allocationFactor: 1,
-                      allocatedGenerationMw:
-                        plant.observedGenerationMw ?? plant.estimatedGenerationMw ?? 0,
-                    }];
-                allocations.forEach((allocation, index) => {
-                  const allocationId = `${plant.id}:${allocation.busNumber || `manual-${index}`}`;
-                  const target = targets.get(allocation.busNumber);
-                  mappings[allocationId] = {
-                    plantId: plant.id,
-                    allocationId,
-                    allocationFactor: allocation.allocationFactor,
-                    generationMw: allocation.allocatedGenerationMw,
-                    busNumber: target?.editable ? String(target.busNumber) : "",
-                    busName: target?.editable ? target.busName : allocation.busName,
-                    nominalVoltageKv: target?.baseVoltageKv?.toString() ?? "",
-                    area: target?.area?.toString() ?? "",
-                  };
-                });
-              });
-          }
+          const mappings = current.study.exportMode === "dbar"
+            ? current.study.mappings
+            : referencePwf
+              ? buildMappings(current, generationTargets, "reference")
+              : {};
           return {
             ...current,
             study: {
@@ -155,6 +145,9 @@ export function ScenarioProvider({ children }: { children: React.ReactNode }) {
               busName: "",
               nominalVoltageKv: "",
               area: "",
+              included: true,
+              operation: "M" as const,
+              state: "0" as const,
             },
             existing,
             patch,
@@ -172,12 +165,96 @@ export function ScenarioProvider({ children }: { children: React.ReactNode }) {
           };
         });
       },
+      setPlantIncluded: (plantId, included) => {
+        setState((current) => ({
+          ...current,
+          study: {
+            ...current.study,
+            mappings: Object.fromEntries(
+              Object.entries(current.study.mappings).map(([id, mapping]) => [
+                id,
+                mapping.plantId === plantId ? { ...mapping, included } : mapping,
+              ]),
+            ),
+          },
+        }));
+      },
       resetScenario: () => setState(initialState),
     }),
     [isHydrated, state],
   );
 
   return <ScenarioContext.Provider value={value}>{children}</ScenarioContext.Provider>;
+}
+
+function buildMappings(
+  state: ClimaGridState,
+  generationTargets: PwfGenerationTarget[],
+  exportMode: PwfExportMode,
+): Record<string, PlantBusMapping> {
+  const targets = new Map(
+    generationTargets.map((target) => [String(target.busNumber), target]),
+  );
+  const mappings: Record<string, PlantBusMapping> = {};
+  state.estimates
+    .filter((plant) => state.selectedPlantIds.includes(plant.id))
+    .forEach((plant) => {
+      const allocations = plant.suggestedBusAllocations.length > 0
+        ? plant.suggestedBusAllocations
+        : [{
+          busNumber: "",
+          busName: "",
+          allocationFactor: 1,
+          allocatedGenerationMw:
+            plant.observedGenerationMw ?? plant.estimatedGenerationMw ?? 0,
+        }];
+      allocations.forEach((allocation, index) => {
+        const allocationId = `${plant.id}:${allocation.busNumber || `manual-${index}`}`;
+        const target = targets.get(allocation.busNumber);
+        const canUseSuggestedBus = exportMode === "dbar" || target?.editable;
+        mappings[allocationId] = {
+          plantId: plant.id,
+          allocationId,
+          allocationFactor: allocation.allocationFactor,
+          generationMw: allocation.allocatedGenerationMw,
+          busNumber: canUseSuggestedBus ? allocation.busNumber : "",
+          busName: target?.busName ?? allocation.busName,
+          nominalVoltageKv: target?.baseVoltageKv?.toString() ?? "",
+          area: target?.area?.toString() ?? "",
+          included: true,
+          operation: "M",
+          state: "0",
+        };
+      });
+    });
+  return mappings;
+}
+
+function normalizeStoredState(stored: ClimaGridState): ClimaGridState {
+  return {
+    ...initialState,
+    ...stored,
+    study: {
+      ...initialState.study,
+      ...stored.study,
+      exportMode: stored.study?.exportMode === "dbar" ? "dbar" : "reference",
+      mappings: Object.fromEntries(
+        Object.entries(stored.study?.mappings ?? {}).map(([id, mapping]) => [
+          id,
+          {
+            ...mapping,
+            included: mapping.included ?? true,
+            operation: ["A", "E", "M"].includes(mapping.operation)
+              ? mapping.operation
+              : "M",
+            state: ["0", "1", "2"].includes(mapping.state)
+              ? mapping.state
+              : "0",
+          },
+        ]),
+      ),
+    },
+  };
 }
 
 export function useScenario() {

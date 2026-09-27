@@ -57,6 +57,31 @@ describe('IntegrationController historical preparation', () => {
     expect(experimentalInsights).toHaveBeenCalledOnce();
   });
 
+  it('exposes a configured validated PWF as the optional default case', async () => {
+    const referenceId = '12345678-1234-4234-8234-123456789abc';
+    vi.stubEnv('PWF_DEFAULT_REFERENCE_ID', referenceId);
+    const controller = new IntegrationController(
+      { capabilities: vi.fn().mockResolvedValue(aiCapabilities()) } as unknown as AiServiceClient,
+      {} as ClimateScenarioStorageService,
+    );
+
+    const result = await controller.capabilities();
+
+    expect(result.pwf.defaultReferenceCaseId).toBe(referenceId);
+  });
+
+  it('does not expose an invalid default PWF identifier', async () => {
+    vi.stubEnv('PWF_DEFAULT_REFERENCE_ID', '../caso.pwf');
+    const controller = new IntegrationController(
+      { capabilities: vi.fn().mockResolvedValue(aiCapabilities()) } as unknown as AiServiceClient,
+      {} as ClimateScenarioStorageService,
+    );
+
+    const result = await controller.capabilities();
+
+    expect(result.pwf.defaultReferenceCaseId).toBeNull();
+  });
+
   it('passes the background collection state to the client', async () => {
     const replayHistorical = vi.fn().mockResolvedValue({
       status: 'preparing',
@@ -106,3 +131,33 @@ describe('IntegrationController historical preparation', () => {
     );
   });
 });
+
+function aiCapabilities() {
+  return {
+    features: {
+      historical_replay: true,
+      historical_on_demand: true,
+      climate_file_upload: true,
+      climate_era5_scenario: true,
+      experimental_insights: false,
+      physical_fallback: true,
+    },
+    model: {
+      model_version: 'physical-curve-v1',
+      model_scope: 'scenario',
+      model_approved: false,
+    },
+    data: {
+      plant_catalog_available: true,
+      ons_raw_available: true,
+      era5_processed_available: true,
+      era5_partition_count: 1,
+      joined_snapshot_available: true,
+      joined_snapshot_date: '2024-01-31',
+      historical_first_timestamp: '2024-01-01T00:00:00Z',
+      historical_last_timestamp: '2024-01-31T23:00:00Z',
+      historical_latest_timestamp: '2024-01-31T23:00:00Z',
+      historical_instant_count: 744,
+    },
+  };
+}

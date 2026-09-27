@@ -7,6 +7,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { Icon } from "@/components/ui/icon";
 import { Notice } from "@/components/ui/notice";
 import { PageHeader } from "@/components/ui/page-header";
+import { ProcessingOverlay } from "@/components/ui/processing-overlay";
 import { useScenario } from "@/context/scenario-context";
 import { useSystemStatus } from "@/context/system-context";
 import { climagridApi, runtimeConfig } from "@/lib/api";
@@ -19,6 +20,8 @@ export default function HistoricalReplayPage() {
   const { capabilities, error: capabilitiesError } = useSystemStatus();
   const [selectedTimestamp, setSelectedTimestamp] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [loadingDismissed, setLoadingDismissed] = useState(false);
+  const [progressMessage, setProgressMessage] = useState("Consultando as horas armazenadas…");
   const [error, setError] = useState<string | null>(null);
 
   const data = capabilities?.data;
@@ -32,12 +35,15 @@ export default function HistoricalReplayPage() {
   async function handleReplay() {
     if (!canProcess) return;
     setIsProcessing(true);
+    setLoadingDismissed(false);
+    setProgressMessage("Consultando as horas armazenadas…");
     setError(null);
     try {
       const result = await climagridApi.processScenario({
         source: "historical",
         timestamp,
         resolutionMinutes: 60,
+        onProgress: setProgressMessage,
       });
       setProcessedScenario(result.scenario, result.estimates);
       router.push("/usinas-estimativas");
@@ -61,9 +67,34 @@ export default function HistoricalReplayPage() {
   return (
     <AppShell>
       <div className="space-y-6">
+        <ProcessingOverlay
+          open={isProcessing && !loadingDismissed}
+          title="Preparando o replay histórico"
+          message={progressMessage}
+          steps={[
+            progressMessage,
+            "Conferindo a geração horária verificada da ONS…",
+            "Localizando o vento ERA5 do mesmo instante…",
+            "Conciliando conjuntos eólicos por CEG…",
+          ]}
+          onDismiss={() => setLoadingDismissed(true)}
+        />
+
+        <section className="relative overflow-hidden rounded-3xl border border-secondary/25 bg-gradient-to-br from-primary-container/30 via-surface-container-low to-tertiary-container/15 p-6 shadow-2xl shadow-black/15 sm:p-8">
+          <div className="absolute -right-16 -top-20 h-64 w-64 rounded-full bg-secondary/10 blur-3xl" />
+          <div className="relative grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+            <div>
+              <span className="inline-flex rounded-full border border-secondary/25 bg-secondary/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-secondary">Funcionalidade principal · Etapa 2 do MVP</span>
+              <h1 className="mt-4 max-w-3xl text-2xl font-semibold tracking-tight text-on-surface sm:text-3xl">Transforme uma condição climática em um cenário PWF rastreável</h1>
+              <p className="mt-3 max-w-3xl text-sm leading-6 text-on-surface-variant">Use uma hora histórica do Copernicus ERA5 ou envie seu próprio CSV, estime o potencial eólico, revise as usinas e prepare uma exportação PWF rastreável.</p>
+            </div>
+            <Link href="/cenario-climatico" className="button-primary shrink-0"><Icon name="wind" /> Criar cenário climático <Icon name="arrow-right" /></Link>
+          </div>
+        </section>
+
         <PageHeader
           eyebrow="Etapa 1 de 4 · Replay histórico"
-          title="Escolha uma hora já observada"
+          title="Ou reproduza uma hora já observada"
           description="O ClimaGrid recupera a geração realmente registrada pela ONS e o vento ERA5 da mesma hora para os conjuntos eólicos do Nordeste. Nenhuma previsão de IA é usada nesta etapa."
           aside={
             <div className="rounded-xl border border-outline-variant/50 bg-surface-container-lowest px-4 py-3">
@@ -126,6 +157,7 @@ export default function HistoricalReplayPage() {
           <div className="rounded-xl border border-outline-variant/40 bg-surface-container-lowest p-5">
             <Icon name="database" className="h-6 w-6 text-secondary" />
             <h2 className="mt-3 font-semibold text-on-surface">Horas já armazenadas</h2>
+            <p className="mt-2 text-xs leading-5 text-on-surface-variant">Cada hora combina geração verificada da ONS com vento de reanálise do ERA5 no mesmo instante.</p>
             <dl className="mt-4 space-y-3 text-sm">
               <Trace label="Geração" value="ONS · valor verificado" />
               <Trace label="Vento" value="ERA5 · 100 metros" />
@@ -134,19 +166,18 @@ export default function HistoricalReplayPage() {
               <Trace label="Última em cache" value={formatTimestamp(data?.historicalLastTimestamp)} />
               <Trace label="Horas em cache" value={data?.historicalInstantCount?.toLocaleString("pt-BR") ?? (runtimeConfig.isDemoMode ? "demonstração" : "—")} />
             </dl>
+            <div className="mt-5 flex gap-2 rounded-xl border border-amber-300/20 bg-amber-300/8 p-3 text-xs leading-5 text-amber-100">
+              <Icon name="info" className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>Fora do cache, o sistema buscará novos dados ONS e ERA5. A primeira consulta pode levar alguns minutos.</p>
+            </div>
           </div>
         </section>
 
         {error ? <Notice tone="error" title="Replay não concluído">{error}</Notice> : null}
 
         <Notice title="O que será levado ao PWF">
-          Após selecionar as usinas e associá-las às barras, o sistema escreverá no campo Pg exatamente a geração observada nesta hora, preservando os demais blocos do caso base.
+          Após selecionar as usinas e associá-las às barras, você poderá aplicar Operação, Estado e o Pg observado a um caso-base rastreável ou gerar somente o bloco DBAR de alterações.
         </Notice>
-        <section className="rounded-2xl border border-outline-variant/50 bg-surface-container-low p-5">
-          <h2 className="font-semibold">Quer estimar um cenário climático?</h2>
-          <p className="mt-2 text-sm text-on-surface-variant">Busque uma hora histórica diretamente no Copernicus ERA5 ou envie seu próprio clima e informe a disponibilidade para estimar o potencial eólico.</p>
-          <Link href="/cenario-climatico" className="button-secondary mt-4">Criar cenário climático</Link>
-        </section>
       </div>
     </AppShell>
   );

@@ -48,16 +48,17 @@ export interface ClimateScenarioManifest {
 }
 
 export interface ClimateScenarioExportManifest {
-  schemaVersion: 'climagrid-pwf-export-v1';
+  schemaVersion: 'climagrid-pwf-export-v1' | 'climagrid-pwf-export-v2';
   id: string;
   scenarioId: string;
   createdAt: string;
   studyName: string;
+  exportMode?: 'reference' | 'dbar';
   referencePwf: {
     id: string;
     name: string;
     sha256: string;
-  };
+  } | null;
   output: {
     filename: string;
     sizeBytes: number;
@@ -67,7 +68,9 @@ export interface ClimateScenarioExportManifest {
   selection: {
     selectedPlantIds: string[];
     unselectedPlantIds: string[];
-    unselectedPlantBehavior: 'preserve_reference_pwf_pg';
+    unselectedPlantBehavior:
+      | 'preserve_reference_pwf_pg'
+      | 'omit_from_dbar_change_file';
   };
   allocations: Array<{
     plantId: string;
@@ -75,6 +78,8 @@ export interface ClimateScenarioExportManifest {
     busNumber: number;
     allocationFactor: number;
     generationMw: number;
+    operation?: 'A' | 'E' | 'M';
+    state?: '0' | '1' | '2';
   }>;
 }
 
