@@ -267,6 +267,35 @@ Duplicatas exatas da chave lógica são excluídas por inteiro. Se uma linha con
 
 ### Protocolo temporal versionado
 
+Antes de desenhar datas, inventarie e congele o snapshot com hashes reais. O
+comando não escolhe folds, não aprova decisões pendentes e não abre calibração
+ou teste final:
+
+```powershell
+python -m training.scientific_snapshot `
+  --input data/processed/training/snapshot_unido.parquet `
+  --config training/config.json `
+  --output-snapshot data/processed/training/snapshot-cientifico-v1.parquet `
+  --output-manifest data/processed/training/snapshot-cientifico-v1.manifest.json `
+  --target-contract training/target-contract-v1.json `
+  --eligibility-policy training/eligibility-policy-v1.json `
+  --catalog data/processed/reference/plant_locations.parquet `
+  --composition data/raw/ons/relacionamento_usina_conjunto.parquet `
+  --validity data/processed/reference/validity.csv `
+  --decisions training/scientific-decisions-v1.json `
+  --exposed-periods training/exposed-periods-v1.json `
+  --source ons=data/raw/ons/geracao-referencia.parquet `
+  --source era5=data/processed/era5/weather_hourly.parquet
+```
+
+Os arquivos `target_contract.example.json`,
+`eligibility_policy.example.json`, `scientific_decisions.example.json` e
+`exposed_periods.example.json` são
+modelos deliberadamente pendentes. Copie-os para uma versão própria e registre
+aprovações reais; não mude `false` para `true` sem evidência de domínio. O
+manifesto resultante contém inventário mensal, lacunas por conjunto, exclusões,
+vigências e hashes do snapshot, fontes, catálogo, composição e políticas.
+
 `training/protocol.example.json` é apenas uma fixture de infraestrutura: suas
 datas e hashes zero não autorizam execução científica. Depois da auditoria e da
 aprovação das decisões da Fase 0, crie uma versão com limites calendáricos e

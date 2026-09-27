@@ -167,6 +167,13 @@ Artefato novo continua indisponível para servir até passar pelos estados
 | cenário climático | `app/climate_file.py` |
 | testes | `tests/test_dataset.py`, `tests/test_features_and_split.py`, `tests/test_api.py`, `tests/test_climate_file.py`, `tests/test_temporal_protocol.py`, `tests/test_pipeline.py` |
 
+Complemento de 27 de setembro de 2026: `training/scientific_snapshot.py`
+materializa o inventário e o manifesto congelado antes da escolha do calendário;
+os exemplos de contrato, elegibilidade e decisões permanecem pendentes por
+padrão. O protocolo congelado agora também exige as pré-condições científicas,
+hash da configuração, seed/paralelismo e política explícita para conjuntos não
+vistos. Isso não altera o estimador servido.
+
 ## 8. Evidência de verificação
 
 Em 27 de setembro de 2026:

@@ -86,6 +86,10 @@ def materialize_assignments(frame: pd.DataFrame, protocol: ProtocolManifest,
     summary["assignments_sha256"] = assignment_hash(assignments)
     summary["snapshot_logical_sha256"] = snapshot_digest
     summary["unassigned_rows"] = int((~work.row_fingerprint.isin(assignments.row_fingerprint)).sum())
+    coverage = {(item["fold_id"], item["role"]): item
+                for item in summary["coverage"]["by_block"]}
+    for block in summary["blocks"]:
+        block.update(coverage[(block["fold_id"], block["role"])])
     return assignments.sort_values(["fold_id", "role", "timestamp_utc", "usina_id"]).reset_index(drop=True), summary
 
 
@@ -134,14 +138,24 @@ def coverage_by_validity(assignments: pd.DataFrame, protocol: ProtocolManifest,
 
 
 def _validate_minimums(assignments: pd.DataFrame, protocol: ProtocolManifest) -> dict:
+    blocks = {(fold.fold_id, "train"): fold.train for fold in protocol.folds}
+    blocks.update({(fold.fold_id, "early_stopping"): fold.early_stopping for fold in protocol.folds})
+    blocks.update({(fold.fold_id, "evaluation"): fold.evaluation for fold in protocol.folds})
+    blocks.update({("reserved", "calibration"): protocol.calibration,
+                   ("reserved", "final_test"): protocol.final_test})
     rows = []
     for (fold_id, role), group in assignments.groupby(["fold_id", "role"]):
         hours = group.timestamp_utc.nunique()
         plants = group.usina_id.nunique()
         if hours < protocol.minimums["hours_per_role"] or plants < protocol.minimums["plants_per_role"]:
             raise ValueError(f"Bloco insuficiente: {fold_id}/{role}.")
-        rows.append({"fold_id": fold_id, "role": role, "rows": len(group),
-                     "hours": hours, "plants": plants})
+        block = blocks[(fold_id, role)]
+        expected_hours = int((pd.Timestamp(block.end_utc) - pd.Timestamp(block.start_utc))
+                             .total_seconds() // 3600)
+        rows.append({"fold_id": fold_id, "role": role,
+                     "start_utc": block.start_utc, "end_utc": block.end_utc,
+                     "expected_hours": expected_hours, "observed_hours": hours,
+                     "active_plants_observed": plants, "rows": len(group)})
     expected = {(fold.fold_id, role) for fold in protocol.folds
                 for role in ("train", "early_stopping", "evaluation")}
     expected |= {("reserved", "calibration"), ("reserved", "final_test")}

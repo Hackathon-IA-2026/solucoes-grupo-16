@@ -25,6 +25,7 @@ def tune(dataset: pd.DataFrame, assignments: pd.DataFrame, protocol: ProtocolMan
         raise ValueError("Tuning não é permitido após congelar o modelo.")
     if config.scientific_target_column() != protocol.target_name:
         raise ValueError("Target da configuração diverge do protocolo.")
+    protocol.validate_reproducibility(training_config=config.serializable())
     if not set(assignments.role) & {"train", "early_stopping", "evaluation"}:
         raise ValueError("Atribuições não contêm desenvolvimento.")
     protocol.validate_feature_contract(

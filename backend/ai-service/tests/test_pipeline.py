@@ -113,6 +113,19 @@ def test_metrics_zero_generation_has_no_infinite_wape():
     assert result["nmae_cf"] == pytest.approx(0.15)
 
 
+def test_metrics_include_month_and_coverage_condition_slices(synthetic_frame):
+    from training.evaluate import metrics_by_wind_and_plant
+    from training.features import add_features
+    frame = add_features(synthetic_frame.iloc[:10]).assign(
+        target_mw=lambda value: value.geracao_referencia_mw,
+        prediction_mw=lambda value: value.geracao_referencia_mw,
+    )
+    result = metrics_by_wind_and_plant(frame, "prediction_mw")
+    assert set(result["by_month_utc"]) == {"2026-01"}
+    assert "temporal_context_complete=0" in result["by_coverage_condition"]
+    assert "temporal_context_complete=1" in result["by_coverage_condition"]
+
+
 def test_corrupt_artifact_falls_back(tmp_path):
     for name in ("metadata.json", "residual_quantiles.json", "model.txt"):
         (tmp_path / name).write_text("invalid", encoding="utf-8")

@@ -1,0 +1,12 @@
+{
+  "schema_version": "target-eligibility-v1",
+  "target_name": "geracao_referencia_mw",
+  "missing_target": "exclude",
+  "negative_target": "exclude",
+  "above_installed_capacity": "exclude",
+  "above_available_capacity": "retain_and_flag",
+  "duplicate_logical_key": "exclude_all",
+  "clipping": false,
+  "imputation": false,
+  "approval_status": "pending_domain_review"
+}

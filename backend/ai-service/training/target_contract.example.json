@@ -1,0 +1,9 @@
+{
+  "schema_version": "experimental-target-contract-v1",
+  "target_name": "geracao_referencia_mw",
+  "source_field": "val_geracaoreferencia",
+  "unit": "MW",
+  "temporal_semantics": "instantaneous_hourly_reference",
+  "meaning": "Proxy ONS candidata a geração sem limitação; não equivale à geração verificada do replay.",
+  "approval_status": "pending_domain_review"
+}

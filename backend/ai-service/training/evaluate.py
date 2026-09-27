@@ -46,7 +46,24 @@ def metrics_by_wind_and_plant(frame: pd.DataFrame, prediction_column: str) -> di
         str(name): regression_metrics(group.target_mw, group[prediction_column], group.capacidade_instalada_mw)
         for name, group in working.groupby("usina_id") if len(group)
     }
-    return {"overall": overall, "by_wind_band": by_wind, "by_usina": by_plant}
+    timestamps = pd.to_datetime(working["timestamp_utc"], utc=True, errors="coerce")
+    working["month_utc"] = timestamps.dt.strftime("%Y-%m")
+    by_month = {
+        str(name): regression_metrics(group.target_mw, group[prediction_column],
+                                      group.capacidade_instalada_mw)
+        for name, group in working.groupby("month_utc", dropna=False) if len(group)
+    }
+    coverage_columns = [name for name in (
+        "temporal_context_complete", "era5_distance_known", "most_applied", "most_missing",
+    ) if name in working]
+    by_coverage_condition = {}
+    for name in coverage_columns:
+        for value, group in working.groupby(name, dropna=False):
+            label = f"{name}={value}"
+            by_coverage_condition[label] = regression_metrics(
+                group.target_mw, group[prediction_column], group.capacidade_instalada_mw)
+    return {"overall": overall, "by_wind_band": by_wind, "by_usina": by_plant,
+            "by_month_utc": by_month, "by_coverage_condition": by_coverage_condition}
 
 
 def empirical_interval_table(validation: pd.DataFrame, minimum_samples: int = 20) -> dict:

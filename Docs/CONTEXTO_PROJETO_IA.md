@@ -148,7 +148,9 @@ geração observada. Os documentos `GUIA_ESTUDANTE_SINAL.md` e
   folds calendáricos, reservas separadas, hashes e gates. Sua execução
   científica continua bloqueada pelas decisões registradas em
   [`ML/PROTOCOLO_VALIDACAO_TEMPORAL.md`](ML/PROTOCOLO_VALIDACAO_TEMPORAL.md);
-  nenhum artefato novo foi homologado para servir.
+  nenhum artefato novo foi homologado para servir. O pré-voo agora congela um
+  snapshot e seu inventário reproduzível antes da escolha das datas, mas os
+  exemplos de contrato, política e decisões permanecem pendentes por padrão.
 - Novos treinos aceitam somente `geracao_referencia_mw`, ainda tratada como
   proxy cuja semântica e elegibilidade dependem de aprovação ONS. O pipeline
   possui features climáticas causais de 3/6 h e MOST opcional; sua execução

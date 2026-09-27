@@ -38,6 +38,14 @@ def _record_reserved_access(artifact_dir: Path, entry: dict) -> None:
     temporary.replace(path)
 
 
+def open_reserved_block(protocol: ProtocolManifest, artifact_dir: Path, *, role: str,
+                        actor: str, purpose: str) -> ProtocolManifest:
+    """Persist the access event before a caller loads any reserved dataset."""
+    accessed = protocol.with_access(role, actor=actor, purpose=purpose)
+    _record_reserved_access(artifact_dir, accessed.access_log[-1])
+    return accessed
+
+
 def _candidate(protocol: ProtocolManifest, candidate_id: str) -> dict:
     matches = [item for item in protocol.candidates if item["candidate_id"] == candidate_id]
     if len(matches) != 1:
@@ -61,6 +69,7 @@ def train_frozen_model(dataset: pd.DataFrame, assignments: pd.DataFrame,
                        tuning_result: dict, artifact_dir: Path) -> ProtocolManifest:
     if protocol.state != ProtocolState.PROTOCOL_FROZEN:
         raise ValueError("Treino final exige protocol_frozen.")
+    protocol.validate_reproducibility(training_config=config.serializable())
     protocol.validate_feature_contract(
         required_history_hours=(config.features.required_history_hours
                                 if config.features.require_complete_history else 0),
@@ -154,8 +163,14 @@ def _predict(frame: pd.DataFrame, model, config: TrainingConfig) -> pd.DataFrame
 
 def calibrate_frozen_model(dataset: pd.DataFrame, assignments: pd.DataFrame,
                            protocol: ProtocolManifest, config: TrainingConfig,
-                           artifact_dir: Path, *, actor: str) -> ProtocolManifest:
-    accessed = protocol.with_access("calibration", actor=actor, purpose="calibrate_uncertainty")
+                           artifact_dir: Path, *, actor: str,
+                           access_already_recorded: bool = False) -> ProtocolManifest:
+    protocol.validate_reproducibility(training_config=config.serializable())
+    accessed = (protocol if access_already_recorded else open_reserved_block(
+        protocol, artifact_dir, role="calibration", actor=actor,
+        purpose="calibrate_uncertainty"))
+    if not accessed.access_log or accessed.access_log[-1]["role"] != "calibration":
+        raise ValueError("Acesso à calibração não foi registrado antes da leitura.")
     metadata_path = artifact_dir / "metadata.json"
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     if metadata["model_sha256"] != protocol.model_sha256:
@@ -163,7 +178,6 @@ def calibrate_frozen_model(dataset: pd.DataFrame, assignments: pd.DataFrame,
     if (artifact_dir / "residual_quantiles.json").exists():
         raise FileExistsError("Calibração já existe; artefatos são imutáveis.")
     assert_job_dataset_scope(dataset, assignments, {"calibration"})
-    _record_reserved_access(artifact_dir, accessed.access_log[-1])
     calibration = assigned_rows(dataset, assignments, fold_id="reserved", role="calibration")
     predicted = _predict(calibration, _load_model(metadata, artifact_dir), config)
     allowed = set(protocol.calibration_rule.get("allowed_parameters", ["lower_quantile", "upper_quantile", "minimum_samples"]))
@@ -187,11 +201,19 @@ def calibrate_frozen_model(dataset: pd.DataFrame, assignments: pd.DataFrame,
 
 def evaluate_final_once(dataset: pd.DataFrame, assignments: pd.DataFrame,
                         protocol: ProtocolManifest, config: TrainingConfig,
-                        artifact_dir: Path, *, actor: str) -> tuple[ProtocolManifest, dict]:
-    accessed = protocol.with_access("final_test", actor=actor, purpose="final_acceptance_evaluation")
+                        artifact_dir: Path, *, actor: str,
+                        access_already_recorded: bool = False) -> tuple[ProtocolManifest, dict]:
+    protocol.validate_reproducibility(training_config=config.serializable())
     report_path = artifact_dir / "final_evaluation_report.json"
-    if report_path.exists() or any(item["role"] == "final_test" for item in protocol.access_log):
+    prior_final_accesses = sum(item["role"] == "final_test" for item in protocol.access_log)
+    if (report_path.exists() or (prior_final_accesses != 1 if access_already_recorded
+                                else prior_final_accesses != 0)):
         raise PermissionError("Teste final já foi consumido.")
+    accessed = (protocol if access_already_recorded else open_reserved_block(
+        protocol, artifact_dir, role="final_test", actor=actor,
+        purpose="final_acceptance_evaluation"))
+    if not accessed.access_log or accessed.access_log[-1]["role"] != "final_test":
+        raise ValueError("Acesso ao teste final não foi registrado antes da leitura.")
     metadata_path = artifact_dir / "metadata.json"
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     calibration_path = artifact_dir / "residual_quantiles.json"
@@ -200,7 +222,6 @@ def evaluate_final_once(dataset: pd.DataFrame, assignments: pd.DataFrame,
             or metadata.get("assignments_sha256") != assignment_hash(assignments)):
         raise ValueError("Artefatos não correspondem ao protocolo congelado.")
     assert_job_dataset_scope(dataset, assignments, {"final_test"})
-    _record_reserved_access(artifact_dir, accessed.access_log[-1])
     final = assigned_rows(dataset, assignments, fold_id="reserved", role="final_test")
     predicted = _predict(final, _load_model(metadata, artifact_dir), config)
     intervals = json.loads(calibration_path.read_text(encoding="utf-8"))

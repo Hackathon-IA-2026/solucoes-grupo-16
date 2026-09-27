@@ -17,7 +17,7 @@
   }],
   "calibration": {"start_utc": "2024-01-22T00:00:00Z", "end_utc": "2024-01-26T00:00:00Z"},
   "final_test": {"start_utc": "2024-01-26T00:00:00Z", "end_utc": "2024-02-01T00:00:00Z"},
-  "feature_support": [{"name": "causal_wind_history_6h", "reference": "timestamp_utc", "consumed_start_offset_hours": -6, "consumed_end_offset_hours": 0, "available_after_hours": 0, "horizon_hours": 0}],
+  "feature_support": [{"name": "causal_wind_history_6h", "reference": "timestamp_utc", "consumed_start_offset_hours": -6, "consumed_end_offset_hours": 0, "available_after_hours": 0, "horizon_hours": 0, "label_duration_hours": 0, "transformation_lookback_hours": 0}],
   "purge_hours": 6,
   "purge_justification": "Features causais usam vento de t-6 até t; rótulo é instantâneo e não se sobrepõe.",
   "candidates": [{"candidate_id": "lgb-fixture", "algorithm": "lightgbm", "parameters": {"n_estimators": 100, "min_child_samples": 20}}],
@@ -26,6 +26,23 @@
   "final_training_rule": {"method": "median_best_iteration", "min_iterations": 1, "max_iterations": 2500},
   "calibration_rule": {"allowed_parameters": ["lower_quantile", "upper_quantile", "minimum_samples"], "parameters": {"lower_quantile": 0.05, "upper_quantile": 0.95, "minimum_samples": 20}},
   "acceptance_criteria": {},
+  "scientific_prerequisites": {
+    "target_contract_approved": false,
+    "eligibility_policy_approved": false,
+    "exposed_periods_inventory_complete": false,
+    "historical_coverage_approved": false,
+    "validity_and_composition_approved": false,
+    "feature_availability_confirmed": false,
+    "granularity_decided": false,
+    "most_decided": false
+  },
+  "generalization_policy": {"unit": "ons_set", "unseen_strategy": "physical_fallback", "spatial_evaluation": false},
+  "reproducibility": {
+    "random_seed": 42,
+    "n_jobs": 1,
+    "training_config_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "runtime_constraints_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
   "target_name": "geracao_referencia_mw",
   "exposed_periods": [{"start_utc": "2024-08-01T03:00:00Z", "end_utc": "2024-09-01T03:00:00Z", "reason": "Piloto multiusina examinado nos experimentos 3 a 6; nunca reutilizar como teste final intocado."}],
   "minimums": {"hours_per_role": 1, "plants_per_role": 1, "coverage_fraction": 0},

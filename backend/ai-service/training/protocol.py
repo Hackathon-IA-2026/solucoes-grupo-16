@@ -18,6 +18,17 @@ import pandas as pd
 
 SCHEMA_VERSION = "temporal-protocol-v1"
 
+SCIENTIFIC_PREREQUISITES = {
+    "target_contract_approved",
+    "eligibility_policy_approved",
+    "exposed_periods_inventory_complete",
+    "historical_coverage_approved",
+    "validity_and_composition_approved",
+    "feature_availability_confirmed",
+    "granularity_decided",
+    "most_decided",
+}
+
 
 class ProtocolState(StrEnum):
     INFRASTRUCTURE_TEST = "infrastructure_test"
@@ -109,10 +120,15 @@ class TemporalSupport:
     consumed_end_offset_hours: float
     available_after_hours: float
     horizon_hours: float
+    label_duration_hours: float = 0
+    transformation_lookback_hours: float = 0
 
     def __post_init__(self) -> None:
         if self.consumed_start_offset_hours > self.consumed_end_offset_hours:
             raise ValueError("Suporte temporal invertido.")
+        if min(self.available_after_hours, self.horizon_hours, self.label_duration_hours,
+               self.transformation_lookback_hours) < 0:
+            raise ValueError("Disponibilidade, horizonte, duração e lookback devem ser não negativos.")
 
 
 @dataclass(frozen=True)
@@ -138,6 +154,13 @@ class ProtocolManifest:
     final_training_rule: dict[str, Any]
     calibration_rule: dict[str, Any]
     acceptance_criteria: dict[str, Any]
+    scientific_prerequisites: dict[str, bool] = field(default_factory=dict)
+    generalization_policy: dict[str, Any] = field(default_factory=lambda: {
+        "unit": "ons_set",
+        "unseen_strategy": "physical_fallback",
+        "spatial_evaluation": False,
+    })
+    reproducibility: dict[str, Any] = field(default_factory=dict)
     target_name: str = "geracao_referencia_mw"
     exposed_periods: tuple[dict[str, Any], ...] = ()
     minimums: dict[str, float] = field(default_factory=lambda: {
@@ -156,8 +179,12 @@ class ProtocolManifest:
             raise ValueError("Versão de protocolo incompatível.")
         if self.target_name != "geracao_referencia_mw":
             raise ValueError("O protocolo temporal aceita somente geracao_referencia_mw como target.")
-        if not self.protocol_version.strip() or not self.folds:
-            raise ValueError("Protocolo precisa de versão e ao menos um fold.")
+        if not self.protocol_version.strip() or not self.folds or not self.candidates:
+            raise ValueError("Protocolo precisa de versão, ao menos um fold e candidatos.")
+        if not self.feature_support:
+            raise ValueError("Protocolo precisa declarar o suporte temporal das features/rótulo.")
+        if not self.source_sha256:
+            raise ValueError("Protocolo precisa registrar ao menos uma fonte.")
         if len({fold.fold_id for fold in self.folds}) != len(self.folds):
             raise ValueError("fold_id duplicado.")
         candidate_ids = [item.get("candidate_id") for item in self.candidates]
@@ -170,7 +197,8 @@ class ProtocolManifest:
                   *self.source_sha256.values()]
         hashes.extend(value for value in (self.assignments_sha256, self.model_sha256,
                                           self.calibration_sha256, self.final_report_sha256) if value is not None)
-        if any(len(value) != 64 or any(c not in "0123456789abcdef" for c in value) for value in hashes):
+        if any(not isinstance(value, str) or len(value) != 64
+               or any(c not in "0123456789abcdef" for c in value) for value in hashes):
             raise ValueError("Hashes do protocolo devem ser SHA-256 hexadecimais.")
         reserved = (self.calibration, self.final_test)
         if self.calibration.overlaps(self.final_test):
@@ -188,7 +216,9 @@ class ProtocolManifest:
         if _utc(self.calibration.end_utc) > _utc(self.final_test.start_utc):
             raise ValueError("Teste final deve ocorrer depois da calibração.")
         required_purge = max((max(0.0, -item.consumed_start_offset_hours,
-                                  item.consumed_end_offset_hours, item.available_after_hours)
+                                  item.consumed_end_offset_hours, item.available_after_hours,
+                                  item.horizon_hours + item.label_duration_hours,
+                                  item.transformation_lookback_hours)
                               for item in self.feature_support), default=0.0)
         if self.purge_hours < required_purge:
             raise ValueError("Purga menor que o suporte temporal declarado.")
@@ -225,6 +255,44 @@ class ProtocolManifest:
                         self.snapshot_sha256, self.catalog_sha256, self.composition_sha256)
             if any(value == "0" * 64 for value in required):
                 raise ValueError("Protocolo científico não aceita hashes placeholder.")
+            if set(self.scientific_prerequisites) != SCIENTIFIC_PREREQUISITES:
+                raise ValueError("Pré-condições científicas incompletas ou desconhecidas.")
+            if any(type(value) is not bool for value in self.scientific_prerequisites.values()):
+                raise ValueError("Pré-condições científicas devem ser booleanas.")
+            if not all(self.scientific_prerequisites.values()):
+                pending = sorted(name for name, approved in self.scientific_prerequisites.items()
+                                 if not approved)
+                raise ValueError(f"Pré-condições científicas pendentes: {pending}.")
+            if not self.acceptance_criteria:
+                raise ValueError("Protocolo científico exige critérios de aceite pré-declarados.")
+            required_reproducibility = {
+                "random_seed", "n_jobs", "training_config_sha256", "runtime_constraints_sha256",
+            }
+            if set(self.reproducibility) != required_reproducibility:
+                raise ValueError("Contrato de reprodutibilidade incompleto ou desconhecido.")
+            if (type(self.reproducibility["random_seed"]) is not int
+                    or type(self.reproducibility["n_jobs"]) is not int
+                    or self.reproducibility["n_jobs"] == 0):
+                raise ValueError("Seed e paralelismo do protocolo são inválidos.")
+            for name in ("training_config_sha256", "runtime_constraints_sha256"):
+                value = self.reproducibility[name]
+                if not isinstance(value, str) or len(value) != 64 \
+                        or any(c not in "0123456789abcdef" for c in value):
+                    raise ValueError(f"{name} deve ser SHA-256 hexadecimal.")
+        expected_generalization = {"unit", "unseen_strategy", "spatial_evaluation"}
+        if set(self.generalization_policy) != expected_generalization:
+            raise ValueError("Política de generalização incompleta ou desconhecida.")
+        if self.generalization_policy["unit"] not in {"ons_set", "ceg", "park", "complex", "region"}:
+            raise ValueError("Unidade de generalização desconhecida.")
+        if self.generalization_policy["unseen_strategy"] not in {"physical_fallback", "evaluate_spatially"}:
+            raise ValueError("Estratégia para grupos não vistos desconhecida.")
+        spatial = self.generalization_policy["spatial_evaluation"]
+        if type(spatial) is not bool:
+            raise ValueError("spatial_evaluation deve ser booleano.")
+        if spatial != (self.generalization_policy["unseen_strategy"] == "evaluate_spatially"):
+            raise ValueError("Avaliação espacial e estratégia para não vistos são inconsistentes.")
+        if spatial and self.state not in (ProtocolState.INFRASTRUCTURE_TEST, ProtocolState.EXPLORATORY):
+            raise ValueError("Protocolo espacial científico ainda não foi implementado; use fallback físico.")
 
     @classmethod
     def from_dict(cls, values: dict[str, Any]) -> "ProtocolManifest":
@@ -269,6 +337,17 @@ class ProtocolManifest:
         if most_required and not any("most" in item.name.lower() or "monin" in item.name.lower()
                                      for item in self.feature_support):
             raise ValueError("Manifesto não declara suporte temporal/proveniência das entradas MOST.")
+
+    def validate_reproducibility(self, *, training_config: dict[str, Any]) -> None:
+        """Ensure a frozen protocol cannot be run with a different seed/config."""
+        if self.state in (ProtocolState.INFRASTRUCTURE_TEST, ProtocolState.EXPLORATORY):
+            return
+        if sha256_json(training_config) != self.reproducibility["training_config_sha256"]:
+            raise ValueError("Configuração de treino diverge do hash congelado no protocolo.")
+        if training_config.get("random_state") != self.reproducibility["random_seed"]:
+            raise ValueError("Seed de treino diverge do protocolo.")
+        if training_config.get("n_jobs") != self.reproducibility["n_jobs"]:
+            raise ValueError("Paralelismo de treino diverge do protocolo.")
 
     def transition(self, state: ProtocolState, **evidence: str | None) -> "ProtocolManifest":
         if state not in _TRANSITIONS[self.state]:

@@ -16,6 +16,7 @@ KEY = ["usina_id", "timestamp_utc"]
 NUMERIC = ["capacidade_instalada_mw", "disponibilidade", "u100", "v100", "temperature_2m", "surface_pressure"]
 OPTIONAL_NUMERIC = ["era5_distance_km", "hub_height_m", "surface_roughness_m",
                     "monin_obukhov_length_m"]
+AUDIT_NUMERIC = ["geracao_verificada_mw"]
 
 
 class DatasetAdapter(Protocol):
@@ -91,13 +92,14 @@ def _inspect(frame: pd.DataFrame, config: TrainingConfig) -> tuple[pd.DataFrame,
     df["timestamp_utc"] = utc_timestamps(df.timestamp_utc, config.source_timezone)
     df["usina_id"] = df.usina_id.astype("string").str.strip().replace("", pd.NA)
     present_optional = [column for column in OPTIONAL_NUMERIC if column in df]
-    numeric = numeric + present_optional
+    present_audit = [column for column in AUDIT_NUMERIC if column in df and column != config.target]
+    numeric = numeric + present_optional + present_audit
     for column in numeric:
         df[column] = pd.to_numeric(df[column], errors="coerce")
     reasons = {"missing_usina_id": df.usina_id.isna(), "invalid_or_naive_timestamp": df.timestamp_utc.isna()}
     for column in numeric:
         report["null_rate"][column] = float(df[column].isna().mean()) if len(df) else 0.0
-        if column not in OPTIONAL_NUMERIC:
+        if column not in OPTIONAL_NUMERIC and column not in AUDIT_NUMERIC:
             reasons[f"missing_or_nonfinite_{column}"] = ~np.isfinite(df[column])
     reasons.update({
         "capacity_not_positive": df.capacidade_instalada_mw <= 0,
@@ -107,13 +109,19 @@ def _inspect(frame: pd.DataFrame, config: TrainingConfig) -> tuple[pd.DataFrame,
         "pressure_outside_50000_120000_Pa": ~df.surface_pressure.between(50_000, 120_000),
     })
     if config.target:
-        reasons["target_outside_installed_capacity"] = ~df[config.target].between(0, df.capacidade_instalada_mw)
+        reasons["negative_target"] = df[config.target] < 0
+        reasons["target_above_installed_capacity"] = df[config.target] > df.capacidade_instalada_mw
         report["target_above_installed_capacity"] = int((df[config.target] > df.capacidade_instalada_mw).sum())
         report["target_above_available_capacity"] = int((df[config.target] > df.capacidade_instalada_mw * df.disponibilidade).sum())
         report["target_clipped"] = False
         report["warnings"].append(
             "geracao_referencia_mw é proxy de geração sem limitação; semântica e filtros exigem aprovação ONS."
         )
+    report["observed_generation"] = {
+        "column": "geracao_verificada_mw" if "geracao_verificada_mw" in df else None,
+        "purpose": "replay/audit_only",
+        "used_as_target_or_feature": False,
+    }
     if "era5_distance_km" in df:
         reasons["invalid_era5_distance"] = df.era5_distance_km.notna() & (~np.isfinite(df.era5_distance_km) | (df.era5_distance_km < 0))
     most_fields = ["hub_height_m", "surface_roughness_m", "monin_obukhov_length_m"]
@@ -175,7 +183,8 @@ def prepare_hourly_dataset(frame: pd.DataFrame, config: TrainingConfig) -> tuple
     report["exclusions"]["additional_rows_in_invalid_hour"] = int((selected & ~bad & bad_hour).sum())
     clean = df.loc[selected & ~bad & ~bad_hour].copy()
     numeric = NUMERIC + ([config.target] if config.target else [])
-    numeric += [column for column in OPTIONAL_NUMERIC if column in clean]
+    numeric += [column for column in OPTIONAL_NUMERIC + AUDIT_NUMERIC if column in clean
+                and column not in numeric]
     hourly = clean.groupby(KEY, as_index=False)[numeric].mean().sort_values(KEY[::-1]).reset_index(drop=True)
     expected_hours = config.experiment_days * 24
     expected_plant_hours = expected_hours * max(1, len(plants))
@@ -221,7 +230,8 @@ def prepare_snapshot(frame: pd.DataFrame, config: TrainingConfig) -> tuple[pd.Da
     bad_hour = pd.Series(pd.MultiIndex.from_frame(df[KEY]).isin(bad_keys), index=df.index)
     clean = df.loc[~bad & ~bad_hour].copy()
     numeric = NUMERIC + ([config.target] if config.target else [])
-    numeric += [column for column in OPTIONAL_NUMERIC if column in clean]
+    numeric += [column for column in OPTIONAL_NUMERIC + AUDIT_NUMERIC if column in clean
+                and column not in numeric]
     hourly = clean.groupby(KEY, as_index=False)[numeric].mean().sort_values(KEY[::-1]).reset_index(drop=True)
     report.update({
         "status": "valid" if len(hourly) else "invalid",

@@ -525,6 +525,15 @@ Implementado em 26 de setembro de 2026, sem consumir reservas reais:
   validação do lookback entre configuração e manifesto;
 - rejeição de teste final que intersecta um período declarado como exposto;
   agosto de 2024 consta assim no manifesto de infraestrutura.
+- pré-voo reproduzível em `training/scientific_snapshot.py`, que congela o
+  snapshot sem escolher calendário, inventaria meses/lacunas/vigências e grava
+  hashes de fontes, catálogo, composição, contrato do alvo e política;
+- gate explícito das oito pré-condições científicas e hash da configuração de
+  treino no estado `protocol_frozen`;
+- tabela legível por bloco com limites, horas esperadas/observadas, conjuntos,
+  linhas e cobertura, além de métricas por mês UTC e condição de cobertura;
+- política explícita para conjuntos ONS não vistos: fallback físico. Avaliação
+  espacial científica permanece bloqueada até existir contrato de agrupamento.
 
 Não implementado por depender de decisão/aprovação externa: datas científicas,
 aprovação semântica do contrato do target, política ONS de elegibilidade, mínimos de cobertura,
