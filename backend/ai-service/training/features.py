@@ -1,10 +1,15 @@
 """Feature engineering used identically by the offline pipeline and API."""
 from __future__ import annotations
 
+from dataclasses import asdict
+
 import numpy as np
 import pandas as pd
 
 from training.config import FeatureConfig
+
+
+FEATURE_SET_VERSION = "wind-features-v1"
 
 
 LEGACY_FEATURE_COLUMNS = [
@@ -165,6 +170,13 @@ def add_features(frame: pd.DataFrame, config: FeatureConfig | None = None) -> pd
     required = [df[f"history_complete_{window}h"].eq(1) for window in config.rolling_windows_hours]
     required.extend(df[f"wind_speed_gradient_{hours}h"].notna() for hours in (1, 3, 6))
     df["temporal_context_complete"] = np.logical_and.reduce(required).astype("int8")
+    # DataFrame attrs survive the in-memory temporal slicing used by the
+    # protocol. Consumers can therefore reuse already-computed history without
+    # silently accepting features produced by another runtime configuration.
+    df.attrs["climagrid_feature_contract"] = {
+        "feature_set_version": FEATURE_SET_VERSION,
+        "feature_config": asdict(config),
+    }
     return df
 
 

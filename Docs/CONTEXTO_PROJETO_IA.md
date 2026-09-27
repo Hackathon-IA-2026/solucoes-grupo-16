@@ -158,6 +158,12 @@ geração observada. Os documentos `GUIA_ESTUDANTE_SINAL.md` e
   contrato do alvo. A curva física permanece o estimador servido na fase 2.
   Consulte o registro verificável em
   [`ML/IMPLEMENTACAO_TARGET_WALK_FORWARD_MOST_ROLLING.md`](ML/IMPLEMENTACAO_TARGET_WALK_FORWARD_MOST_ROLLING.md).
+- O challenger DML exploratório de densidade do ar respeita o mesmo contrato de
+  target e features, usa purge interno mínimo de 6 h quando o histórico é
+  obrigatório e persiste MOST/lookback no bundle. O estimando v1 preserva o
+  conjunto legado; um v2 temporal/MOST separado permite ablação com e sem
+  disponibilidade. Nenhum deles está conectado ao `Predictor`. Consulte
+  [`ML/MODELO_DML_CAUSAL.md`](ML/MODELO_DML_CAUSAL.md).
 - `Docs/Casos de Referência/Lista_de_Usinas.xlsx`: CEG, barra e potência do
   horizonte 2040.
 

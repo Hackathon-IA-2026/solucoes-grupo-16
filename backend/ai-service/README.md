@@ -30,6 +30,12 @@ O ambiente instala a distribuição oficial `xgboost-cpu`, pois o protocolo não
 usa algoritmos GPU ou aprendizado federado; o módulo Python continua sendo
 importado normalmente como `xgboost`.
 
+O challenger DML permanece exploratório e fora do `Predictor`. Seus contratos
+versionados permitem comparar os controles legados com o conjunto temporal/MOST
+de 3/6 h, incluindo uma ablação explícita da disponibilidade. A execução exige
+o mesmo target científico, manifesto temporal e hashes do protocolo. Consulte
+[`Docs/ML/MODELO_DML_CAUSAL.md`](../../Docs/ML/MODELO_DML_CAUSAL.md).
+
 ## Instalação e execução
 
 O ambiente homologado usa Python 3.13. Não reutilize um ambiente virtual criado
@@ -321,6 +327,19 @@ o denominador de cobertura por bloco.
 Homologação operacional não é inferida pelas métricas. Ela exige chamada
 explícita a `homologate_operationally`, com referências do fluxo ponta a ponta e
 do aceite no ANAREDE. Até isso ocorrer, o `Predictor` usa a curva física.
+
+### Challenger causal DML
+
+O módulo `training/causal/` implementa um challenger parcialmente linear para
+estimar o efeito da densidade do ar sobre `residual_cf`. Ele usa dois nuisance
+models LightGBM, cross-fitting expansivo por timestamp, diagnóstico de overlap e
+um bundle de dois modelos protegido por hashes. Temperatura e pressão são
+proibidas como controles porque determinam a própria densidade.
+
+O experimento reutiliza exclusivamente os papéis de desenvolvimento do
+protocolo temporal e permanece fora do `Predictor`. Instruções, equações, CLI e
+gates estão em
+[`Docs/ML/MODELO_DML_CAUSAL.md`](../../Docs/ML/MODELO_DML_CAUSAL.md).
 
 ### Pipeline legado
 

@@ -1,0 +1,28 @@
+{
+  "schema_version": "causal-estimand-v1",
+  "estimand_id": "air-density-on-physical-residual-v1",
+  "treatment": "air_density_kg_m3",
+  "outcome": "residual_cf",
+  "control_set_version": "legacy-v1",
+  "controls": [
+    "wind_speed_100m",
+    "wind_dir_sin",
+    "wind_dir_cos",
+    "hour_sin",
+    "hour_cos",
+    "doy_sin",
+    "doy_cos",
+    "capacidade_instalada_mw",
+    "disponibilidade",
+    "era5_distance_km",
+    "era5_distance_known",
+    "usina_id"
+  ],
+  "n_crossfit_splits": 4,
+  "crossfit_gap_hours": 6,
+  "inference_cluster_hours": 168,
+  "minimum_oof_rows": 100,
+  "minimum_treatment_residual_std": 0.0001,
+  "expected_effect_sign": "positive",
+  "status": "infrastructure_test"
+}
